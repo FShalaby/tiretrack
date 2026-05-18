@@ -1,0 +1,187 @@
+package com.aem.tiretrack.model;
+
+import java.time.LocalDateTime;
+
+import com.aem.tiretrack.enums.AppointmentStatus;
+import com.aem.tiretrack.enums.ServiceType;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.Table;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.PositiveOrZero;
+
+@Entity
+@Table(name = "appointments")
+public class Appointment {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @NotBlank(message = "Customer name is required")
+    @Column(name = "customer_name")
+    private String customerName;
+
+    @NotBlank(message = "Phone is required")
+    private String phone;
+    private String vehicle;
+
+    @Column(name = "tire_size")
+    private String tireSize;
+
+    @Column(name = "front_tire_id")
+    private Long frontTireId;
+
+    @Column(name = "front_quantity")
+    @PositiveOrZero(message = "Front quantity cannot be negative")
+    private Integer frontQuantity = 0;
+
+    @Column(name = "rear_tire_id")
+    private Long rearTireId;
+
+    @Column(name = "rear_quantity")
+    @PositiveOrZero(message = "Rear quantity cannot be negative")
+    private Integer rearQuantity = 0;
+
+    @NotNull(message = "Appointment date is required")
+    @Column(name = "appointment_date")
+    private LocalDateTime appointmentDate;
+
+    @NotNull(message = "Service type is required")
+    @Column(name = "service_type")
+    @Enumerated(EnumType.STRING)
+    private ServiceType serviceType;
+
+    private String notes;
+
+    @Enumerated(EnumType.STRING)
+    private AppointmentStatus status;
+
+    @Column(name = "created_at", updatable = false)
+    private LocalDateTime createdAt;
+
+    @PrePersist
+    protected void onCreate() {
+        createdAt = LocalDateTime.now();
+
+        if (status == null) {
+            status = AppointmentStatus.BOOKED;
+        }
+    }
+
+    public Long getId() {
+        return id;
+    }
+
+    public void setId(Long id) {
+        this.id = id;
+    }
+
+    public String getCustomerName() {
+        return customerName;
+    }
+
+    public void setCustomerName(String customerName) {
+        this.customerName = customerName;
+    }
+
+    public String getPhone() {
+        return phone;
+    }
+
+    public void setPhone(String phone) {
+        this.phone = phone;
+    }
+
+    public String getVehicle() {
+        return vehicle;
+    }
+
+    public void setVehicle(String vehicle) {
+        this.vehicle = vehicle;
+    }
+
+    public String getTireSize() {
+        return tireSize;
+    }
+
+    public void setTireSize(String tireSize) {
+        this.tireSize = tireSize;
+    }
+
+    public Long getFrontTireId() {
+        return frontTireId;
+    }
+
+    public void setFrontTireId(Long frontTireId) {
+        this.frontTireId = frontTireId;
+    }
+
+    public int getFrontQuantity() {
+        return frontQuantity == null ? 0 : frontQuantity;
+    }
+
+    public void setFrontQuantity(int frontQuantity) {
+        this.frontQuantity = frontQuantity;
+    }
+
+    public Long getRearTireId() {
+        return rearTireId;
+    }
+
+    public void setRearTireId(Long rearTireId) {
+        this.rearTireId = rearTireId;
+    }
+
+    public int getRearQuantity() {
+        return rearQuantity == null ? 0 : rearQuantity;
+    }
+
+    public void setRearQuantity(int rearQuantity) {
+        this.rearQuantity = rearQuantity;
+    }
+
+    public LocalDateTime getAppointmentDate() {
+        return appointmentDate;
+    }
+
+    public void setAppointmentDate(LocalDateTime appointmentDate) {
+        this.appointmentDate = appointmentDate;
+    }
+
+    public ServiceType getServiceType() {
+        return serviceType;
+    }
+
+    public void setServiceType(ServiceType serviceType) {
+        this.serviceType = serviceType;
+    }
+
+    public String getNotes() {
+        return notes;
+    }
+
+    public void setNotes(String notes) {
+        this.notes = notes;
+    }
+
+    public AppointmentStatus getStatus() {
+        return status;
+    }
+
+    public void setStatus(AppointmentStatus status) {
+        this.status = status;
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+}
