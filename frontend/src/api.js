@@ -3,7 +3,13 @@ const jsonHeaders = {
 };
 
 async function request(path, options = {}) {
-  const response = await fetch(path, options);
+  let response;
+
+  try {
+    response = await fetch(path, options);
+  } catch {
+    throw new Error(`Could not reach the backend for ${path}. Make sure Spring Boot is running on port 8080.`);
+  }
 
   if (!response.ok) {
     const message = await response.text();
@@ -15,7 +21,8 @@ async function request(path, options = {}) {
       parsedMessage = null;
     }
 
-    throw new Error(parsedMessage?.message || (parsedMessage ? Object.values(parsedMessage).join(", ") : message) || `Request failed with status ${response.status}`);
+    const details = parsedMessage?.message || (parsedMessage ? Object.values(parsedMessage).join(", ") : message);
+    throw new Error(details ? `${path}: ${details}` : `${path}: request failed with status ${response.status}`);
   }
 
   if (response.status === 204) {
