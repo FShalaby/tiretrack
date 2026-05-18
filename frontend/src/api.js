@@ -30,6 +30,22 @@ export function getDashboard() {
   return request("/api/dashboard");
 }
 
+export function getSettings() {
+  return request("/api/settings");
+}
+
+export function getAuditLogs() {
+  return request("/api/audit-logs");
+}
+
+export function updateSettings(settings) {
+  return request("/api/settings", {
+    method: "PUT",
+    headers: jsonHeaders,
+    body: JSON.stringify(settings)
+  });
+}
+
 export function getSalesData(days = 14) {
   return request(`/api/dashboard/sales?days=${encodeURIComponent(days)}`);
 }
@@ -130,5 +146,13 @@ export function createInvoice(invoice) {
 export function deleteInvoice(id) {
   return request(`/api/invoices/${id}`, {
     method: "DELETE"
+  });
+}
+
+export function updateInvoiceStatus(id, status) {
+  return request(`/api/invoices/${id}/status`, {
+    method: "PUT",
+    headers: jsonHeaders,
+    body: JSON.stringify({ status })
   });
 }

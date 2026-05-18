@@ -16,10 +16,12 @@ public class AppointmentService {
 
     private final AppointmentRepository appointmentRepository;
     private final TireRepository tireRepository;
+    private final AuditLogService auditLogService;
 
-    public AppointmentService(AppointmentRepository appointmentRepository, TireRepository tireRepository) {
+    public AppointmentService(AppointmentRepository appointmentRepository, TireRepository tireRepository, AuditLogService auditLogService) {
         this.appointmentRepository = appointmentRepository;
         this.tireRepository = tireRepository;
+        this.auditLogService = auditLogService;
     }
 
     public List<Appointment> getAllAppointments() {
@@ -33,14 +35,18 @@ public class AppointmentService {
 
     @Transactional
     public Appointment saveAppointment(Appointment appointment) {
+        validateAppointmentTime(appointment, null);
         reserveAppointmentTires(appointment);
-        return appointmentRepository.save(appointment);
+        Appointment savedAppointment = appointmentRepository.save(appointment);
+        auditLogService.record("BOOKED", "Appointment", savedAppointment.getId(), "Booked appointment for " + savedAppointment.getCustomerName());
+        return savedAppointment;
     }
 
     @Transactional
     public Appointment updateAppointment(Long id, Appointment updatedAppointment) {
 
         Appointment existingAppointment = getAppointmentById(id);
+        validateAppointmentTime(updatedAppointment, id);
         releaseAppointmentTires(existingAppointment);
 
         existingAppointment.setCustomerName(updatedAppointment.getCustomerName());
@@ -54,13 +60,19 @@ public class AppointmentService {
         existingAppointment.setAppointmentDate(updatedAppointment.getAppointmentDate());
         existingAppointment.setServiceType(updatedAppointment.getServiceType());
         existingAppointment.setNotes(updatedAppointment.getNotes());
+        existingAppointment.setReminderStatus(updatedAppointment.getReminderStatus());
+        existingAppointment.setReminderAt(updatedAppointment.getReminderAt());
+        existingAppointment.setConfirmationStatus(updatedAppointment.getConfirmationStatus());
+        existingAppointment.setCancelReason(updatedAppointment.getCancelReason());
 
         if (updatedAppointment.getStatus() != null) {
             existingAppointment.setStatus(updatedAppointment.getStatus());
         }
 
         reserveAppointmentTires(existingAppointment);
-        return appointmentRepository.save(existingAppointment);
+        Appointment savedAppointment = appointmentRepository.save(existingAppointment);
+        auditLogService.record("UPDATED", "Appointment", savedAppointment.getId(), "Updated appointment for " + savedAppointment.getCustomerName());
+        return savedAppointment;
     }
 
     @Transactional
@@ -68,6 +80,7 @@ public class AppointmentService {
         Appointment appointment = getAppointmentById(id);
         releaseAppointmentTires(appointment);
         appointmentRepository.delete(appointment);
+        auditLogService.record("DELETED", "Appointment", id, "Deleted appointment for " + appointment.getCustomerName());
     }
 
     private void reserveAppointmentTires(Appointment appointment) {
@@ -90,6 +103,20 @@ public class AppointmentService {
 
     private boolean shouldReserve(Appointment appointment) {
         return appointment.getStatus() == null || appointment.getStatus() == AppointmentStatus.BOOKED;
+    }
+
+    private void validateAppointmentTime(Appointment appointment, Long ignoredAppointmentId) {
+        if (appointment.getAppointmentDate() == null || !shouldReserve(appointment)) {
+            return;
+        }
+
+        boolean hasConflict = appointmentRepository.findByAppointmentDate(appointment.getAppointmentDate()).stream()
+                .filter(existingAppointment -> ignoredAppointmentId == null || !ignoredAppointmentId.equals(existingAppointment.getId()))
+                .anyMatch(this::shouldReserve);
+
+        if (hasConflict) {
+            throw new RuntimeException("That appointment time is already booked");
+        }
     }
 
     private void changeReservation(Long tireId, int quantity, int direction) {

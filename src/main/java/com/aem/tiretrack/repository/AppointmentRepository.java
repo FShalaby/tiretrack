@@ -1,6 +1,7 @@
 package com.aem.tiretrack.repository;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -15,5 +16,7 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long>
             @Param("start") LocalDateTime start,
             @Param("end") LocalDateTime end
     );
+
+    List<Appointment> findByAppointmentDate(LocalDateTime appointmentDate);
 
 }

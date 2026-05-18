@@ -21,16 +21,16 @@ import com.aem.tiretrack.repository.TireRepository;
 
 @Service
 public class InvoiceService {
-    private static final BigDecimal ONTARIO_HST_RATE = new BigDecimal("0.13");
-
     private final InvoiceRepository invoiceRepository;
     private final TireRepository tireRepository;
     private final AppointmentRepository appointmentRepository;
+    private final AuditLogService auditLogService;
 
-    public InvoiceService(InvoiceRepository invoiceRepository, TireRepository tireRepository, AppointmentRepository appointmentRepository) {
+    public InvoiceService(InvoiceRepository invoiceRepository, TireRepository tireRepository, AppointmentRepository appointmentRepository, AuditLogService auditLogService) {
         this.invoiceRepository = invoiceRepository;
         this.tireRepository = tireRepository;
         this.appointmentRepository = appointmentRepository;
+        this.auditLogService = auditLogService;
     }
 
     public List<Invoice> getAllInvoices() {
@@ -46,14 +46,36 @@ public class InvoiceService {
     public Invoice saveInvoice(Invoice invoice) {
         try {
             prepareInvoice(invoice);
-            return invoiceRepository.saveAndFlush(invoice);
+            Invoice savedInvoice = invoiceRepository.saveAndFlush(invoice);
+            auditLogService.record("CREATED", "Invoice", savedInvoice.getId(), "Created invoice for " + savedInvoice.getCustomerName());
+            return savedInvoice;
         } catch (RuntimeException exception) {
             throw new RuntimeException(rootMessage(exception), exception);
         }
     }
 
     public void deleteInvoice(Long id) {
+        Invoice invoice = getInvoiceById(id);
         invoiceRepository.deleteById(id);
+        auditLogService.record("DELETED", "Invoice", id, "Deleted invoice for " + invoice.getCustomerName());
+    }
+
+    @Transactional
+    public Invoice updateInvoiceStatus(Long id, String status) {
+        Invoice invoice = getInvoiceById(id);
+        invoice.setStatus(status);
+
+        if ("PAID".equalsIgnoreCase(status) && invoice.getAppointmentId() != null) {
+            Appointment appointment = appointmentRepository.findById(invoice.getAppointmentId())
+                    .orElseThrow(() -> new RuntimeException("Appointment not found"));
+
+            releaseRemainingAppointmentReservations(appointment, new HashMap<>());
+            appointment.setStatus(AppointmentStatus.COMPLETED);
+        }
+
+        Invoice savedInvoice = invoiceRepository.save(invoice);
+        auditLogService.record("STATUS_CHANGED", "Invoice", savedInvoice.getId(), "Invoice #" + savedInvoice.getId() + " marked " + status);
+        return savedInvoice;
     }
 
     private void prepareInvoice(Invoice invoice) {
@@ -88,11 +110,17 @@ public class InvoiceService {
             appointment.setStatus(AppointmentStatus.COMPLETED);
         }
 
-        BigDecimal taxAmount = subtotal.multiply(ONTARIO_HST_RATE).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal taxRate = invoice.getTaxRate() == null ? new BigDecimal("0.13") : invoice.getTaxRate();
+
+        if (taxRate.compareTo(BigDecimal.ONE) > 0) {
+            taxRate = taxRate.divide(new BigDecimal("100"), 4, RoundingMode.HALF_UP);
+        }
+
+        BigDecimal taxAmount = subtotal.multiply(taxRate).setScale(2, RoundingMode.HALF_UP);
         BigDecimal total = subtotal.add(taxAmount).setScale(2, RoundingMode.HALF_UP);
 
         invoice.setSubtotal(subtotal.setScale(2, RoundingMode.HALF_UP));
-        invoice.setTaxRate(ONTARIO_HST_RATE);
+        invoice.setTaxRate(taxRate);
         invoice.setTaxAmount(taxAmount);
         invoice.setTotal(total);
     }

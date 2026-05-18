@@ -1,4 +1,32 @@
 import { useEffect, useMemo, useState } from "react";
+import { motion } from "framer-motion";
+import {
+  AlertTriangle,
+  Bell,
+  CalendarDays,
+  CheckCircle2,
+  CircleDollarSign,
+  Download,
+  Disc3,
+  FileText,
+  Gauge,
+  LogIn,
+  Package,
+  RefreshCw,
+  Search,
+  Settings as SettingsIcon,
+  UserCircle,
+  ShieldCheck
+} from "lucide-react";
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis
+} from "recharts";
 import {
   createAppointment,
   createInvoice,
@@ -7,11 +35,13 @@ import {
   deleteInvoice,
   deleteTire,
   getAppointments,
+  getAuditLogs,
   getDashboard,
   getInvoice,
   getInvoices,
   getLowStockTires,
   getSalesData,
+  getSettings,
   getTires,
   searchTiresByBrand,
   searchTiresByCondition,
@@ -19,10 +49,44 @@ import {
   searchTiresBySeason,
   searchTiresBySize,
   updateAppointment,
+  updateInvoiceStatus,
+  updateSettings,
   updateTire
 } from "./api";
 
-const tabs = ["Dashboard", "Tires", "Appointments", "Invoices"];
+const tabs = ["Dashboard", "Tires", "Appointments", "Invoices", "Settings"];
+const tabIcons = {
+  Dashboard: Gauge,
+  Tires: Disc3,
+  Appointments: CalendarDays,
+  Invoices: FileText,
+  Settings: SettingsIcon
+};
+const metricIcons = {
+  "Tires in stock": Package,
+  "Low stock": AlertTriangle,
+  Invoices: FileText,
+  Revenue: CircleDollarSign,
+  "Today appointments": CalendarDays
+};
+const statusClassMap = {
+  BOOKED: "blue",
+  COMPLETED: "green",
+  CANCELLED: "red",
+  PAID: "green",
+  UNPAID: "red",
+  PARTIAL: "yellow",
+  NEW: "green",
+  USED: "yellow"
+};
+const chartColors = ["#18d3b2", "#7c8cff", "#ef4444", "#f59e0b"];
+const appointmentTimes = ["08:00", "09:00", "10:00", "11:00", "13:00", "14:00", "15:00", "16:00"];
+const tooltipStyle = {
+  background: "#17171d",
+  border: "1px solid rgba(255,255,255,0.08)",
+  borderRadius: 10,
+  color: "#d7d9e0"
+};
 
 const emptyTire = {
   brand: "",
@@ -62,6 +126,10 @@ const emptyAppointment = {
   appointmentDate: "",
   serviceType: "INSTALLATION",
   notes: "",
+  reminderStatus: "NOT_SET",
+  reminderAt: "",
+  confirmationStatus: "PENDING",
+  cancelReason: "",
   status: "BOOKED"
 };
 
@@ -74,6 +142,15 @@ const emptyInvoice = {
   status: "PAID",
   appointmentId: "",
   items: [makeInvoiceItem()]
+};
+
+const defaultCompanySettings = {
+  shopName: "Your Shop Name",
+  logoUrl: "",
+  phone: "",
+  address: "",
+  taxRate: "13",
+  invoiceTerms: "Payment is due upon receipt. Thank you for your business."
 };
 
 function money(value) {
@@ -104,6 +181,82 @@ function joinAppointmentDate(date, time) {
   }
 
   return `${date}T${time}`;
+}
+
+function todayDateKey() {
+  return toDateKey(new Date());
+}
+
+function appointmentDateKey(value) {
+  return splitAppointmentDate(value).date;
+}
+
+function appointmentTimeKey(value) {
+  return splitAppointmentDate(value).time;
+}
+
+function isBookableAppointment(appointment) {
+  return appointment.status !== "CANCELLED" && appointment.status !== "COMPLETED";
+}
+
+function compactDate(value) {
+  return value ? new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
+}
+
+function loadCompanySettings() {
+  try {
+    return { ...defaultCompanySettings, ...JSON.parse(localStorage.getItem("tiretrack-company-settings") || "{}") };
+  } catch {
+    return defaultCompanySettings;
+  }
+}
+
+function makeInvoiceForm(settings) {
+  return {
+    ...emptyInvoice,
+    companyName: settings?.shopName || defaultCompanySettings.shopName
+  };
+}
+
+function downloadTextFile(filename, content, type = "text/plain") {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function csvEscape(value) {
+  const text = String(value ?? "");
+
+  return /[",\n]/.test(text) ? `"${text.replaceAll("\"", "\"\"")}"` : text;
+}
+
+function toCsv(headers, rows) {
+  return [headers, ...rows].map((row) => row.map(csvEscape).join(",")).join("\n");
+}
+
+function getRangeStart(range, customStart) {
+  const date = new Date();
+
+  if (range === "today") {
+    return todayDateKey();
+  }
+
+  if (range === "week") {
+    date.setDate(date.getDate() - 6);
+    return toDateKey(date);
+  }
+
+  if (range === "custom") {
+    return customStart || todayDateKey();
+  }
+
+  date.setDate(date.getDate() - 29);
+  return toDateKey(date);
 }
 
 function buildTireSize(form) {
@@ -147,6 +300,18 @@ function parseTireSetup(tireSize) {
 
 function App() {
   const [activeTab, setActiveTab] = useState("Dashboard");
+  const [isAuthenticated, setIsAuthenticated] = useState(() => localStorage.getItem("tiretrack-auth") === "yes");
+  const [globalQuery, setGlobalQuery] = useState("");
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [highlightedRow, setHighlightedRow] = useState(null);
+  const [activityLog, setActivityLog] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("tiretrack-activity-log") || "[]");
+    } catch {
+      return [];
+    }
+  });
+  const [companySettings, setCompanySettings] = useState(loadCompanySettings);
   const [dashboard, setDashboard] = useState(null);
   const [tires, setTires] = useState([]);
   const [inventoryTires, setInventoryTires] = useState([]);
@@ -157,9 +322,8 @@ function App() {
   const [tireFilters, setTireFilters] = useState(emptyTireFilters);
   const [appointmentForm, setAppointmentForm] = useState(emptyAppointment);
   const [editingAppointmentId, setEditingAppointmentId] = useState(null);
-  const [invoiceForm, setInvoiceForm] = useState(emptyInvoice);
+  const [invoiceForm, setInvoiceForm] = useState(() => makeInvoiceForm(loadCompanySettings()));
   const [generatedInvoice, setGeneratedInvoice] = useState(null);
-  const [generatedInvoiceCompanyName, setGeneratedInvoiceCompanyName] = useState(emptyInvoice.companyName);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -168,20 +332,31 @@ function App() {
     setError("");
 
     try {
-      const [summary, tireList, appointmentList, invoiceList, salesList] = await Promise.all([
+      const [summary, tireList, appointmentList, invoiceList, salesList, savedSettings, auditLogs] = await Promise.all([
         getDashboard(),
         getTires(),
         getAppointments(),
         getInvoices(),
-        getSalesData()
+        getSalesData(),
+        getSettings().catch(() => loadCompanySettings()),
+        getAuditLogs().catch(() => [])
       ]);
 
+      const mergedSettings = { ...defaultCompanySettings, ...(savedSettings || {}) };
       setDashboard(summary);
       setTires(tireList || []);
       setInventoryTires(tireList || []);
       setAppointments(appointmentList || []);
       setInvoices(invoiceList || []);
       setSalesData(salesList || []);
+      setActivityLog((auditLogs || []).map((log) => ({
+        id: log.id,
+        label: log.message || log.action,
+        tab: `${log.entityType || "Dashboard"}s`,
+        createdAt: log.createdAt
+      })));
+      setCompanySettings(mergedSettings);
+      localStorage.setItem("tiretrack-company-settings", JSON.stringify(mergedSettings));
     } catch (err) {
       setError(err.message);
     } finally {
@@ -192,6 +367,46 @@ function App() {
   useEffect(() => {
     loadData();
   }, []);
+
+  function login() {
+    localStorage.setItem("tiretrack-auth", "yes");
+    setIsAuthenticated(true);
+  }
+
+  function logout() {
+    localStorage.removeItem("tiretrack-auth");
+    setIsAuthenticated(false);
+  }
+
+  function jumpToResult(result) {
+    setActiveTab(result.tab);
+    setGlobalQuery("");
+    setHighlightedRow(result.id);
+    window.setTimeout(() => setHighlightedRow(null), 2200);
+  }
+
+  function logActivity(label, tab) {
+    const nextLog = [{ id: Date.now(), label, tab, createdAt: new Date().toISOString() }, ...activityLog].slice(0, 20);
+    setActivityLog(nextLog);
+    localStorage.setItem("tiretrack-activity-log", JSON.stringify(nextLog));
+  }
+
+  async function saveCompanySettings(nextSettings) {
+    await updateSettings(nextSettings);
+    const verifiedSettings = await getSettings();
+    const mergedSettings = { ...defaultCompanySettings, ...(verifiedSettings || {}) };
+
+    if (String(mergedSettings.shopName || "") !== String(nextSettings.shopName || "")) {
+      throw new Error("Settings were not verified in the database. Try saving again.");
+    }
+
+    setCompanySettings(mergedSettings);
+    localStorage.setItem("tiretrack-company-settings", JSON.stringify(mergedSettings));
+    setInvoiceForm((current) => ({
+      ...current,
+      companyName: mergedSettings.shopName || defaultCompanySettings.shopName
+    }));
+  }
 
   const lowStockTires = useMemo(
     () => tires.filter((tire) => Number(tire.quantity) <= 5),
@@ -213,6 +428,85 @@ function App() {
     },
     [appointments, invoices]
   );
+  const globalSearchResults = useMemo(() => {
+    const query = globalQuery.trim().toLowerCase();
+
+    if (!query) {
+      return [];
+    }
+
+    const tireMatches = tires
+      .filter((tire) => [
+        tire.brand,
+        tire.model,
+        tire.season,
+        tire.condition,
+        tire.location,
+        `${tire.width}/${tire.aspectRatio}r${tire.rimSize}`
+      ].join(" ").toLowerCase().includes(query))
+      .slice(0, 4)
+      .map((tire) => ({
+        id: `tire-${tire.id}`,
+        entityId: tire.id,
+        label: `${tire.brand} ${tire.model || ""}`,
+        meta: `${tire.width}/${tire.aspectRatio}R${tire.rimSize} · ${tire.quantity} in stock`,
+        tab: "Tires"
+      }));
+    const appointmentMatches = appointments
+      .filter((appointment) => [
+        appointment.customerName,
+        appointment.phone,
+        appointment.vehicle,
+        appointment.serviceType,
+        appointment.status
+      ].join(" ").toLowerCase().includes(query))
+      .slice(0, 4)
+      .map((appointment) => ({
+        id: `appointment-${appointment.id}`,
+        entityId: appointment.id,
+        label: appointment.customerName,
+        meta: `${appointment.serviceType} · ${compactDate(appointment.appointmentDate)}`,
+        tab: "Appointments"
+      }));
+    const invoiceMatches = invoices
+      .filter((invoice) => [
+        invoice.customerName,
+        invoice.phone,
+        invoice.vehicle,
+        invoice.status,
+        invoice.paymentMethod
+      ].join(" ").toLowerCase().includes(query))
+      .slice(0, 4)
+      .map((invoice) => ({
+        id: `invoice-${invoice.id}`,
+        entityId: invoice.id,
+        label: invoice.customerName,
+        meta: `${money(invoice.total)} · ${invoice.status || "UNPAID"}`,
+        tab: "Invoices"
+      }));
+
+    return [...tireMatches, ...appointmentMatches, ...invoiceMatches].slice(0, 8);
+  }, [appointments, globalQuery, invoices, tires]);
+  const notifications = useMemo(() => {
+    const today = todayDateKey();
+    const todaysAppointments = activeAppointments.filter((appointment) => appointmentDateKey(appointment.appointmentDate) === today);
+    const urgentLowStock = lowStockTires.filter((tire) => Number(tire.quantity || 0) < 3);
+
+    return [
+      ...urgentLowStock.slice(0, 4).map((tire) => ({
+        id: `stock-${tire.id}`,
+        label: `${tire.brand} needs refill`,
+        meta: `${tire.width}/${tire.aspectRatio}R${tire.rimSize} · ${tire.quantity} left`,
+        tab: "Tires"
+      })),
+      ...todaysAppointments.slice(0, 4).map((appointment) => ({
+        id: `today-${appointment.id}`,
+        label: `${appointment.customerName} today`,
+        meta: `${appointmentTimeKey(appointment.appointmentDate)} · ${appointment.serviceType}`,
+        tab: "Appointments"
+      }))
+    ];
+  }, [activeAppointments, lowStockTires]);
 
   async function submitTire(event) {
     event.preventDefault();
@@ -246,6 +540,7 @@ function App() {
       }
 
       setTireForm(emptyTire);
+      logActivity(matchingTire ? `Refilled ${tirePayload.brand}` : `Added ${tirePayload.brand}`, "Tires");
       loadData();
     } catch (err) {
       setError(err.message);
@@ -304,11 +599,35 @@ function App() {
       appointmentDate: appointmentForm.appointmentDate,
       serviceType: appointmentForm.serviceType,
       notes: appointmentForm.notes,
+      reminderStatus: appointmentForm.reminderStatus,
+      reminderAt: appointmentForm.reminderAt || null,
+      confirmationStatus: appointmentForm.confirmationStatus,
+      cancelReason: appointmentForm.cancelReason,
       status: appointmentForm.status
     };
 
     if (appointmentForm.serviceType === "INSTALLATION" && !appointment.frontTireId) {
       setError("Select an inventory tire for this installation appointment.");
+      return;
+    }
+
+    const selectedDate = appointmentDateKey(appointment.appointmentDate);
+    const selectedTime = appointmentTimeKey(appointment.appointmentDate);
+
+    if (!selectedDate || selectedDate < todayDateKey()) {
+      setError("Choose today or a future date for this appointment.");
+      return;
+    }
+
+    const matchingAppointment = appointments.find((existingAppointment) =>
+      Number(existingAppointment.id) !== Number(editingAppointmentId)
+      && isBookableAppointment(existingAppointment)
+      && appointmentDateKey(existingAppointment.appointmentDate) === selectedDate
+      && appointmentTimeKey(existingAppointment.appointmentDate) === selectedTime
+    );
+
+    if (matchingAppointment) {
+      setError(`That time is already booked for ${matchingAppointment.customerName}. Pick another slot.`);
       return;
     }
 
@@ -321,6 +640,7 @@ function App() {
 
       setAppointmentForm(emptyAppointment);
       setEditingAppointmentId(null);
+      logActivity(`${editingAppointmentId ? "Updated" : "Booked"} appointment for ${appointment.customerName}`, "Appointments");
       loadData();
     } catch (err) {
       setError(err.message);
@@ -344,6 +664,10 @@ function App() {
       appointmentDate: appointment.appointmentDate || "",
       serviceType: appointment.serviceType || "INSTALLATION",
       notes: appointment.notes || "",
+      reminderStatus: appointment.reminderStatus || "NOT_SET",
+      reminderAt: appointment.reminderAt || "",
+      confirmationStatus: appointment.confirmationStatus || "PENDING",
+      cancelReason: appointment.cancelReason || "",
       status: appointment.status || "BOOKED"
     });
   }
@@ -375,14 +699,15 @@ function App() {
     const savedInvoice = await createInvoice({
         ...invoiceForm,
         companyName: undefined,
+        taxRate: Number(companySettings.taxRate || 13),
         appointmentId: invoiceForm.appointmentId ? Number(invoiceForm.appointmentId) : null,
         items
       });
       const printableInvoice = savedInvoice?.id ? await getInvoice(savedInvoice.id) : savedInvoice;
 
       setGeneratedInvoice(printableInvoice);
-      setGeneratedInvoiceCompanyName(invoiceForm.companyName || emptyInvoice.companyName);
-      setInvoiceForm(emptyInvoice);
+      logActivity(`Created invoice for ${invoiceForm.customerName}`, "Invoices");
+      setInvoiceForm(makeInvoiceForm(companySettings));
       await loadData();
     } catch (err) {
       setError(err.message);
@@ -438,6 +763,23 @@ function App() {
     loadData();
   }
 
+  async function markInvoicePaid(invoice) {
+    await updateInvoiceStatus(invoice.id, "PAID");
+    logActivity(`Marked invoice #${invoice.id} paid`, "Invoices");
+    await loadData();
+  }
+
+  async function previewInvoice(invoice) {
+    const printableInvoice = invoice?.id ? await getInvoice(invoice.id) : invoice;
+    setGeneratedInvoice(printableInvoice);
+  }
+
+  async function updateInvoiceLifecycleStatus(invoice, status) {
+    await updateInvoiceStatus(invoice.id, status);
+    logActivity(`Marked invoice #${invoice.id} ${status}`, "Invoices");
+    await loadData();
+  }
+
   function startInvoiceFromAppointment(appointment) {
     const items = [];
 
@@ -456,36 +798,51 @@ function App() {
     }
 
     setGeneratedInvoice(null);
-    setGeneratedInvoiceCompanyName(emptyInvoice.companyName);
+    const nextInvoiceForm = makeInvoiceForm(companySettings);
     setInvoiceForm({
-      ...emptyInvoice,
+      ...nextInvoiceForm,
       appointmentId: String(appointment.id),
       customerName: appointment.customerName || "",
       phone: appointment.phone || "",
       vehicle: appointment.vehicle || "",
-      items: items.length ? items : emptyInvoice.items
+      items: items.length ? items : nextInvoiceForm.items
     });
     setActiveTab("Invoices");
+  }
+
+  if (!isAuthenticated) {
+    return <LoginScreen onLogin={login} />;
   }
 
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <div>
+        <motion.div
+          animate={{ opacity: 1, y: 0 }}
+          className="brand-lockup"
+          initial={{ opacity: 0, y: 10 }}
+          transition={{ duration: 0.35 }}
+        >
+          <span className="brand-mark"><Disc3 size={22} /></span>
           <h1>TireTrack</h1>
           <p>Inventory, service, and sales</p>
-        </div>
+        </motion.div>
 
         <nav className="tabs" aria-label="Main navigation">
           {tabs.map((tab) => (
-            <button
+            <motion.button
               className={activeTab === tab ? "active" : ""}
               key={tab}
               onClick={() => setActiveTab(tab)}
+              whileHover={{ x: 3 }}
               type="button"
             >
+              {(() => {
+                const Icon = tabIcons[tab];
+                return Icon ? <Icon size={18} /> : null;
+              })()}
               {tab}
-            </button>
+            </motion.button>
           ))}
         </nav>
       </aside>
@@ -496,18 +853,86 @@ function App() {
             <span className="eyebrow">{activeTab}</span>
             <h2>{activeTab}</h2>
           </div>
-          <button className="ghost-button" onClick={loadData} type="button">
-            Refresh
-          </button>
+          <div className="topbar-actions">
+            <div className="global-search">
+              <Search size={16} />
+              <input
+                aria-label="Search tires, appointments, invoices"
+                onChange={(event) => setGlobalQuery(event.target.value)}
+                placeholder="Search tires, customers, invoices"
+                value={globalQuery}
+              />
+              {globalQuery.trim() && (
+                <div className="global-results">
+                  {globalSearchResults.length === 0 ? (
+                    <span className="global-empty">No matches</span>
+                  ) : (
+                    globalSearchResults.map((result) => (
+                      <button
+                        key={result.id}
+                        onClick={() => jumpToResult(result)}
+                        type="button"
+                      >
+                        <strong>{result.label}</strong>
+                        <small>{result.tab} · {result.meta}</small>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="notification-wrap">
+              <button
+                className="icon-button"
+                aria-label="Notifications"
+                onClick={() => setShowNotifications((current) => !current)}
+                type="button"
+              >
+                <Bell size={18} />
+                {notifications.length > 0 && <span>{notifications.length}</span>}
+              </button>
+              {showNotifications && (
+                <div className="notification-menu">
+                  <strong>Notifications</strong>
+                  {notifications.length === 0 ? (
+                    <p>No urgent alerts.</p>
+                  ) : (
+                    notifications.map((notification) => (
+                      <button
+                        key={notification.id}
+                        onClick={() => {
+                          setActiveTab(notification.tab);
+                          setShowNotifications(false);
+                        }}
+                        type="button"
+                      >
+                        <span>{notification.label}</span>
+                        <small>{notification.meta}</small>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+            <button className="ghost-button with-icon" onClick={loadData} type="button">
+              <RefreshCw size={16} />
+              Refresh
+            </button>
+            <button className="profile-chip" onClick={logout} type="button" title="Log out">
+              <UserCircle size={19} />
+              Shop Admin
+            </button>
+          </div>
         </header>
 
         {error && <div className="alert">{error}</div>}
-        {loading ? <div className="loading">Loading...</div> : null}
+        {loading ? <DashboardSkeleton /> : null}
 
         {!loading && activeTab === "Dashboard" && (
           <Dashboard
             appointments={activeAppointments}
             dashboard={dashboard}
+            invoices={invoices}
             tires={tires}
             lowStockTires={lowStockTires}
             onCancelAppointment={cancelAppointment}
@@ -515,6 +940,8 @@ function App() {
             onEditAppointment={editAppointment}
             onInvoiceAppointment={startInvoiceFromAppointment}
             salesData={salesData}
+            activityLog={activityLog}
+            onJumpActivity={(tab) => setActiveTab(tab)}
           />
         )}
 
@@ -529,6 +956,7 @@ function App() {
             onFilterSubmit={applyTireFilters}
             onRefill={refillTire}
             onSubmit={submitTire}
+            highlightedRow={highlightedRow}
             tires={inventoryTires}
           />
         )}
@@ -543,6 +971,7 @@ function App() {
             onDelete={removeAppointment}
             onEdit={editAppointment}
             onSubmit={submitAppointment}
+            highlightedRow={highlightedRow}
             tires={tires}
           />
         )}
@@ -551,14 +980,22 @@ function App() {
           <Invoices
             form={invoiceForm}
             generatedInvoice={generatedInvoice}
-            generatedInvoiceCompanyName={generatedInvoiceCompanyName}
+            settings={companySettings}
             invoices={invoices}
             onChange={setInvoiceForm}
             onDelete={removeInvoice}
+            onMarkPaid={markInvoicePaid}
+            onPreviewInvoice={previewInvoice}
+            onUpdateStatus={updateInvoiceLifecycleStatus}
             onSubmit={submitInvoice}
-            appointments={appointments}
+            highlightedRow={highlightedRow}
+            appointments={activeAppointments}
             tires={tires}
           />
+        )}
+
+        {!loading && activeTab === "Settings" && (
+          <SettingsPage settings={companySettings} onSave={saveCompanySettings} />
         )}
       </main>
     </div>
@@ -568,20 +1005,63 @@ function App() {
 function Dashboard({
   appointments,
   dashboard,
+  invoices,
   lowStockTires,
   onCancelAppointment,
   onDeleteAppointment,
   onEditAppointment,
   onInvoiceAppointment,
+  activityLog,
+  onJumpActivity,
   salesData,
   tires
 }) {
+  const [range, setRange] = useState("month");
+  const [customRange, setCustomRange] = useState({ start: todayDateKey(), end: todayDateKey() });
+  const rangeStart = getRangeStart(range, customRange.start);
+  const rangeEnd = range === "custom" ? customRange.end : todayDateKey();
+  const filteredInvoices = invoices.filter((invoice) => {
+    const date = appointmentDateKey(invoice.createdAt || invoice.invoiceDate);
+    return date && date >= rangeStart && date <= rangeEnd;
+  });
+  const filteredSalesData = salesData.filter((day) => day.date >= rangeStart && day.date <= rangeEnd);
   const inventoryValue = tires.reduce(
     (total, tire) => total + Number(tire.quantity || 0) * Number(tire.price || 0),
     0
   );
   const totalUnits = tires.reduce((total, tire) => total + Number(tire.quantity || 0), 0);
   const averageUnits = tires.length ? Math.round(totalUnits / tires.length) : 0;
+  const today = todayDateKey();
+  const todayAppointments = appointments.filter((appointment) => appointmentDateKey(appointment.appointmentDate) === today);
+  const todayInvoices = invoices.filter((invoice) => appointmentDateKey(invoice.createdAt || invoice.invoiceDate) === today);
+  const rangeRevenue = filteredInvoices.reduce((total, invoice) => total + Number(invoice.total || 0), 0);
+  const todayRevenue = todayInvoices.reduce((total, invoice) => total + Number(invoice.total || 0), 0);
+  const urgentRestock = lowStockTires.filter((tire) => Number(tire.availableQuantity ?? tire.quantity ?? 0) < 3);
+  const upcomingAppointments = [...appointments]
+    .filter((appointment) => new Date(appointment.appointmentDate) >= new Date(new Date().setHours(0, 0, 0, 0)))
+    .sort((first, second) => new Date(first.appointmentDate) - new Date(second.appointmentDate))
+    .slice(0, 5);
+  const latestInvoices = [...invoices]
+    .sort((first, second) => new Date(second.createdAt || second.invoiceDate || 0) - new Date(first.createdAt || first.invoiceDate || 0))
+    .slice(0, 5);
+  const conditionTotals = ["NEW", "USED"].map((condition, index) => ({
+    className: index === 0 ? "available" : "reserved",
+    color: chartColors[index],
+    label: condition === "NEW" ? "New tires" : "Used tires",
+    value: tires
+      .filter((tire) => String(tire.condition || "").toUpperCase() === condition)
+      .reduce((total, tire) => total + Number(tire.quantity || 0), 0)
+  })).filter((item) => item.value > 0);
+  const inventoryBars = tires
+    .slice()
+    .sort((first, second) => Number(second.quantity || 0) - Number(first.quantity || 0))
+    .slice(0, 6)
+    .map((tire) => ({
+      condition: tire.condition || "-",
+      label: tire.brand || "Unknown",
+      size: `${tire.width}/${tire.aspectRatio}R${tire.rimSize}`,
+      units: Number(tire.quantity || 0)
+    }));
   const cards = [
     ["Tires in stock", dashboard?.totalTiresInStock ?? 0],
     ["Low stock", dashboard?.lowStockCount ?? 0],
@@ -594,16 +1074,133 @@ function Dashboard({
     <>
       <section className="metric-grid">
         {cards.map(([label, value]) => (
-          <article className="metric-card" key={label}>
+          <motion.article
+            animate={{ opacity: 1, y: 0 }}
+            className="metric-card"
+            initial={{ opacity: 0, y: 10 }}
+            key={label}
+            transition={{ duration: 0.32 }}
+            whileHover={{ y: -4 }}
+          >
+            <div className="metric-icon">
+              {(() => {
+                const Icon = metricIcons[label] || Gauge;
+                return <Icon size={20} />;
+              })()}
+            </div>
             <span>{label}</span>
             <strong>{value}</strong>
-          </article>
+          </motion.article>
         ))}
       </section>
 
+      <section className="dashboard-filters panel">
+        <div>
+          <span className="eyebrow">Dashboard range</span>
+          <h3>{range === "custom" ? `${rangeStart} to ${rangeEnd}` : `This ${range}`}</h3>
+        </div>
+        <div className="segmented-control">
+          {["today", "week", "month", "custom"].map((option) => (
+            <button className={range === option ? "active" : ""} key={option} onClick={() => setRange(option)} type="button">
+              {option}
+            </button>
+          ))}
+        </div>
+        {range === "custom" && (
+          <div className="range-inputs">
+            <input type="date" value={customRange.start} onChange={(event) => setCustomRange({ ...customRange, start: event.target.value })} />
+            <input type="date" value={customRange.end} onChange={(event) => setCustomRange({ ...customRange, end: event.target.value })} />
+          </div>
+        )}
+        <strong>{money(rangeRevenue)} revenue</strong>
+      </section>
+
+      <section className="today-panel panel">
+        <div className="today-panel-header">
+          <div>
+            <span className="eyebrow">Today</span>
+            <h3>Daily Operations</h3>
+          </div>
+          <strong>{compactDate(new Date())}</strong>
+        </div>
+        <div className="today-stats">
+          <div><span>Appointments</span><strong>{todayAppointments.length}</strong></div>
+          <div><span>Invoices</span><strong>{todayInvoices.length}</strong></div>
+          <div><span>Revenue</span><strong>{money(todayRevenue)}</strong></div>
+          <div><span>Low stock actions</span><strong>{urgentRestock.length}</strong></div>
+        </div>
+        <div className="today-actions">
+          {urgentRestock.slice(0, 3).map((tire) => (
+            <span className="warning-chip danger" key={tire.id}>{tire.brand} {tire.width}/{tire.aspectRatio}R{tire.rimSize}</span>
+          ))}
+          {urgentRestock.length === 0 && <span className="warning-chip good">No urgent restocks</span>}
+        </div>
+      </section>
+
       <section className="split">
+        <SalesChart salesData={filteredSalesData.length ? filteredSalesData : salesData} />
         <InventoryBars lowStockTires={lowStockTires} tires={tires} />
-        <SalesChart salesData={salesData} />
+      </section>
+
+      <section className="dashboard-density">
+        <ActivityPanel icon={CalendarDays} title="Upcoming Appointments">
+          {upcomingAppointments.length === 0 ? (
+            <p className="empty-note">No upcoming appointments.</p>
+          ) : (
+            upcomingAppointments.map((appointment) => (
+              <div className="activity-row" key={appointment.id}>
+                <span>{appointment.customerName}</span>
+                <strong>{dateTime(appointment.appointmentDate)}</strong>
+                <StatusBadge value={appointment.status || "BOOKED"} />
+              </div>
+            ))
+          )}
+        </ActivityPanel>
+
+        <ActivityPanel icon={ShieldCheck} title="Tire Condition Mix">
+          <DashboardDonut
+            ariaLabel="Tire condition mix chart"
+            centerLabel="units"
+            segments={conditionTotals}
+          />
+        </ActivityPanel>
+
+        <ActivityPanel icon={Package} title="Top Inventory">
+          <InventoryLeaderBars items={inventoryBars} />
+        </ActivityPanel>
+
+        <ActivityPanel icon={Bell} title="Latest Invoices">
+          {latestInvoices.length === 0 ? (
+            <p className="empty-note">No invoices yet.</p>
+          ) : (
+            latestInvoices.map((invoice) => (
+              <div className="activity-row" key={invoice.id}>
+                <span>{invoice.customerName}</span>
+                <strong>{money(invoice.total)}</strong>
+                <StatusBadge value={invoice.status || "UNPAID"} />
+              </div>
+            ))
+          )}
+        </ActivityPanel>
+      </section>
+
+      <section className="panel activity-feed">
+        <div>
+          <span className="eyebrow">Activity</span>
+          <h3>Recent Actions</h3>
+        </div>
+        {activityLog.length === 0 ? (
+          <p className="empty-note">No activity yet.</p>
+        ) : (
+          <div className="activity-feed-list">
+            {activityLog.slice(0, 6).map((activity) => (
+              <button key={activity.id} onClick={() => onJumpActivity(activity.tab)} type="button">
+                <strong>{activity.label}</strong>
+                <span>{dateTime(activity.createdAt)}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="split">
@@ -658,13 +1255,11 @@ function InventoryBars({ lowStockTires, tires }) {
   const availableUnits = tires.reduce((total, tire) => total + Number(tire.availableQuantity ?? tire.quantity ?? 0), 0);
   const reservedUnits = tires.reduce((total, tire) => total + Number(tire.reservedQuantity || 0), 0);
   const lowStockCount = lowStockTires.length;
-  const total = Math.max(availableUnits + reservedUnits + lowStockCount, 1);
   const segments = [
     { label: "Available", value: availableUnits, className: "available", color: "#18d3b2" },
     { label: "Reserved", value: reservedUnits, className: "reserved", color: "#7c8cff" },
     { label: "Low stock", value: lowStockCount, className: "urgent", color: "#ef4444" }
   ];
-  let offset = 25;
 
   return (
     <section className="analytics-panel panel">
@@ -672,52 +1267,117 @@ function InventoryBars({ lowStockTires, tires }) {
         <span className="eyebrow">Inventory</span>
         <h3>Stock Movement</h3>
       </div>
-      <div className="inventory-donut-layout">
-        <div className="inventory-donut" aria-label="Inventory stock movement chart">
-          <svg viewBox="0 0 42 42" role="img">
-            <circle className="donut-ring" cx="21" cy="21" r="15.9155" />
-            {segments.map((segment) => {
-              const length = (segment.value / total) * 100;
-              const dashArray = `${length} ${100 - length}`;
-              const strokeDashoffset = offset;
-              offset -= length;
-
-              return (
-                <circle
-                  className={`donut-segment ${segment.className}`}
-                  cx="21"
-                  cy="21"
-                  key={segment.label}
-                  r="15.9155"
-                  strokeDasharray={dashArray}
-                  strokeDashoffset={strokeDashoffset}
-                />
-              );
-            })}
-          </svg>
-          <div className="donut-center">
-            <strong>{availableUnits + reservedUnits}</strong>
-            <span>units</span>
-          </div>
-        </div>
-        <div className="donut-legend">
-          {segments.map((segment) => (
-            <div className="donut-legend-row" key={segment.label}>
-              <span style={{ background: segment.color }} />
-              <div>
-                <strong>{segment.label}</strong>
-                <small>{segment.value}</small>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
+      <DashboardDonut
+        ariaLabel="Inventory stock movement chart"
+        centerLabel="units"
+        segments={segments}
+      />
     </section>
   );
 }
 
+function DashboardDonut({ ariaLabel, centerLabel, segments }) {
+  const [hoveredSegment, setHoveredSegment] = useState(null);
+  const total = Math.max(segments.reduce((sum, segment) => sum + Number(segment.value || 0), 0), 1);
+  const activeSegment = hoveredSegment || { label: "Total", value: total };
+  let offset = 25;
+
+  if (segments.length === 0 || segments.every((segment) => Number(segment.value || 0) === 0)) {
+    return <p className="empty-note">No chart data yet.</p>;
+  }
+
+  return (
+    <div className="inventory-donut-layout">
+      <div className="inventory-donut" aria-label={ariaLabel}>
+        <svg viewBox="0 0 42 42" role="img">
+          <circle className="donut-ring" cx="21" cy="21" r="15.9155" />
+          {segments.map((segment) => {
+            const length = (Number(segment.value || 0) / total) * 100;
+            const dashArray = `${length} ${100 - length}`;
+            const strokeDashoffset = offset;
+            offset -= length;
+
+            return (
+              <circle
+                className={`donut-segment ${segment.className}`}
+                cx="21"
+                cy="21"
+                key={segment.label}
+                onMouseEnter={() => setHoveredSegment(segment)}
+                onMouseLeave={() => setHoveredSegment(null)}
+                onFocus={() => setHoveredSegment(segment)}
+                onBlur={() => setHoveredSegment(null)}
+                r="15.9155"
+                tabIndex="0"
+                strokeDasharray={dashArray}
+                strokeDashoffset={strokeDashoffset}
+              />
+            );
+          })}
+        </svg>
+        <div className="donut-center">
+          <strong>{activeSegment.value}</strong>
+          <span>{hoveredSegment ? activeSegment.label : centerLabel}</span>
+        </div>
+      </div>
+      <div className="donut-legend">
+        {segments.map((segment) => (
+          <div
+            className={`donut-legend-row ${hoveredSegment?.label === segment.label ? "active" : ""}`}
+            key={segment.label}
+            onMouseEnter={() => setHoveredSegment(segment)}
+            onMouseLeave={() => setHoveredSegment(null)}
+          >
+            <span style={{ background: segment.color }} />
+            <div>
+              <strong>{segment.label}</strong>
+              <small>{segment.value}</small>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function InventoryLeaderBars({ items }) {
+  const maxUnits = Math.max(...items.map((item) => Number(item.units || 0)), 1);
+
+  if (items.length === 0) {
+    return <p className="empty-note">No inventory yet.</p>;
+  }
+
+  return (
+    <div className="leader-bars">
+      {items.map((item, index) => (
+        <div className="leader-bar-row" key={`${item.label}-${item.size}-${item.condition}`}>
+          <div className="leader-bar-label">
+            <span title={`${item.label} ${item.size}`}>
+              <b>{index + 1}</b>
+              {item.label}
+            </span>
+            <small>{item.size} · {item.condition}</small>
+            <strong>{item.units}</strong>
+          </div>
+          <div className="leader-bar-track">
+            <motion.div
+              animate={{ width: `${Math.max((item.units / maxUnits) * 100, 4)}%` }}
+              className="leader-bar-fill"
+              initial={{ width: 0 }}
+              transition={{ duration: 0.8, ease: "easeOut" }}
+            />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function SalesChart({ salesData }) {
-  const chart = buildSalesLineChart(salesData);
+  const points = salesData
+    .map((day) => ({ date: day.date, revenue: Number(day.revenue || 0) }))
+    .sort((first, second) => new Date(first.date) - new Date(second.date));
+  const totalRevenue = points.reduce((total, point) => total + point.revenue, 0);
 
   return (
     <section className="analytics-panel panel">
@@ -726,38 +1386,34 @@ function SalesChart({ salesData }) {
           <span className="eyebrow">Sales</span>
           <h3>Recent Revenue</h3>
         </div>
-        <strong>{money(chart.totalRevenue)}</strong>
+        <strong>{money(totalRevenue)}</strong>
       </div>
       <div className="sales-line-chart">
-        {chart.points.length === 0 ? (
+        {points.length === 0 ? (
           <p className="empty-note">No recent invoices.</p>
         ) : (
-          <>
-            <svg viewBox="0 0 640 260" role="img" aria-label="Recent sales line graph">
+          <ResponsiveContainer height={252} width="100%">
+            <AreaChart data={points} margin={{ bottom: 8, left: 4, right: 16, top: 14 }}>
               <defs>
                 <linearGradient id="salesAreaGradient" x1="0" x2="0" y1="0" y2="1">
-                  <stop offset="0%" stopColor="#18d3b2" stopOpacity="0.32" />
-                  <stop offset="100%" stopColor="#18d3b2" stopOpacity="0.02" />
+                  <stop offset="0%" stopColor="#18d3b2" stopOpacity={0.34} />
+                  <stop offset="100%" stopColor="#18d3b2" stopOpacity={0.02} />
                 </linearGradient>
               </defs>
-              <path className="sales-grid-line" d="M48 32H608" />
-              <path className="sales-grid-line" d="M48 112H608" />
-              <path className="sales-grid-line" d="M48 192H608" />
-              <path className="sales-area" d={chart.areaPath} />
-              <path className="sales-line" d={chart.linePath} pathLength="1" />
-              {chart.points.map((point, index) => (
-                <g className="sales-point" key={point.date} style={{ animationDelay: `${0.18 + index * 0.06}s` }}>
-                  <circle cx={point.x} cy={point.y} r="5" />
-                  <title>{`${formatShortDate(point.date)}: ${money(point.revenue)}`}</title>
-                </g>
-              ))}
-            </svg>
-            <div className="sales-axis">
-              <span>{formatShortDate(chart.points[0].date)}</span>
-              <span>{money(chart.maxRevenue)}</span>
-              <span>{formatShortDate(chart.points[chart.points.length - 1].date)}</span>
-            </div>
-          </>
+              <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
+              <XAxis dataKey="date" tickFormatter={formatShortDate} tick={{ fill: "#8f95a3", fontSize: 11 }} />
+              <YAxis tickFormatter={(value) => `$${Number(value).toLocaleString()}`} tick={{ fill: "#8f95a3", fontSize: 11 }} width={70} />
+              <Tooltip contentStyle={tooltipStyle} formatter={(value) => money(value)} labelFormatter={formatShortDate} />
+              <Area
+                animationDuration={1200}
+                dataKey="revenue"
+                fill="url(#salesAreaGradient)"
+                stroke="#18d3b2"
+                strokeWidth={4}
+                type="monotone"
+              />
+            </AreaChart>
+          </ResponsiveContainer>
         )}
       </div>
     </section>
@@ -1059,6 +1715,7 @@ function makeInvoiceItem() {
 function Tires({
   filters,
   form,
+  highlightedRow,
   onChange,
   onClearFilters,
   onDelete,
@@ -1068,8 +1725,38 @@ function Tires({
   onSubmit,
   tires
 }) {
+  function exportInventory() {
+    const csv = toCsv(
+      ["Brand", "Model", "Size", "Season", "Condition", "Quantity", "Reserved", "Available", "Price", "Location"],
+      tires.map((tire) => [
+        tire.brand,
+        tire.model || "",
+        `${tire.width}/${tire.aspectRatio}R${tire.rimSize}`,
+        tire.season || "",
+        tire.condition || "",
+        tire.quantity,
+        tire.reservedQuantity || 0,
+        tire.availableQuantity ?? tire.quantity,
+        tire.price,
+        tire.location || ""
+      ])
+    );
+
+    downloadTextFile("tiretrack-inventory.csv", csv, "text/csv");
+  }
+
   return (
     <section className="work-area">
+      <div className="section-toolbar">
+        <div>
+          <span className="eyebrow">Inventory</span>
+          <h3>Tire Stock</h3>
+        </div>
+        <button className="ghost-button with-icon" onClick={exportInventory} type="button">
+          <Download size={16} />
+          Export CSV
+        </button>
+      </div>
       <form className="panel form-grid" onSubmit={onSubmit}>
         <Input label="Brand" required value={form.brand} onChange={(brand) => onChange({ ...form, brand })} />
         <Input label="Model" value={form.model} onChange={(model) => onChange({ ...form, model })} />
@@ -1132,7 +1819,7 @@ function Tires({
         </div>
       </form>
 
-      <InventoryTable onDelete={onDelete} onRefill={onRefill} tires={tires} />
+      <InventoryTable highlightedRow={highlightedRow} onDelete={onDelete} onRefill={onRefill} tires={tires} />
     </section>
   );
 }
@@ -1154,6 +1841,7 @@ function Appointments({
   appointments,
   editingId,
   form,
+  highlightedRow,
   onCancelEdit,
   onChange,
   onDelete,
@@ -1187,11 +1875,17 @@ function Appointments({
           tires={tires}
         />
         <AppointmentDatePicker
+          appointments={appointments}
+          editingId={editingId}
           value={form.appointmentDate}
           onChange={(appointmentDate) => onChange({ ...form, appointmentDate })}
         />
         <Select label="Service" required value={form.serviceType} onChange={(serviceType) => onChange({ ...form, serviceType })} options={["INSTALLATION", "BALANCING", "ROTATION", "REPAIR"]} />
         <Select label="Status" value={form.status} onChange={(status) => onChange({ ...form, status })} options={["BOOKED", "COMPLETED", "CANCELLED"]} />
+        <Select label="Reminder" value={form.reminderStatus} onChange={(reminderStatus) => onChange({ ...form, reminderStatus })} options={["NOT_SET", "SCHEDULED", "SENT"]} />
+        <Input label="Reminder at" type="datetime-local" value={form.reminderAt || ""} onChange={(reminderAt) => onChange({ ...form, reminderAt })} />
+        <Select label="Confirmation" value={form.confirmationStatus} onChange={(confirmationStatus) => onChange({ ...form, confirmationStatus })} options={["PENDING", "CONFIRMED", "NO_SHOW"]} />
+        <Input label="Cancel / no-show reason" value={form.cancelReason || ""} onChange={(cancelReason) => onChange({ ...form, cancelReason })} />
         <Input label="Notes" value={form.notes} onChange={(notes) => onChange({ ...form, notes })} />
         <button className="primary-button" type="submit">
           {editingId ? "Save Changes" : "Book Appointment"}
@@ -1199,6 +1893,7 @@ function Appointments({
       </form>
 
       <DataTable
+        highlightedRow={highlightedRow}
         actions={(appointment) => (
           <div className="table-actions">
             <button className="ghost-button" onClick={() => onEdit(appointment)} type="button">
@@ -1209,10 +1904,10 @@ function Appointments({
             </button>
           </div>
         )}
-        columns={["Customer", "Phone", "Vehicle", "Tire setup", "Date", "Service", "Status", ""]}
+        columns={["Customer", "Phone", "Vehicle", "Tire setup", "Date", "Service", "Reminder", "Confirm", "Status", ""]}
         emptyText="No appointments yet."
         rows={appointments.map((appointment) => ({
-          key: appointment.id,
+          key: `appointment-${appointment.id}`,
           values: [
             appointment.customerName,
             appointment.phone,
@@ -1220,6 +1915,8 @@ function Appointments({
             appointment.tireSize || "-",
             dateTime(appointment.appointmentDate),
             appointment.serviceType,
+            appointment.reminderStatus || "NOT_SET",
+            appointment.confirmationStatus || "PENDING",
             appointment.status || "-"
           ],
           source: appointment
@@ -1429,15 +2126,33 @@ function TireSetupFields({ disabled, form, onChange, tires }) {
   );
 }
 
-function AppointmentDatePicker({ onChange, value }) {
+function AppointmentDatePicker({ appointments, editingId, onChange, value }) {
   const { date, time } = splitAppointmentDate(value);
-  const appointmentTimes = ["08:00", "09:00", "10:00", "11:00", "13:00", "14:00", "15:00", "16:00"];
+  const minDate = todayDateKey();
+
+  function appointmentAtSlot(slot) {
+    return appointments.find((appointment) =>
+      Number(appointment.id) !== Number(editingId)
+      && isBookableAppointment(appointment)
+      && appointmentDateKey(appointment.appointmentDate) === date
+      && appointmentTimeKey(appointment.appointmentDate) === slot
+    );
+  }
 
   function updateDate(nextDate) {
+    if (nextDate < minDate) {
+      onChange(joinAppointmentDate(minDate, time || "09:00"));
+      return;
+    }
+
     onChange(joinAppointmentDate(nextDate, time || "09:00"));
   }
 
   function updateTime(nextTime) {
+    if (!date || date < minDate || appointmentAtSlot(nextTime)) {
+      return;
+    }
+
     onChange(joinAppointmentDate(date, nextTime));
   }
 
@@ -1447,7 +2162,7 @@ function AppointmentDatePicker({ onChange, value }) {
       <div className="date-time-fields">
         <label>
           <span>Date</span>
-          <input required type="date" value={date} onChange={(event) => updateDate(event.target.value)} />
+          <input required min={minDate} type="date" value={date} onChange={(event) => updateDate(event.target.value)} />
         </label>
         <label>
           <span>Time</span>
@@ -1455,18 +2170,85 @@ function AppointmentDatePicker({ onChange, value }) {
         </label>
       </div>
       <div className="time-slots" aria-label="Quick appointment times">
-        {appointmentTimes.map((slot) => (
-          <button
-            className={time === slot ? "selected" : ""}
-            key={slot}
-            onClick={() => updateTime(slot)}
-            type="button"
-          >
-            {slot}
-          </button>
-        ))}
+        {appointmentTimes.map((slot) => {
+          const bookedAppointment = appointmentAtSlot(slot);
+
+          return (
+            <button
+              className={[time === slot ? "selected" : "", bookedAppointment ? "booked" : ""].filter(Boolean).join(" ")}
+              disabled={!date || date < minDate || Boolean(bookedAppointment)}
+              key={slot}
+              onClick={() => updateTime(slot)}
+              title={bookedAppointment ? `Booked by ${bookedAppointment.customerName}` : "Available"}
+              type="button"
+            >
+              {slot}
+            </button>
+          );
+        })}
       </div>
+      <AppointmentDayView
+        appointments={appointments}
+        editingId={editingId}
+        selectedValue={value}
+        onSelect={onChange}
+      />
     </fieldset>
+  );
+}
+
+function AppointmentDayView({ appointments, editingId, onSelect, selectedValue }) {
+  const { date, time } = splitAppointmentDate(selectedValue);
+  const selectedDate = date || todayDateKey();
+  const isPastDate = selectedDate < todayDateKey();
+
+  function appointmentAtSlot(slot) {
+    return appointments.find((appointment) =>
+      Number(appointment.id) !== Number(editingId)
+      && isBookableAppointment(appointment)
+      && appointmentDateKey(appointment.appointmentDate) === selectedDate
+      && appointmentTimeKey(appointment.appointmentDate) === slot
+    );
+  }
+
+  return (
+    <section className="day-view panel">
+      <div className="day-view-header">
+        <div>
+          <span className="eyebrow">Day view</span>
+          <h3>{selectedDate}</h3>
+        </div>
+        <div className="day-view-legend">
+          <span><i className="free" />Free</span>
+          <span><i className="booked" />Booked</span>
+        </div>
+      </div>
+      <div className="day-view-slots">
+        {appointmentTimes.map((slot) => {
+          const appointment = appointmentAtSlot(slot);
+          const isSelected = time === slot;
+
+          return (
+            <button
+              className={[
+                "day-view-slot",
+                appointment ? "booked" : "free",
+                isSelected ? "selected" : ""
+              ].filter(Boolean).join(" ")}
+              disabled={isPastDate || Boolean(appointment)}
+              key={slot}
+              onClick={() => onSelect(joinAppointmentDate(selectedDate, slot))}
+              type="button"
+            >
+              <strong>{slot}</strong>
+              <span>{appointment ? appointment.customerName : "Open slot"}</span>
+              {appointment && <small>{appointment.serviceType}</small>}
+              {!appointment && <CheckCircle2 size={16} />}
+            </button>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -1474,11 +2256,15 @@ function Invoices({
   appointments,
   form,
   generatedInvoice,
-  generatedInvoiceCompanyName,
+  highlightedRow,
   invoices,
   onChange,
   onDelete,
+  onMarkPaid,
+  onPreviewInvoice,
+  onUpdateStatus,
   onSubmit,
+  settings,
   tires
 }) {
   const displayedInvoices = [...invoices].sort((first, second) => Number(second.id || 0) - Number(first.id || 0));
@@ -1487,8 +2273,63 @@ function Invoices({
     (total, item) => total + Number(item.quantity || 0) * Number(item.unitPrice || 0),
     0
   );
-  const tax = subtotal * 0.13;
+  const taxRate = Number(settings.taxRate || 13) / 100;
+  const tax = subtotal * taxRate;
   const total = subtotal + tax;
+
+  function exportInvoices() {
+    const csv = toCsv(
+      ["Customer", "Phone", "Vehicle", "Subtotal", "Tax", "Total", "Payment", "Status"],
+      displayedInvoices.map((invoice) => [
+        invoice.customerName,
+        invoice.phone,
+        invoice.vehicle || "",
+        invoice.subtotal,
+        invoice.taxAmount,
+        invoice.total,
+        invoice.paymentMethod || "",
+        invoice.status || ""
+      ])
+    );
+
+    downloadTextFile("tiretrack-invoices.csv", csv, "text/csv");
+  }
+
+  function exportMonthlyReport() {
+    const now = new Date();
+    const month = now.getMonth();
+    const year = now.getFullYear();
+    const monthlyInvoices = invoices.filter((invoice) => {
+      const date = new Date(invoice.createdAt || invoice.invoiceDate || Date.now());
+      return date.getMonth() === month && date.getFullYear() === year;
+    });
+    const revenue = monthlyInvoices.reduce((sum, invoice) => sum + Number(invoice.total || 0), 0);
+    const reportHtml = `
+      <html><head><title>Monthly Sales Report</title></head>
+      <body style="font-family: Arial, sans-serif; padding: 32px;">
+        <h1>${settings.shopName || "Shop"} Monthly Sales Report</h1>
+        <p>${now.toLocaleString(undefined, { month: "long", year: "numeric" })}</p>
+        <h2>${money(revenue)} revenue</h2>
+        <p>${monthlyInvoices.length} invoices</p>
+        <table style="width:100%;border-collapse:collapse;margin-top:24px;">
+          <thead><tr><th align="left">Customer</th><th align="left">Status</th><th align="right">Total</th></tr></thead>
+          <tbody>
+            ${monthlyInvoices.map((invoice) => `<tr><td>${invoice.customerName}</td><td>${invoice.status || ""}</td><td align="right">${money(invoice.total)}</td></tr>`).join("")}
+          </tbody>
+        </table>
+        <script>window.print()</script>
+      </body></html>
+    `;
+    const reportWindow = window.open("", "_blank");
+
+    if (!reportWindow) {
+      setTimeout(() => downloadTextFile("monthly-sales-report.html", reportHtml, "text/html"), 0);
+      return;
+    }
+
+    reportWindow.document.write(reportHtml);
+    reportWindow.document.close();
+  }
 
   function updateItem(index, nextValues) {
     onChange({
@@ -1527,6 +2368,22 @@ function Invoices({
 
   return (
     <section className="work-area">
+      <div className="section-toolbar">
+        <div>
+          <span className="eyebrow">Billing</span>
+          <h3>Invoices</h3>
+        </div>
+        <div className="toolbar-actions">
+          <button className="ghost-button with-icon" onClick={exportInvoices} type="button">
+            <Download size={16} />
+            Export CSV
+          </button>
+          <button className="ghost-button with-icon" onClick={exportMonthlyReport} type="button">
+            <FileText size={16} />
+            Monthly PDF
+          </button>
+        </div>
+      </div>
       <form className="panel form-grid" onSubmit={onSubmit}>
         <div className="invoice-source">
           <div>
@@ -1548,9 +2405,9 @@ function Invoices({
         <Input label="Customer" required value={form.customerName} onChange={(customerName) => onChange({ ...form, customerName })} />
         <Input label="Phone" required type="tel" value={form.phone} onChange={(phone) => onChange({ ...form, phone })} />
         <Input label="Vehicle" placeholder="Example: 2020 Toyota Camry" value={form.vehicle} onChange={(vehicle) => onChange({ ...form, vehicle })} />
-        <Input label="Company name" value={form.companyName} onChange={(companyName) => onChange({ ...form, companyName })} />
+        <Input label="Company name" value={settings.shopName} onChange={() => {}} disabled />
         <Select label="Payment" value={form.paymentMethod} onChange={(paymentMethod) => onChange({ ...form, paymentMethod })} options={["Cash", "Debit", "Credit", "E-Transfer"]} />
-        <Select label="Status" value={form.status} onChange={(status) => onChange({ ...form, status })} options={["PAID", "UNPAID", "PARTIAL"]} />
+        <Select label="Status" value={form.status} onChange={(status) => onChange({ ...form, status })} options={["DRAFT", "SENT", "UNPAID", "PARTIAL", "PAID", "VOID"]} />
 
         <fieldset className="invoice-items-editor">
           <legend>Line items</legend>
@@ -1588,14 +2445,30 @@ function Invoices({
         <div className="invoice-total-preview">
           <span>Invoice total</span>
           <strong>{money(total)}</strong>
-          <small>{money(subtotal)} subtotal + {money(tax)} HST</small>
+          <small>{money(subtotal)} subtotal + {money(tax)} tax preview</small>
         </div>
         <button className="primary-button" type="submit">Create Invoice</button>
       </form>
 
       <DataTable
+        highlightedRow={highlightedRow}
         actions={(invoice) => (
           <div className="table-actions">
+            {invoice.status !== "PAID" && (
+              <button className="ghost-button" onClick={() => onMarkPaid(invoice)} type="button">
+                Mark Paid
+              </button>
+            )}
+            {["SENT", "UNPAID", "PARTIAL", "VOID"].map((status) => (
+              invoice.status !== status && (
+                <button className="ghost-button" key={status} onClick={() => onUpdateStatus(invoice, status)} type="button">
+                  {status}
+                </button>
+              )
+            ))}
+            <button className="ghost-button" onClick={() => onPreviewInvoice(invoice)} type="button">
+              Preview
+            </button>
             <button className="danger-button" onClick={() => onDelete(invoice.id)} type="button">
               Delete
             </button>
@@ -1604,7 +2477,7 @@ function Invoices({
         columns={["Customer", "Phone", "Vehicle", "Subtotal", "HST", "Total", "Payment", "Status", ""]}
         emptyText="No invoices yet."
         rows={displayedInvoices.map((invoice) => ({
-          key: invoice.id,
+          key: `invoice-${invoice.id}`,
           values: [
             invoice.customerName,
             invoice.phone,
@@ -1619,7 +2492,7 @@ function Invoices({
         }))}
       />
 
-      {generatedInvoice && <PrintableInvoice companyName={generatedInvoiceCompanyName} invoice={generatedInvoice} />}
+      {generatedInvoice && <PrintableInvoice settings={settings} invoice={generatedInvoice} />}
     </section>
   );
 }
@@ -1640,7 +2513,7 @@ function invoiceItemFromTire(tireId, quantity, tires) {
   };
 }
 
-function PrintableInvoice({ companyName, invoice }) {
+function PrintableInvoice({ settings, invoice }) {
   const items = invoice.items || [];
 
   return (
@@ -1658,8 +2531,11 @@ function PrintableInvoice({ companyName, invoice }) {
       <article className="invoice-document">
         <header className="invoice-document-header">
           <div>
-            <h2>{companyName}</h2>
+            {settings.logoUrl && <img alt={`${settings.shopName} logo`} className="invoice-logo" src={settings.logoUrl} />}
+            <h2>{settings.shopName}</h2>
             <p>Invoice</p>
+            <p>{settings.phone}</p>
+            <p>{settings.address}</p>
           </div>
           <div>
             <strong>Invoice #{invoice.id}</strong>
@@ -1710,53 +2586,317 @@ function PrintableInvoice({ companyName, invoice }) {
           <div><span>HST</span><strong>{money(invoice.taxAmount ?? 0)}</strong></div>
           <div className="grand-total"><span>Total</span><strong>{money(invoice.total)}</strong></div>
         </section>
+        <p className="invoice-terms">{settings.invoiceTerms}</p>
       </article>
     </section>
   );
 }
 
-function InventoryTable({ onDelete, onRefill, tires }) {
+function inventoryWarnings(tire) {
+  const quantity = Number(tire.quantity || 0);
+  const available = Number(tire.availableQuantity ?? tire.quantity ?? 0);
+  const reserved = Number(tire.reservedQuantity || 0);
+  const warnings = [];
+
+  if (available <= 0) {
+    warnings.push({ label: "Out of stock", tone: "red" });
+  } else if (available < 3) {
+    warnings.push({ label: "Low stock", tone: "red" });
+  } else if (available <= 5) {
+    warnings.push({ label: "Watch", tone: "yellow" });
+  }
+
+  if (reserved > 0 && quantity > 0 && reserved / quantity >= 0.7) {
+    warnings.push({ label: "Reserved high", tone: "yellow" });
+  }
+
+  if (quantity >= 12 && reserved >= 4) {
+    warnings.push({ label: "Fast moving", tone: "green" });
+  }
+
+  return warnings;
+}
+
+function WarningBadges({ warnings }) {
+  if (!warnings.length) {
+    return <span className="muted-cell">Healthy</span>;
+  }
+
   return (
-    <DataTable
-      actions={(tire) => (
-        <div className="table-actions">
-          <button className="ghost-button" onClick={() => onRefill(tire)} type="button">
-            Refill
-          </button>
-          <button className="danger-button" onClick={() => onDelete(tire.id)} type="button">
-            Delete
-          </button>
-        </div>
-      )}
-      columns={["Brand", "Model", "Size", "Season", "Condition", "Qty", "Reserved", "Available", "Price", "Location", ""]}
-      emptyText="No tires yet."
-      rows={tires.map((tire) => ({
-        key: tire.id,
-        values: [
-          tire.brand,
-          tire.model || "-",
-          `${tire.width}/${tire.aspectRatio}R${tire.rimSize}`,
-          tire.season || "-",
-          tire.condition || "-",
-          tire.quantity,
-          tire.reservedQuantity || 0,
-          urgentStockValue(tire, tire.availableQuantity ?? tire.quantity),
-          money(tire.price),
-          tire.location || "-"
-        ],
-        source: tire
-      }))}
-    />
+    <div className="warning-badges">
+      {warnings.map((warning) => (
+        <span className={`warning-chip ${warning.tone}`} key={warning.label}>{warning.label}</span>
+      ))}
+    </div>
   );
 }
 
-function DataTable({ actions, columns, emptyText, rows }) {
+function InventoryTable({ highlightedRow, onDelete, onRefill, tires }) {
+  const [selectedTire, setSelectedTire] = useState(null);
+
+  return (
+    <>
+      <DataTable
+        highlightedRow={highlightedRow}
+        actions={(tire) => (
+          <div className="table-actions">
+            <button className="ghost-button" onClick={() => setSelectedTire(tire)} type="button">
+              Details
+            </button>
+            <button className="ghost-button" onClick={() => onRefill(tire)} type="button">
+              Refill
+            </button>
+            <button className="danger-button" onClick={() => onDelete(tire.id)} type="button">
+              Delete
+            </button>
+          </div>
+        )}
+        columns={["Brand", "Model", "Size", "Season", "Condition", "Warnings", "Qty", "Reserved", "Available", "Price", "Location", ""]}
+        emptyText="No tires yet."
+        rows={tires.map((tire) => ({
+          key: `tire-${tire.id}`,
+          values: [
+            tire.brand,
+            tire.model || "-",
+            `${tire.width}/${tire.aspectRatio}R${tire.rimSize}`,
+            tire.season || "-",
+            tire.condition || "-",
+            { value: <WarningBadges warnings={inventoryWarnings(tire)} />, text: inventoryWarnings(tire).map((warning) => warning.label).join(" ") },
+            tire.quantity,
+            tire.reservedQuantity || 0,
+            urgentStockValue(tire, tire.availableQuantity ?? tire.quantity),
+            money(tire.price),
+            tire.location || "-"
+          ],
+          source: tire
+        }))}
+      />
+      {selectedTire && (
+        <TireDrawer
+          onClose={() => setSelectedTire(null)}
+          onRefill={() => {
+            onRefill(selectedTire);
+            setSelectedTire(null);
+          }}
+          tire={selectedTire}
+        />
+      )}
+    </>
+  );
+}
+
+function TireDrawer({ onClose, onRefill, tire }) {
+  const warnings = inventoryWarnings(tire);
+  const available = tire.availableQuantity ?? tire.quantity;
+
+  return (
+    <div className="drawer-backdrop" role="presentation" onClick={onClose}>
+      <aside className="tire-drawer" role="dialog" aria-label="Tire details" onClick={(event) => event.stopPropagation()}>
+        <div className="drawer-header">
+          <div>
+            <span className="eyebrow">Tire Detail</span>
+            <h3>{tire.brand} {tire.model || ""}</h3>
+            <p>{tire.width}/{tire.aspectRatio}R{tire.rimSize} · {tire.condition || "-"}</p>
+          </div>
+          <button className="ghost-button" onClick={onClose} type="button">Close</button>
+        </div>
+        <div className="drawer-stats">
+          <div><span>Total</span><strong>{tire.quantity}</strong></div>
+          <div><span>Reserved</span><strong>{tire.reservedQuantity || 0}</strong></div>
+          <div><span>Available</span><strong>{available}</strong></div>
+          <div><span>Value</span><strong>{money(Number(tire.quantity || 0) * Number(tire.price || 0))}</strong></div>
+        </div>
+        <WarningBadges warnings={warnings} />
+        <div className="drawer-meta">
+          <span>Season</span><strong>{tire.season || "-"}</strong>
+          <span>Location</span><strong>{tire.location || "-"}</strong>
+          <span>Unit price</span><strong>{money(tire.price)}</strong>
+        </div>
+        <button className="primary-button" onClick={onRefill} type="button">Refill Tire</button>
+      </aside>
+    </div>
+  );
+}
+
+function LoginScreen({ onLogin }) {
+  return (
+    <main className="login-shell">
+      <motion.section
+        animate={{ opacity: 1, y: 0 }}
+        className="login-panel"
+        initial={{ opacity: 0, y: 16 }}
+        transition={{ duration: 0.4 }}
+      >
+        <div className="brand-mark large"><Disc3 size={30} /></div>
+        <span className="eyebrow">Business dashboard</span>
+        <h1>TireTrack</h1>
+        <p>Inventory, appointments, invoices, and revenue in one polished shop workspace.</p>
+        <button className="primary-button with-icon" onClick={onLogin} type="button">
+          <LogIn size={18} />
+          Enter Dashboard
+        </button>
+      </motion.section>
+    </main>
+  );
+}
+
+function DashboardSkeleton() {
+  return (
+    <div className="skeleton-stack" aria-label="Loading dashboard">
+      <section className="metric-grid">
+        {Array.from({ length: 5 }).map((_, index) => (
+          <div className="skeleton-card" key={index} />
+        ))}
+      </section>
+      <section className="split">
+        <div className="skeleton-panel" />
+        <div className="skeleton-panel" />
+      </section>
+    </div>
+  );
+}
+
+function ActivityPanel({ children, icon: Icon, title }) {
+  return (
+    <motion.section
+      animate={{ opacity: 1, y: 0 }}
+      className="activity-panel panel"
+      initial={{ opacity: 0, y: 10 }}
+      transition={{ duration: 0.35 }}
+    >
+      <div className="activity-title">
+        <span className="metric-icon small"><Icon size={17} /></span>
+        <h3>{title}</h3>
+      </div>
+      <div className="activity-list">{children}</div>
+    </motion.section>
+  );
+}
+
+function SettingsPage({ onSave, settings }) {
+  const [draft, setDraft] = useState(settings);
+  const [saveMessage, setSaveMessage] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+
+  function update(field, value) {
+    setDraft((current) => ({ ...current, [field]: value }));
+  }
+
+  async function submit(event) {
+    event.preventDefault();
+    setIsSaving(true);
+    setSaveMessage("");
+
+    try {
+      await onSave(draft);
+      setSaveMessage("Settings saved and verified in the database.");
+    } catch (err) {
+      setSaveMessage(err.message || "Settings could not be verified.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <section className="work-area">
+      <form className="panel form-grid settings-form" onSubmit={submit}>
+        <div className="settings-header">
+          <span className="brand-mark"><SettingsIcon size={20} /></span>
+          <div>
+            <span className="eyebrow">Company settings</span>
+            <h3>Shop Branding & Invoice Defaults</h3>
+          </div>
+        </div>
+        <Input label="Shop name" required value={draft.shopName} onChange={(shopName) => update("shopName", shopName)} />
+        <Input label="Logo URL" value={draft.logoUrl} onChange={(logoUrl) => update("logoUrl", logoUrl)} placeholder="https://..." />
+        <Input label="Phone" value={draft.phone} onChange={(phone) => update("phone", phone)} />
+        <Input label="Address" value={draft.address} onChange={(address) => update("address", address)} />
+        <Input label="Tax rate %" min="0" step="0.01" type="number" value={draft.taxRate} onChange={(taxRate) => update("taxRate", taxRate)} />
+        <label className="settings-terms">
+          <span>Default invoice terms</span>
+          <textarea value={draft.invoiceTerms} onChange={(event) => update("invoiceTerms", event.target.value)} rows="4" />
+        </label>
+        <div className="settings-preview">
+          {draft.logoUrl && <img alt="" src={draft.logoUrl} />}
+          <strong>{draft.shopName || "Your Shop Name"}</strong>
+          <span>{draft.phone || "Phone not set"}</span>
+          <span>{draft.address || "Address not set"}</span>
+        </div>
+        {saveMessage && <div className={saveMessage.includes("verified") ? "success-alert" : "alert"}>{saveMessage}</div>}
+        <button className="primary-button" disabled={isSaving} type="submit">
+          {isSaving ? "Saving..." : "Save Settings"}
+        </button>
+      </form>
+    </section>
+  );
+}
+
+function StatusBadge({ value }) {
+  const normalized = String(value || "").toUpperCase();
+  const tone = statusClassMap[normalized] || "gray";
+
+  return <span className={`status-badge ${tone}`}>{normalized || "-"}</span>;
+}
+
+function renderCellValue(value) {
+  const rawValue = value?.value ?? value;
+
+  if (typeof rawValue === "string" && statusClassMap[rawValue.toUpperCase()]) {
+    return <StatusBadge value={rawValue} />;
+  }
+
+  return rawValue;
+}
+
+function EmptyTableState({ text }) {
+  return (
+    <div className="empty-state">
+      <span className="brand-mark"><FileText size={18} /></span>
+      <strong>{text}</strong>
+      <p>Use the form above to create your first record here.</p>
+    </div>
+  );
+}
+
+function DataTable({ actions, columns, emptyText, highlightedRow, rows }) {
+  const [query, setQuery] = useState("");
+  const [page, setPage] = useState(1);
   const normalizedRows = rows.map((row, index) =>
     Array.isArray(row) ? { key: index, values: row, source: row } : row
   );
+  const searchableRows = normalizedRows.filter((row) => {
+    const haystack = row.values.map((value) => value?.text ?? value?.value ?? value).join(" ").toLowerCase();
+
+    return haystack.includes(query.trim().toLowerCase());
+  });
+  const pageSize = 8;
+  const pageCount = Math.max(Math.ceil(searchableRows.length / pageSize), 1);
+  const currentPage = Math.min(page, pageCount);
+  const visibleRows = searchableRows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  function updateQuery(value) {
+    setQuery(value);
+    setPage(1);
+  }
 
   return (
     <div className="table-wrap">
+      <div className="table-toolbar">
+        <div className="table-search">
+          <input
+            aria-label="Search table"
+            onChange={(event) => updateQuery(event.target.value)}
+            placeholder="Search table"
+            value={query}
+          />
+        </div>
+        <div className="table-pagination">
+          <span>{searchableRows.length} rows</span>
+          <button disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)} type="button">Prev</button>
+          <strong>{currentPage}/{pageCount}</strong>
+          <button disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)} type="button">Next</button>
+        </div>
+      </div>
       <table>
         <thead>
           <tr>
@@ -1766,16 +2906,18 @@ function DataTable({ actions, columns, emptyText, rows }) {
           </tr>
         </thead>
         <tbody>
-          {normalizedRows.length === 0 ? (
+          {visibleRows.length === 0 ? (
             <tr>
-              <td colSpan={columns.length}>{emptyText}</td>
+              <td colSpan={columns.length}>
+                <EmptyTableState text={emptyText} />
+              </td>
             </tr>
           ) : (
-            normalizedRows.map((row) => (
-              <tr key={row.key}>
+            visibleRows.map((row) => (
+              <tr className={highlightedRow === row.key ? "highlight-row" : ""} key={row.key}>
                 {row.values.map((value, index) => (
                   <td className={value?.className || ""} key={`${row.key}-${index}`}>
-                    {value?.value ?? value}
+                    {renderCellValue(value)}
                   </td>
                 ))}
                 {actions && <td>{actions(row.source)}</td>}

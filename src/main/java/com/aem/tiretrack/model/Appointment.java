@@ -61,6 +61,18 @@ public class Appointment {
 
     private String notes;
 
+    @Column(name = "reminder_status")
+    private String reminderStatus = "NOT_SET";
+
+    @Column(name = "reminder_at")
+    private LocalDateTime reminderAt;
+
+    @Column(name = "confirmation_status")
+    private String confirmationStatus = "PENDING";
+
+    @Column(name = "cancel_reason")
+    private String cancelReason;
+
     @Enumerated(EnumType.STRING)
     private AppointmentStatus status;
 
@@ -73,6 +85,14 @@ public class Appointment {
 
         if (status == null) {
             status = AppointmentStatus.BOOKED;
+        }
+
+        if (reminderStatus == null) {
+            reminderStatus = "NOT_SET";
+        }
+
+        if (confirmationStatus == null) {
+            confirmationStatus = "PENDING";
         }
     }
 
@@ -170,6 +190,38 @@ public class Appointment {
 
     public void setNotes(String notes) {
         this.notes = notes;
+    }
+
+    public String getReminderStatus() {
+        return reminderStatus;
+    }
+
+    public void setReminderStatus(String reminderStatus) {
+        this.reminderStatus = reminderStatus;
+    }
+
+    public LocalDateTime getReminderAt() {
+        return reminderAt;
+    }
+
+    public void setReminderAt(LocalDateTime reminderAt) {
+        this.reminderAt = reminderAt;
+    }
+
+    public String getConfirmationStatus() {
+        return confirmationStatus;
+    }
+
+    public void setConfirmationStatus(String confirmationStatus) {
+        this.confirmationStatus = confirmationStatus;
+    }
+
+    public String getCancelReason() {
+        return cancelReason;
+    }
+
+    public void setCancelReason(String cancelReason) {
+        this.cancelReason = cancelReason;
     }
 
     public AppointmentStatus getStatus() {
