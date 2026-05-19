@@ -6,18 +6,20 @@ import org.springframework.stereotype.Service;
 import com.aem.tiretrack.dto.auth.LoginRequest;
 import com.aem.tiretrack.dto.auth.LoginResponse;
 import com.aem.tiretrack.dto.auth.RegisterRequest;
-import com.aem.tiretrack.enums.UserRole;
-import com.aem.tiretrack.repository.UserRepository;
 import com.aem.tiretrack.model.User;
+import com.aem.tiretrack.repository.UserRepository;
+import com.aem.tiretrack.security.JwtService;
 
 @Service
 public class AuthService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final JwtService jwtService;
 
-    public AuthService(UserRepository userRepository, PasswordEncoder passwordEncoder) {
+    public AuthService(UserRepository userRepository, PasswordEncoder passwordEncoder, JwtService jwtService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
+        this.jwtService = jwtService;
     }
 
     public LoginResponse  register(RegisterRequest request)
@@ -36,7 +38,9 @@ public class AuthService {
         user.setRole(request.getRole());
 
         User savedUser = userRepository.save(user);
-        return new LoginResponse(savedUser.getId(),savedUser.getFullName(),savedUser.getEmail(),savedUser.getRole(),"Registration successful");
+
+        String token = jwtService.generateToken(savedUser.getEmail());
+        return new LoginResponse(savedUser.getId(),savedUser.getFullName(),savedUser.getEmail(),savedUser.getRole(),"Registration successful", token);
     }
 
     public LoginResponse login(LoginRequest request)
@@ -48,6 +52,7 @@ public class AuthService {
             throw new IllegalArgumentException("Invalid email or password");
 
         }
-        return new LoginResponse(user.getId(),user.getFullName(),user.getEmail(),user.getRole(),"Login Successful");
+        String token = jwtService.generateToken(user.getEmail());
+        return new LoginResponse(user.getId(),user.getFullName(),user.getEmail(),user.getRole(),"Login Successful", token);
     }
 }

@@ -1,6 +1,13 @@
 package com.aem.tiretrack.service;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,6 +38,28 @@ public class AppointmentService {
     public Appointment getAppointmentById(Long id) {
         return appointmentRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Appointment not found"));
+    }
+
+    public List<String> getAvailableSlots(LocalDate date) {
+        LocalDateTime dayStart = date.atStartOfDay();
+        LocalDateTime dayEnd = date.atTime(LocalTime.MAX);
+
+        Set<LocalTime> bookedTimes = appointmentRepository.findByAppointmentDateBetween(dayStart, dayEnd).stream()
+                .map(appointment -> appointment.getAppointmentDate().toLocalTime())
+                .collect(Collectors.toSet());
+
+        LocalTime slotStart = LocalTime.of(9, 0);
+        LocalTime slotEnd = LocalTime.of(17, 0);
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("HH:mm");
+
+        List<String> availableSlots = new ArrayList<>();
+        for (LocalTime slot = slotStart; !slot.isAfter(slotEnd.minusMinutes(30)); slot = slot.plusMinutes(30)) {
+            if (!bookedTimes.contains(slot)) {
+                availableSlots.add(slot.format(formatter));
+            }
+        }
+
+        return availableSlots;
     }
 
     @Transactional
