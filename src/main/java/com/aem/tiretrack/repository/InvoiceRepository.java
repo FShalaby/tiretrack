@@ -6,6 +6,7 @@ import java.util.List;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import com.aem.tiretrack.model.Invoice;
 
@@ -26,4 +27,9 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long>
             ORDER BY DATE(created_at)
             """, nativeQuery = true)
     List<Object[]> getSalesSince(LocalDateTime startDate);
+
+    List<Invoice> findByCustomerIdOrderByCreatedAtDesc(Long customerId);
+
+    @Query("select i from Invoice i where i.customerId = :customerId or i.phone = :phone order by i.createdAt desc")
+    List<Invoice> findCustomerHistory(@Param("customerId") Long customerId, @Param("phone") String phone);
 }

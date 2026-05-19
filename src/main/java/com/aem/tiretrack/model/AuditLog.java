@@ -27,6 +27,9 @@ public class AuditLog {
 
     private String message;
 
+    @Column(name = "performed_by")
+    private String performedBy;
+
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 
@@ -69,6 +72,14 @@ public class AuditLog {
 
     public void setMessage(String message) {
         this.message = message;
+    }
+
+    public String getPerformedBy() {
+        return performedBy;
+    }
+
+    public void setPerformedBy(String performedBy) {
+        this.performedBy = performedBy;
     }
 
     public LocalDateTime getCreatedAt() {

@@ -2,13 +2,93 @@ const jsonHeaders = {
   "Content-Type": "application/json"
 };
 
-async function request(path, options = {}) {
-  let response;
+function getAuthToken() {
+  return localStorage.getItem("tiretrack-token");
+}
+
+function getRefreshToken() {
+  return localStorage.getItem("tiretrack-refresh-token");
+}
+
+function setTokens(token, refreshToken) {
+  localStorage.setItem("tiretrack-token", token);
+  localStorage.setItem("tiretrack-refresh-token", refreshToken);
+}
+
+function clearTokens() {
+  localStorage.removeItem("tiretrack-token");
+  localStorage.removeItem("tiretrack-refresh-token");
+  localStorage.removeItem("tiretrack-auth");
+}
+
+function persistAuth(authData) {
+  localStorage.setItem("tiretrack-auth", JSON.stringify(authData));
+  setTokens(authData.token, authData.refreshToken);
+  window.dispatchEvent(new CustomEvent("tiretrack-auth-updated", { detail: authData }));
+}
+
+function clearAuthSession() {
+  clearTokens();
+  window.dispatchEvent(new Event("tiretrack-auth-cleared"));
+}
+
+async function refreshAuthToken() {
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) {
+    return false;
+  }
 
   try {
-    response = await fetch(path, options);
+    const data = await request("/api/auth/refresh", {
+      method: "POST",
+      headers: jsonHeaders,
+      body: JSON.stringify({ refreshToken })
+    }, true);
+
+    persistAuth(data);
+    return true;
+  } catch {
+    clearAuthSession();
+    return false;
+  }
+}
+
+async function request(path, options = {}, skipAuth = false) {
+  let response;
+
+  const token = getAuthToken();
+  const headers = {
+    ...options.headers,
+    ...jsonHeaders
+  };
+
+  if (!skipAuth && token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  try {
+    response = await fetch(path, {
+      ...options,
+      headers
+    });
   } catch {
     throw new Error(`Could not reach the backend for ${path}. Make sure Spring Boot is running on port 8080.`);
+  }
+
+  if (response.status === 401 && !skipAuth) {
+    const refreshed = await refreshAuthToken();
+    if (refreshed) {
+      const retryToken = getAuthToken();
+      response = await fetch(path, {
+        ...options,
+        headers: {
+          ...headers,
+          Authorization: `Bearer ${retryToken}`
+        }
+      });
+    } else {
+      clearAuthSession();
+    }
   }
 
   if (!response.ok) {
@@ -31,6 +111,46 @@ async function request(path, options = {}) {
 
   const text = await response.text();
   return text ? JSON.parse(text) : null;
+}
+
+export function login(credentials) {
+  return request("/api/auth/login", {
+    method: "POST",
+    headers: jsonHeaders,
+    body: JSON.stringify(credentials)
+  }, true);
+}
+
+export function register(account) {
+  return request("/api/auth/register", {
+    method: "POST",
+    headers: jsonHeaders,
+    body: JSON.stringify(account)
+  }, true);
+}
+
+export function refreshToken(requestBody) {
+  return request("/api/auth/refresh", {
+    method: "POST",
+    headers: jsonHeaders,
+    body: JSON.stringify(requestBody)
+  }, true);
+}
+
+export function logout() {
+  clearAuthSession();
+}
+
+export function getAvailableSlots(date) {
+  return request(`/api/public/available-slots?date=${encodeURIComponent(date)}`, {}, true);
+}
+
+export function createPublicBooking(booking) {
+  return request("/api/public/bookings", {
+    method: "POST",
+    headers: jsonHeaders,
+    body: JSON.stringify(booking)
+  }, true);
 }
 
 export function getDashboard() {
@@ -161,5 +281,55 @@ export function updateInvoiceStatus(id, status) {
     method: "PUT",
     headers: jsonHeaders,
     body: JSON.stringify({ status })
+  });
+}
+
+export function getCustomerPortal() {
+  return request("/api/customer/portal");
+}
+
+export function createCustomerVehicle(vehicle) {
+  return request("/api/customer/vehicles", {
+    method: "POST",
+    headers: jsonHeaders,
+    body: JSON.stringify(vehicle)
+  });
+}
+
+export function deleteCustomerVehicle(id) {
+  return request(`/api/customer/vehicles/${id}`, {
+    method: "DELETE"
+  });
+}
+
+export function createCustomerAppointment(appointment) {
+  return request("/api/customer/appointments", {
+    method: "POST",
+    headers: jsonHeaders,
+    body: JSON.stringify(appointment)
+  });
+}
+
+export function payCustomerInvoice(id) {
+  return request(`/api/customer/invoices/${id}/pay`, {
+    method: "POST"
+  });
+}
+
+export function markCustomerNotificationRead(id) {
+  return request(`/api/customer/notifications/${id}/read`, {
+    method: "PUT"
+  });
+}
+
+export function getCustomers() {
+  return request("/api/customers");
+}
+
+export function sendCustomerNotice(id, notice) {
+  return request(`/api/customers/${id}/notices`, {
+    method: "POST",
+    headers: jsonHeaders,
+    body: JSON.stringify(notice)
   });
 }

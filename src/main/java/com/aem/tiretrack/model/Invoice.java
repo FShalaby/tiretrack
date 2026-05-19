@@ -1,6 +1,7 @@
 package com.aem.tiretrack.model;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -36,6 +37,9 @@ public class Invoice {
 
     private String vehicle;
 
+    @Column(name = "customer_id")
+    private Long customerId;
+
     @Column(name = "appointment_id")
     private Long appointmentId;
 
@@ -57,6 +61,12 @@ public class Invoice {
     private String paymentMethod;
 
     private String status;
+
+    @Column(name = "due_date")
+    private LocalDate dueDate;
+
+    @Column(name = "paid_at")
+    private LocalDateTime paidAt;
 
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
@@ -115,6 +125,14 @@ public class Invoice {
         this.vehicle = vehicle;
     }
 
+    public Long getCustomerId() {
+        return customerId;
+    }
+
+    public void setCustomerId(Long customerId) {
+        this.customerId = customerId;
+    }
+
     public Long getAppointmentId() {
         return appointmentId;
     }
@@ -169,6 +187,22 @@ public class Invoice {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public LocalDate getDueDate() {
+        return dueDate;
+    }
+
+    public void setDueDate(LocalDate dueDate) {
+        this.dueDate = dueDate;
+    }
+
+    public LocalDateTime getPaidAt() {
+        return paidAt;
+    }
+
+    public void setPaidAt(LocalDateTime paidAt) {
+        this.paidAt = paidAt;
     }
 
     public LocalDateTime getCreatedAt() {

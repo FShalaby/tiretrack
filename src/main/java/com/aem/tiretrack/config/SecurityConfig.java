@@ -33,7 +33,9 @@ public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Excepti
             .requestMatchers("/api/dashboard/**").hasRole("ADMIN")
             .requestMatchers("/api/settings/**").hasRole("ADMIN")
             .requestMatchers("/api/reports/**").hasRole("ADMIN")
-            .requestMatchers("/api/audit/**").hasRole("ADMIN")
+            .requestMatchers("/api/audit-logs/**").hasRole("ADMIN")
+            .requestMatchers("/api/customers/**").hasRole("ADMIN")
+            .requestMatchers("/api/customer/**").hasRole("CUSTOMER")
 
             // Admin + employee operational routes
             .requestMatchers("/api/invoices/**").hasAnyRole("ADMIN", "EMPLOYEE")

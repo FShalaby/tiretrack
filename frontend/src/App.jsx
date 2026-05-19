@@ -6,6 +6,7 @@ import {
   CalendarDays,
   CheckCircle2,
   CircleDollarSign,
+  ClipboardList,
   Download,
   Disc3,
   FileText,
@@ -29,9 +30,13 @@ import {
 } from "recharts";
 import {
   createAppointment,
+  createCustomerAppointment,
+  createCustomerVehicle,
   createInvoice,
+  createPublicBooking,
   createTire,
   deleteAppointment,
+  deleteCustomerVehicle,
   deleteInvoice,
   deleteTire,
   getAppointments,
@@ -43,23 +48,36 @@ import {
   getSalesData,
   getSettings,
   getTires,
+  getAvailableSlots,
+  getCustomerPortal,
+  getCustomers,
+  login as loginApi,
+  logout as logoutApi,
+  markCustomerNotificationRead,
+  payCustomerInvoice,
+  register as registerApi,
+  refreshToken as refreshTokenApi,
   searchTiresByBrand,
   searchTiresByCondition,
   searchTiresByLocation,
   searchTiresBySeason,
   searchTiresBySize,
+  sendCustomerNotice,
   updateAppointment,
   updateInvoiceStatus,
   updateSettings,
   updateTire
 } from "./api";
 
-const tabs = ["Dashboard", "Tires", "Appointments", "Invoices", "Settings"];
+const tabs = ["Dashboard", "Tires", "Appointments", "Invoices", "Customers", "Audit Logs", "Settings"];
+const employeeHiddenTabs = ["Dashboard", "Customers", "Audit Logs", "Settings"];
 const tabIcons = {
   Dashboard: Gauge,
   Tires: Disc3,
   Appointments: CalendarDays,
   Invoices: FileText,
+  Customers: UserCircle,
+  "Audit Logs": ClipboardList,
   Settings: SettingsIcon
 };
 const metricIcons = {
@@ -67,7 +85,8 @@ const metricIcons = {
   "Low stock": AlertTriangle,
   Invoices: FileText,
   Revenue: CircleDollarSign,
-  "Today appointments": CalendarDays
+  "Today appointments": CalendarDays,
+  "Customer alerts": UserCircle
 };
 const statusClassMap = {
   BOOKED: "blue",
@@ -76,6 +95,9 @@ const statusClassMap = {
   PAID: "green",
   UNPAID: "red",
   PARTIAL: "yellow",
+  OVERDUE: "red",
+  DUE_SOON: "yellow",
+  REMINDER: "blue",
   NEW: "green",
   USED: "yellow"
 };
@@ -218,6 +240,42 @@ function makeInvoiceForm(settings) {
   };
 }
 
+function loadStoredAuth() {
+  try {
+    return JSON.parse(localStorage.getItem("tiretrack-auth") || "null");
+  } catch {
+    return null;
+  }
+}
+
+function persistStoredAuth(authData) {
+  localStorage.setItem("tiretrack-auth", JSON.stringify(authData));
+  localStorage.setItem("tiretrack-token", authData.token);
+  localStorage.setItem("tiretrack-refresh-token", authData.refreshToken);
+}
+
+function clearStoredAuth() {
+  localStorage.removeItem("tiretrack-auth");
+  localStorage.removeItem("tiretrack-token");
+  localStorage.removeItem("tiretrack-refresh-token");
+}
+
+function defaultTabForRole(role) {
+  if (role === "CUSTOMER") {
+    return "Portal";
+  }
+
+  return role === "EMPLOYEE" ? "Tires" : "Dashboard";
+}
+
+function canAccessTab(role, tab) {
+  if (role === "CUSTOMER") {
+    return tab === "Portal";
+  }
+
+  return role !== "EMPLOYEE" || !employeeHiddenTabs.includes(tab);
+}
+
 function downloadTextFile(filename, content, type = "text/plain") {
   const blob = new Blob([content], { type });
   const url = URL.createObjectURL(blob);
@@ -299,8 +357,18 @@ function parseTireSetup(tireSize) {
 }
 
 function App() {
-  const [activeTab, setActiveTab] = useState("Dashboard");
-  const [isAuthenticated, setIsAuthenticated] = useState(() => localStorage.getItem("tiretrack-auth") === "yes");
+  const isPublicBooking = window.location.pathname.startsWith("/booking");
+  const isLoginRoute = window.location.pathname.startsWith("/login");
+  const isCustomerSignupRoute = window.location.pathname.startsWith("/customer/signup");
+  const [auth, setAuth] = useState(loadStoredAuth);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [loginForm, setLoginForm] = useState({ email: "", password: "" });
+  const [loginError, setLoginError] = useState("");
+  const [loginSubmitting, setLoginSubmitting] = useState(false);
+  const [signupForm, setSignupForm] = useState({ fullName: "", email: "", phone: "", password: "" });
+  const [signupError, setSignupError] = useState("");
+  const [signupSubmitting, setSignupSubmitting] = useState(false);
+  const [activeTab, setActiveTab] = useState(() => defaultTabForRole(loadStoredAuth()?.role));
   const [globalQuery, setGlobalQuery] = useState("");
   const [showNotifications, setShowNotifications] = useState(false);
   const [highlightedRow, setHighlightedRow] = useState(null);
@@ -318,6 +386,8 @@ function App() {
   const [appointments, setAppointments] = useState([]);
   const [invoices, setInvoices] = useState([]);
   const [salesData, setSalesData] = useState([]);
+  const [customers, setCustomers] = useState([]);
+  const [customerPortal, setCustomerPortal] = useState(null);
   const [tireForm, setTireForm] = useState(emptyTire);
   const [tireFilters, setTireFilters] = useState(emptyTireFilters);
   const [appointmentForm, setAppointmentForm] = useState(emptyAppointment);
@@ -327,36 +397,66 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  async function loadData() {
+  async function loadData(currentAuth = auth) {
     setLoading(true);
     setError("");
 
     try {
-      const [summary, tireList, appointmentList, invoiceList, salesList, savedSettings, auditLogs] = await Promise.all([
-        getDashboard(),
-        getTires(),
-        getAppointments(),
-        getInvoices(),
-        getSalesData(),
-        getSettings().catch(() => loadCompanySettings()),
-        getAuditLogs().catch(() => [])
-      ]);
+      if (currentAuth?.role === "CUSTOMER") {
+        const portal = await getCustomerPortal();
+        setCustomerPortal(portal);
+        setLoading(false);
+        return;
+      }
 
-      const mergedSettings = { ...defaultCompanySettings, ...(savedSettings || {}) };
-      setDashboard(summary);
-      setTires(tireList || []);
-      setInventoryTires(tireList || []);
-      setAppointments(appointmentList || []);
-      setInvoices(invoiceList || []);
-      setSalesData(salesList || []);
-      setActivityLog((auditLogs || []).map((log) => ({
-        id: log.id,
-        label: log.message || log.action,
-        tab: `${log.entityType || "Dashboard"}s`,
-        createdAt: log.createdAt
-      })));
-      setCompanySettings(mergedSettings);
-      localStorage.setItem("tiretrack-company-settings", JSON.stringify(mergedSettings));
+      if (currentAuth?.role === "ADMIN") {
+        const [summary, tireList, appointmentList, invoiceList, salesList, savedSettings, auditLogs, customerList] = await Promise.all([
+          getDashboard(),
+          getTires(),
+          getAppointments(),
+          getInvoices(),
+          getSalesData(),
+          getSettings().catch(() => loadCompanySettings()),
+          getAuditLogs().catch(() => []),
+          getCustomers().catch(() => [])
+        ]);
+
+        const mergedSettings = { ...defaultCompanySettings, ...(savedSettings || {}) };
+        setDashboard(summary);
+        setTires(tireList || []);
+        setInventoryTires(tireList || []);
+        setAppointments(appointmentList || []);
+        setInvoices(invoiceList || []);
+        setSalesData(salesList || []);
+        setCustomers(customerList || []);
+        setActivityLog((auditLogs || []).map((log) => ({
+          id: log.id,
+          action: log.action,
+          entityType: log.entityType,
+          entityId: log.entityId,
+          label: log.message || log.action,
+          performedBy: log.performedBy,
+          tab: log.entityType === "Tire" ? "Tires" : `${log.entityType || "Dashboard"}s`,
+          createdAt: log.createdAt
+        })));
+        setCompanySettings(mergedSettings);
+        localStorage.setItem("tiretrack-company-settings", JSON.stringify(mergedSettings));
+      } else {
+        const [tireList, appointmentList, invoiceList] = await Promise.all([
+          getTires(),
+          getAppointments(),
+          getInvoices()
+        ]);
+
+        setDashboard(null);
+        setTires(tireList || []);
+        setInventoryTires(tireList || []);
+        setAppointments(appointmentList || []);
+        setInvoices(invoiceList || []);
+        setSalesData([]);
+        setCustomers([]);
+        setCompanySettings(loadCompanySettings());
+      }
     } catch (err) {
       setError(err.message);
     } finally {
@@ -365,17 +465,141 @@ function App() {
   }
 
   useEffect(() => {
-    loadData();
+    async function initializeAuth() {
+      const existingAuth = loadStoredAuth();
+      if (existingAuth?.token) {
+        setAuth(existingAuth);
+        setActiveTab(defaultTabForRole(existingAuth.role));
+        await loadData(existingAuth);
+      } else {
+        const refreshToken = localStorage.getItem("tiretrack-refresh-token");
+        if (refreshToken) {
+          try {
+            const refreshed = await refreshTokenApi({ refreshToken });
+            persistStoredAuth(refreshed);
+            setAuth(refreshed);
+            setActiveTab(defaultTabForRole(refreshed.role));
+            await loadData(refreshed);
+          } catch {
+            clearStoredAuth();
+          }
+        }
+      }
+      setAuthLoading(false);
+    }
+
+    initializeAuth();
   }, []);
 
-  function login() {
-    localStorage.setItem("tiretrack-auth", "yes");
-    setIsAuthenticated(true);
+  useEffect(() => {
+    function handleAuthUpdated(event) {
+      const nextAuth = event.detail || loadStoredAuth();
+      setAuth(nextAuth);
+      setActiveTab((currentTab) => canAccessTab(nextAuth?.role, currentTab) ? currentTab : defaultTabForRole(nextAuth?.role));
+    }
+
+    function handleAuthCleared() {
+      clearStoredAuth();
+      setAuth(null);
+      setActiveTab("Dashboard");
+    }
+
+    window.addEventListener("tiretrack-auth-updated", handleAuthUpdated);
+    window.addEventListener("tiretrack-auth-cleared", handleAuthCleared);
+
+    return () => {
+      window.removeEventListener("tiretrack-auth-updated", handleAuthUpdated);
+      window.removeEventListener("tiretrack-auth-cleared", handleAuthCleared);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (auth && !canAccessTab(auth.role, activeTab)) {
+      setActiveTab(defaultTabForRole(auth.role));
+    }
+  }, [activeTab, auth]);
+
+  async function handleLogin(event) {
+    event.preventDefault();
+    setLoginError("");
+    setLoginSubmitting(true);
+
+    try {
+      const response = await loginApi(loginForm);
+      persistStoredAuth(response);
+      setAuth(response);
+      setActiveTab(defaultTabForRole(response.role));
+      if (window.location.pathname.startsWith("/login")) {
+        window.location.href = "/";
+        return;
+      }
+      await loadData(response);
+    } catch (err) {
+      setLoginError(err.message || "Invalid login credentials");
+    } finally {
+      setLoginSubmitting(false);
+    }
   }
 
-  function logout() {
-    localStorage.removeItem("tiretrack-auth");
-    setIsAuthenticated(false);
+  async function handleCustomerSignup(event) {
+    event.preventDefault();
+    setSignupError("");
+    setSignupSubmitting(true);
+
+    try {
+      const response = await registerApi({ ...signupForm, role: "CUSTOMER" });
+      persistStoredAuth(response);
+      setAuth(response);
+      setActiveTab("Portal");
+      window.location.href = "/";
+    } catch (err) {
+      setSignupError(err.message || "Could not create customer account");
+    } finally {
+      setSignupSubmitting(false);
+    }
+  }
+
+  function handleLogout() {
+    logoutApi();
+    clearStoredAuth();
+    setAuth(null);
+    setActiveTab("Dashboard");
+  }
+
+  async function refreshCustomerPortal() {
+    const portal = await getCustomerPortal();
+    setCustomerPortal(portal);
+  }
+
+  async function saveCustomerVehicle(vehicle) {
+    await createCustomerVehicle(vehicle);
+    await refreshCustomerPortal();
+  }
+
+  async function removeCustomerVehicle(id) {
+    await deleteCustomerVehicle(id);
+    await refreshCustomerPortal();
+  }
+
+  async function bookCustomerAppointment(appointment) {
+    await createCustomerAppointment(appointment);
+    await refreshCustomerPortal();
+  }
+
+  async function payInvoiceFromPortal(id) {
+    await payCustomerInvoice(id);
+    await refreshCustomerPortal();
+  }
+
+  async function markPortalNoticeRead(id) {
+    await markCustomerNotificationRead(id);
+    await refreshCustomerPortal();
+  }
+
+  async function sendNoticeToCustomer(id, notice) {
+    await sendCustomerNotice(id, notice);
+    const customerList = await getCustomers().catch(() => customers);
+    setCustomers(customerList || []);
   }
 
   function jumpToResult(result) {
@@ -386,7 +610,13 @@ function App() {
   }
 
   function logActivity(label, tab) {
-    const nextLog = [{ id: Date.now(), label, tab, createdAt: new Date().toISOString() }, ...activityLog].slice(0, 20);
+    const nextLog = [normalizeAuditLog({
+      id: Date.now(),
+      label,
+      performedBy: auth?.email || auth?.fullName || "current-user",
+      tab,
+      createdAt: new Date().toISOString()
+    }), ...activityLog].slice(0, 20);
     setActivityLog(nextLog);
     localStorage.setItem("tiretrack-activity-log", JSON.stringify(nextLog));
   }
@@ -487,6 +717,8 @@ function App() {
 
     return [...tireMatches, ...appointmentMatches, ...invoiceMatches].slice(0, 8);
   }, [appointments, globalQuery, invoices, tires]);
+  const visibleTabs = tabs.filter((tab) => canAccessTab(auth?.role, tab));
+
   const notifications = useMemo(() => {
     const today = todayDateKey();
     const todaysAppointments = activeAppointments.filter((appointment) => appointmentDateKey(appointment.appointmentDate) === today);
@@ -810,8 +1042,75 @@ function App() {
     setActiveTab("Invoices");
   }
 
-  if (!isAuthenticated) {
-    return <LoginScreen onLogin={login} />;
+  if (isPublicBooking) {
+    return <PublicBookingPage />;
+  }
+
+  if (isCustomerSignupRoute) {
+    return (
+      <CustomerSignupScreen
+        error={signupError}
+        form={signupForm}
+        isSubmitting={signupSubmitting}
+        onSubmit={handleCustomerSignup}
+        setForm={setSignupForm}
+      />
+    );
+  }
+
+  if (isLoginRoute) {
+    return (
+      <LoginScreen
+        onSubmit={handleLogin}
+        loginForm={loginForm}
+        setLoginForm={setLoginForm}
+        error={loginError}
+        isSubmitting={loginSubmitting}
+      />
+    );
+  }
+
+  if (authLoading) {
+    return (
+      <main className="login-shell">
+        <motion.section
+          animate={{ opacity: 1, y: 0 }}
+          className="login-panel"
+          initial={{ opacity: 0, y: 16 }}
+          transition={{ duration: 0.4 }}
+        >
+          <p className="loading-state">Checking session...</p>
+        </motion.section>
+      </main>
+    );
+  }
+
+  if (!auth) {
+    return (
+      <LoginScreen
+        onSubmit={handleLogin}
+        loginForm={loginForm}
+        setLoginForm={setLoginForm}
+        error={loginError}
+        isSubmitting={loginSubmitting}
+      />
+    );
+  }
+
+  if (auth.role === "CUSTOMER") {
+    return (
+      <CustomerPortalShell
+        auth={auth}
+        onBookAppointment={bookCustomerAppointment}
+        onDeleteVehicle={removeCustomerVehicle}
+        onLogout={handleLogout}
+        onMarkNoticeRead={markPortalNoticeRead}
+        onPayInvoice={payInvoiceFromPortal}
+        onRefresh={refreshCustomerPortal}
+        onSaveVehicle={saveCustomerVehicle}
+        portal={customerPortal}
+      />
+    );
   }
 
   return (
@@ -829,7 +1128,7 @@ function App() {
         </motion.div>
 
         <nav className="tabs" aria-label="Main navigation">
-          {tabs.map((tab) => (
+          {visibleTabs.map((tab) => (
             <motion.button
               className={activeTab === tab ? "active" : ""}
               key={tab}
@@ -845,6 +1144,11 @@ function App() {
             </motion.button>
           ))}
         </nav>
+
+        <button className="sidebar-booking-link with-icon" onClick={() => { window.location.href = "/booking"; }} type="button">
+          <CalendarDays size={17} />
+          Public Booking
+        </button>
       </aside>
 
       <main className="content">
@@ -914,13 +1218,17 @@ function App() {
                 </div>
               )}
             </div>
-            <button className="ghost-button with-icon" onClick={loadData} type="button">
+            <button className="ghost-button with-icon" onClick={() => loadData(auth)} type="button">
               <RefreshCw size={16} />
               Refresh
             </button>
-            <button className="profile-chip" onClick={logout} type="button" title="Log out">
+            <button className="ghost-button with-icon" onClick={() => { window.location.href = "/booking"; }} type="button">
+              <CalendarDays size={16} />
+              Public Booking
+            </button>
+            <button className="ghost-button with-icon" onClick={handleLogout} type="button" title="Log out">
               <UserCircle size={19} />
-              Shop Admin
+              {auth?.fullName || "Log out"}
             </button>
           </div>
         </header>
@@ -931,6 +1239,7 @@ function App() {
         {!loading && activeTab === "Dashboard" && (
           <Dashboard
             appointments={activeAppointments}
+            customers={customers}
             dashboard={dashboard}
             invoices={invoices}
             tires={tires}
@@ -994,6 +1303,14 @@ function App() {
           />
         )}
 
+        {!loading && activeTab === "Customers" && (
+          <CustomersPage customers={customers} onSendNotice={sendNoticeToCustomer} />
+        )}
+
+        {!loading && activeTab === "Audit Logs" && (
+          <AuditLogsPage logs={activityLog} />
+        )}
+
         {!loading && activeTab === "Settings" && (
           <SettingsPage settings={companySettings} onSave={saveCompanySettings} />
         )}
@@ -1004,6 +1321,7 @@ function App() {
 
 function Dashboard({
   appointments,
+  customers,
   dashboard,
   invoices,
   lowStockTires,
@@ -1037,6 +1355,12 @@ function Dashboard({
   const rangeRevenue = filteredInvoices.reduce((total, invoice) => total + Number(invoice.total || 0), 0);
   const todayRevenue = todayInvoices.reduce((total, invoice) => total + Number(invoice.total || 0), 0);
   const urgentRestock = lowStockTires.filter((tire) => Number(tire.availableQuantity ?? tire.quantity ?? 0) < 3);
+  const outstandingCustomerBalance = customers.reduce((total, customer) => total + Number(customer.outstandingBalance || 0), 0);
+  const paymentAlertCustomers = customers.filter((customer) => Number(customer.outstandingBalance || 0) > 0);
+  const appointmentReminderCustomers = customers.filter((customer) => customer.hasUpcomingAppointment);
+  const followUpCustomers = [...paymentAlertCustomers, ...appointmentReminderCustomers]
+    .filter((customer, index, list) => list.findIndex((entry) => entry.id === customer.id) === index)
+    .sort((first, second) => followUpPriority(first) - followUpPriority(second));
   const upcomingAppointments = [...appointments]
     .filter((appointment) => new Date(appointment.appointmentDate) >= new Date(new Date().setHours(0, 0, 0, 0)))
     .sort((first, second) => new Date(first.appointmentDate) - new Date(second.appointmentDate))
@@ -1168,8 +1492,48 @@ function Dashboard({
         <ActivityPanel icon={Package} title="Top Inventory">
           <InventoryLeaderBars items={inventoryBars} />
         </ActivityPanel>
+      </section>
 
-        <ActivityPanel icon={Bell} title="Latest Invoices">
+      <section className="split">
+        <ActivityPanel className="follow-up-panel" icon={Bell} title="Customer Follow Ups">
+          {followUpCustomers.length === 0 ? (
+            <p className="empty-note">No customer follow ups.</p>
+          ) : (
+            <>
+              <div className="follow-up-summary">
+                <div>
+                  <span>Outstanding</span>
+                  <strong>{money(outstandingCustomerBalance)}</strong>
+                </div>
+                <div>
+                  <span>Payment alerts</span>
+                  <strong>{paymentAlertCustomers.length}</strong>
+                </div>
+                <div>
+                  <span>Bookings</span>
+                  <strong>{appointmentReminderCustomers.length}</strong>
+                </div>
+              </div>
+              <div className="follow-up-list">
+                {followUpCustomers.slice(0, 2).map((customer) => (
+                  <button className={`follow-up-card ${followUpTone(customer)}`} key={customer.id} onClick={() => onJumpActivity("Customers")} type="button">
+                    <div>
+                      <span>{followUpLabel(customer)}</span>
+                      <strong>{customer.fullName}</strong>
+                      <small>{followUpDetail(customer)}</small>
+                    </div>
+                    <b>{followUpAction(customer)}</b>
+                  </button>
+                ))}
+              </div>
+              {followUpCustomers.length > 2 ? (
+                <p className="follow-up-more">+{followUpCustomers.length - 2} more customer follow ups</p>
+              ) : null}
+            </>
+          )}
+        </ActivityPanel>
+
+        <ActivityPanel icon={FileText} title="Latest Invoices">
           {latestInvoices.length === 0 ? (
             <p className="empty-note">No invoices yet.</p>
           ) : (
@@ -1371,6 +1735,62 @@ function InventoryLeaderBars({ items }) {
       ))}
     </div>
   );
+}
+
+function followUpPriority(customer) {
+  if (customer.hasOverdueBalance) {
+    return 0;
+  }
+
+  if (Number(customer.outstandingBalance || 0) > 0) {
+    return 1;
+  }
+
+  return 2;
+}
+
+function followUpTone(customer) {
+  if (customer.hasOverdueBalance) {
+    return "danger";
+  }
+
+  if (Number(customer.outstandingBalance || 0) > 0) {
+    return "warning";
+  }
+
+  return "info";
+}
+
+function followUpLabel(customer) {
+  if (customer.hasOverdueBalance) {
+    return "Payment overdue";
+  }
+
+  if (customer.hasBalanceDueSoon) {
+    return "Payment due soon";
+  }
+
+  if (Number(customer.outstandingBalance || 0) > 0) {
+    return "Outstanding balance";
+  }
+
+  return "Appointment reminder";
+}
+
+function followUpDetail(customer) {
+  if (Number(customer.outstandingBalance || 0) > 0) {
+    return `${money(customer.outstandingBalance)}${customer.nextPaymentDueDate ? ` due ${customer.nextPaymentDueDate}` : " outstanding"}`;
+  }
+
+  return customer.nextAppointmentDate ? dateTime(customer.nextAppointmentDate) : "Upcoming appointment";
+}
+
+function followUpAction(customer) {
+  if (Number(customer.outstandingBalance || 0) > 0) {
+    return customer.hasOverdueBalance ? "Send payment notice" : "Review balance";
+  }
+
+  return "Send reminder";
 }
 
 function SalesChart({ salesData }) {
@@ -2474,7 +2894,7 @@ function Invoices({
             </button>
           </div>
         )}
-        columns={["Customer", "Phone", "Vehicle", "Subtotal", "HST", "Total", "Payment", "Status", ""]}
+        columns={["Customer", "Phone", "Vehicle", "Subtotal", "HST", "Total", "Payment", "Status", "Due", "Paid At", ""]}
         emptyText="No invoices yet."
         rows={displayedInvoices.map((invoice) => ({
           key: `invoice-${invoice.id}`,
@@ -2486,7 +2906,9 @@ function Invoices({
             money(invoice.taxAmount),
             money(invoice.total),
             invoice.paymentMethod || "-",
-            invoice.status || "-"
+            invoice.status || "-",
+            invoice.dueDate || "-",
+            dateTime(invoice.paidAt)
           ],
           source: invoice
         }))}
@@ -2718,7 +3140,414 @@ function TireDrawer({ onClose, onRefill, tire }) {
   );
 }
 
-function LoginScreen({ onLogin }) {
+function emptyCustomerVehicleForm() {
+  return { nickname: "", year: "", make: "", model: "", plateNumber: "", tireSetup: "regular", tireSize: "", frontTireSize: "", rearTireSize: "" };
+}
+
+function CustomerPortalShell({ auth, onBookAppointment, onDeleteVehicle, onLogout, onMarkNoticeRead, onPayInvoice, onRefresh, onSaveVehicle, portal }) {
+  const [vehicleForm, setVehicleForm] = useState(emptyCustomerVehicleForm);
+  const [bookingForm, setBookingForm] = useState({
+    vehicleId: "",
+    appointmentDate: todayDateKey(),
+    appointmentTime: "",
+    serviceType: "INSTALLATION",
+    notes: ""
+  });
+  const [slots, setSlots] = useState([]);
+  const [isLoadingSlots, setIsLoadingSlots] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  const vehicles = portal?.vehicles || [];
+  const appointments = portal?.appointments || [];
+  const invoices = portal?.invoices || [];
+  const notifications = portal?.notifications || [];
+  const unreadCount = notifications.filter((notification) => !notification.read).length;
+
+  useEffect(() => {
+    async function loadSlots() {
+      if (!bookingForm.appointmentDate) {
+        setSlots([]);
+        return;
+      }
+
+      setIsLoadingSlots(true);
+
+      try {
+        const availableSlots = await getAvailableSlots(bookingForm.appointmentDate);
+        setSlots(availableSlots || []);
+        setBookingForm((current) => ({
+          ...current,
+          appointmentTime: availableSlots?.includes(current.appointmentTime) ? current.appointmentTime : ""
+        }));
+      } catch {
+        setSlots([]);
+        setBookingForm((current) => ({ ...current, appointmentTime: "" }));
+      } finally {
+        setIsLoadingSlots(false);
+      }
+    }
+
+    loadSlots();
+  }, [bookingForm.appointmentDate]);
+
+  useEffect(() => {
+    if (!portal) {
+      onRefresh().catch(() => {});
+    }
+  }, [portal, onRefresh]);
+
+  async function submitVehicle(event) {
+    event.preventDefault();
+    setError("");
+    setMessage("");
+
+    try {
+      if (vehicleForm.tireSetup === "staggered" && (!vehicleForm.frontTireSize || !vehicleForm.rearTireSize)) {
+        setError("Enter both front and rear tire sizes for a staggered setup.");
+        return;
+      }
+
+      await onSaveVehicle(vehicleForm);
+      setVehicleForm(emptyCustomerVehicleForm());
+      setMessage("Vehicle saved.");
+    } catch (err) {
+      setError(err.message || "Vehicle could not be saved.");
+    }
+  }
+
+  async function submitBooking(event) {
+    event.preventDefault();
+    setError("");
+    setMessage("");
+
+    try {
+      if (!bookingForm.appointmentTime) {
+        setError("Choose an available appointment time.");
+        return;
+      }
+
+      await onBookAppointment(bookingForm);
+      setBookingForm((current) => ({ ...current, appointmentTime: "", notes: "" }));
+      setMessage("Appointment booked.");
+    } catch (err) {
+      setError(err.message || "Appointment could not be booked.");
+    }
+  }
+
+  return (
+    <main className="customer-portal">
+      <header className="customer-header">
+        <div>
+          <span className="eyebrow">Customer portal</span>
+          <h1>Welcome, {auth.fullName}</h1>
+        </div>
+        <div className="toolbar-actions">
+          <button className="ghost-button with-icon" onClick={onRefresh} type="button"><RefreshCw size={16} />Refresh</button>
+          <button className="ghost-button with-icon" onClick={onLogout} type="button"><UserCircle size={17} />Logout</button>
+        </div>
+      </header>
+
+      {message ? <div className="success-alert">{message}</div> : null}
+      {error ? <div className="alert error">{error}</div> : null}
+
+      <section className="customer-metrics">
+        <div className="metric-card"><span>Vehicles</span><strong>{vehicles.length}</strong></div>
+        <div className="metric-card"><span>Appointments</span><strong>{appointments.length}</strong></div>
+        <div className="metric-card"><span>Invoices</span><strong>{invoices.length}</strong></div>
+        <div className="metric-card"><span>Unread notices</span><strong>{unreadCount}</strong></div>
+      </section>
+
+      <section className="panel customer-notification-panel">
+        <div className="section-toolbar">
+          <div>
+            <span className="eyebrow">Messages</span>
+            <h3>Notices</h3>
+          </div>
+          <span className="audit-count">{unreadCount} unread</span>
+        </div>
+        {notifications.length === 0 ? (
+          <p className="empty-note">No notices yet.</p>
+        ) : (
+          <div className="customer-notice-list">
+            {notifications.slice(0, 6).map((notification) => (
+              <article className={notification.read ? "customer-notice read" : "customer-notice"} key={notification.id}>
+                <div>
+                  <span>{notification.type || "NOTICE"}</span>
+                  <strong>{notification.title || "Notice"}</strong>
+                  <p>{notification.message}</p>
+                  <small>{dateTime(notification.createdAt)}</small>
+                </div>
+                {!notification.read && (
+                  <button className="ghost-button" onClick={() => onMarkNoticeRead(notification.id)} type="button">
+                    Mark Read
+                  </button>
+                )}
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="customer-grid">
+        <form className="panel customer-card-form" onSubmit={submitVehicle}>
+          <div className="settings-header">
+            <span className="brand-mark"><UserCircle size={20} /></span>
+            <div><span className="eyebrow">Garage</span><h3>Save a Vehicle</h3></div>
+          </div>
+          <Input label="Nickname" value={vehicleForm.nickname} onChange={(nickname) => setVehicleForm({ ...vehicleForm, nickname })} />
+          <Input label="Year" value={vehicleForm.year} onChange={(year) => setVehicleForm({ ...vehicleForm, year })} />
+          <Input label="Make" required value={vehicleForm.make} onChange={(make) => setVehicleForm({ ...vehicleForm, make })} />
+          <Input label="Model" required value={vehicleForm.model} onChange={(model) => setVehicleForm({ ...vehicleForm, model })} />
+          <Input label="Plate" value={vehicleForm.plateNumber} onChange={(plateNumber) => setVehicleForm({ ...vehicleForm, plateNumber })} />
+          <Select label="Tire setup" value={vehicleForm.tireSetup} onChange={(tireSetup) => setVehicleForm({ ...vehicleForm, tireSetup })} options={["regular", "staggered"]} optionLabel={(option) => option === "regular" ? "Regular" : "Staggered"} />
+          {vehicleForm.tireSetup === "staggered" ? (
+            <>
+              <Input label="Front tire size" required value={vehicleForm.frontTireSize} onChange={(frontTireSize) => setVehicleForm({ ...vehicleForm, frontTireSize })} placeholder="245/35R19" />
+              <Input label="Rear tire size" required value={vehicleForm.rearTireSize} onChange={(rearTireSize) => setVehicleForm({ ...vehicleForm, rearTireSize })} placeholder="275/30R19" />
+            </>
+          ) : (
+            <Input label="Tire size" value={vehicleForm.tireSize} onChange={(tireSize) => setVehicleForm({ ...vehicleForm, tireSize })} placeholder="225/45R17" />
+          )}
+          <button className="primary-button" type="submit">Save Vehicle</button>
+        </form>
+
+        <form className="panel customer-card-form" onSubmit={submitBooking}>
+          <div className="settings-header">
+            <span className="brand-mark"><CalendarDays size={20} /></span>
+            <div><span className="eyebrow">Booking</span><h3>Book Service</h3></div>
+          </div>
+          <Select label="Vehicle" required value={bookingForm.vehicleId} onChange={(vehicleId) => setBookingForm({ ...bookingForm, vehicleId })} options={vehicles.map((vehicle) => String(vehicle.id))} optionLabel={(id) => vehicleName(vehicles.find((vehicle) => String(vehicle.id) === String(id)))} />
+          <Select label="Service" required value={bookingForm.serviceType} onChange={(serviceType) => setBookingForm({ ...bookingForm, serviceType })} options={["INSTALLATION", "BALANCING", "ROTATION", "REPAIR"]} />
+          <Input label="Date" min={todayDateKey()} required type="date" value={bookingForm.appointmentDate} onChange={(appointmentDate) => setBookingForm({ ...bookingForm, appointmentDate })} />
+          <fieldset className="customer-slot-picker">
+            <legend>Available times</legend>
+            {isLoadingSlots ? (
+              <span className="empty-note">Loading slots...</span>
+            ) : slots.length ? (
+              <div className="time-slots">
+                {slots.map((slot) => (
+                  <button
+                    className={bookingForm.appointmentTime === slot ? "selected" : ""}
+                    key={slot}
+                    onClick={() => setBookingForm({ ...bookingForm, appointmentTime: slot })}
+                    type="button"
+                  >
+                    {slot}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <span className="empty-note">No available times for this date.</span>
+            )}
+          </fieldset>
+          <label className="customer-notes"><span>Notes</span><textarea value={bookingForm.notes} onChange={(event) => setBookingForm({ ...bookingForm, notes: event.target.value })} rows="3" /></label>
+          <button className="primary-button" disabled={!vehicles.length || !slots.length || !bookingForm.appointmentTime} type="submit">Book Appointment</button>
+        </form>
+      </section>
+
+      <section className="work-area">
+        <DataTable
+          actions={(vehicle) => <button className="danger-button" onClick={() => onDeleteVehicle(vehicle.id)} type="button">Remove</button>}
+          columns={["Vehicle", "Plate", "Setup", "Tire Size", "Saved", ""]}
+          emptyText="No saved vehicles yet."
+          rows={vehicles.map((vehicle) => ({ key: `vehicle-${vehicle.id}`, source: vehicle, values: [vehicleName(vehicle), vehicle.plateNumber || "-", vehicle.tireSetup || "regular", vehicleTireSize(vehicle), dateTime(vehicle.createdAt)] }))}
+        />
+        <DataTable
+          columns={["Date", "Vehicle", "Service", "Status", "Notes"]}
+          emptyText="No appointments yet."
+          rows={appointments.map((appointment) => ({ key: `customer-appt-${appointment.id}`, values: [dateTime(appointment.appointmentDate), appointment.vehicle || "-", appointment.serviceType || "-", appointment.status || "-", appointment.notes || "-"] }))}
+        />
+        <DataTable
+          actions={(invoice) => (
+            invoice.status !== "PAID" ? (
+              <button className="primary-button" onClick={() => onPayInvoice(invoice.id)} type="button">
+                Pay
+              </button>
+            ) : null
+          )}
+          columns={["Invoice", "Vehicle", "Total", "Status", "Due", "Paid At", "Created", ""]}
+          emptyText="No invoices yet."
+          rows={invoices.map((invoice) => ({ key: `customer-invoice-${invoice.id}`, source: invoice, values: [`#${invoice.id}`, invoice.vehicle || "-", money(invoice.total), invoice.status || "-", invoice.dueDate || "-", dateTime(invoice.paidAt), dateTime(invoice.createdAt)] }))}
+        />
+      </section>
+    </main>
+  );
+}
+
+function vehicleName(vehicle) {
+  if (!vehicle) {
+    return "Select vehicle";
+  }
+
+  return [vehicle.nickname, vehicle.year, vehicle.make, vehicle.model].filter(Boolean).join(" ") || "Vehicle";
+}
+
+function vehicleTireSize(vehicle) {
+  if (!vehicle) {
+    return "-";
+  }
+
+  if (vehicle.tireSetup === "staggered") {
+    return `Front: ${vehicle.frontTireSize || "-"} / Rear: ${vehicle.rearTireSize || "-"}`;
+  }
+
+  return vehicle.tireSize || "-";
+}
+
+function PublicBookingPage() {
+  const [form, setForm] = useState({
+    customerName: "",
+    phone: "",
+    vehicle: "",
+    tireSize: "",
+    appointmentDate: todayDateKey(),
+    appointmentTime: "",
+    serviceType: "INSTALLATION",
+    notes: ""
+  });
+  const [slots, setSlots] = useState([]);
+  const [isLoadingSlots, setIsLoadingSlots] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    async function loadSlots() {
+      if (!form.appointmentDate) {
+        setSlots([]);
+        return;
+      }
+
+      setIsLoadingSlots(true);
+      setError("");
+
+      try {
+        const availableSlots = await getAvailableSlots(form.appointmentDate);
+        setSlots(availableSlots || []);
+        setForm((current) => ({
+          ...current,
+          appointmentTime: availableSlots?.includes(current.appointmentTime) ? current.appointmentTime : ""
+        }));
+      } catch (err) {
+        setError(err.message || "Could not load available slots.");
+      } finally {
+        setIsLoadingSlots(false);
+      }
+    }
+
+    loadSlots();
+  }, [form.appointmentDate]);
+
+  function update(field, value) {
+    setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  async function submit(event) {
+    event.preventDefault();
+    setError("");
+    setMessage("");
+
+    if (!form.appointmentTime) {
+      setError("Choose an available appointment time.");
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      await createPublicBooking(form);
+      setMessage("Booking request confirmed. We will see you at the selected time.");
+      setForm({
+        customerName: "",
+        phone: "",
+        vehicle: "",
+        tireSize: "",
+        appointmentDate: form.appointmentDate,
+        appointmentTime: "",
+        serviceType: "INSTALLATION",
+        notes: ""
+      });
+      const availableSlots = await getAvailableSlots(form.appointmentDate);
+      setSlots(availableSlots || []);
+    } catch (err) {
+      setError(err.message || "Booking could not be created.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <main className="public-booking-shell">
+      <section className="public-booking-panel">
+        <div className="public-booking-header">
+          <span className="brand-mark"><Disc3 size={22} /></span>
+          <div>
+            <span className="eyebrow">Book tire service</span>
+            <h1>TireTrack Booking</h1>
+          </div>
+        </div>
+
+        {message ? <div className="success-alert">{message}</div> : null}
+        {error ? <div className="alert error">{error}</div> : null}
+
+        <form className="public-booking-form" onSubmit={submit}>
+          <Input label="Name" required value={form.customerName} onChange={(customerName) => update("customerName", customerName)} />
+          <Input label="Phone" required value={form.phone} onChange={(phone) => update("phone", phone)} />
+          <Input label="Vehicle" required value={form.vehicle} onChange={(vehicle) => update("vehicle", vehicle)} />
+          <Input label="Tire size" value={form.tireSize} onChange={(tireSize) => update("tireSize", tireSize)} placeholder="225/45R17" />
+          <Select
+            label="Service"
+            required
+            value={form.serviceType}
+            onChange={(serviceType) => update("serviceType", serviceType)}
+            options={["INSTALLATION", "BALANCING", "ROTATION", "REPAIR"]}
+          />
+          <Input label="Date" min={todayDateKey()} required type="date" value={form.appointmentDate} onChange={(appointmentDate) => update("appointmentDate", appointmentDate)} />
+
+          <fieldset className="public-slot-picker">
+            <legend>Available times</legend>
+            {isLoadingSlots ? (
+              <span className="empty-note">Loading slots...</span>
+            ) : slots.length ? (
+              <div className="time-slots">
+                {slots.map((slot) => (
+                  <button
+                    className={form.appointmentTime === slot ? "selected" : ""}
+                    key={slot}
+                    onClick={() => update("appointmentTime", slot)}
+                    type="button"
+                  >
+                    {slot}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <span className="empty-note">No open slots for this day.</span>
+            )}
+          </fieldset>
+
+          <label className="public-notes">
+            <span>Notes</span>
+            <textarea value={form.notes} onChange={(event) => update("notes", event.target.value)} rows="4" />
+          </label>
+
+          <div className="public-booking-actions">
+            <button className="primary-button with-icon" disabled={isSubmitting} type="submit">
+              <CalendarDays size={18} />
+              {isSubmitting ? "Booking..." : "Book Appointment"}
+            </button>
+            <button className="ghost-button" onClick={() => { window.location.href = "/login"; }} type="button">
+              Staff Sign In
+            </button>
+          </div>
+        </form>
+      </section>
+    </main>
+  );
+}
+
+function LoginScreen({ onSubmit, loginForm, setLoginForm, error, isSubmitting }) {
   return (
     <main className="login-shell">
       <motion.section
@@ -2730,11 +3559,86 @@ function LoginScreen({ onLogin }) {
         <div className="brand-mark large"><Disc3 size={30} /></div>
         <span className="eyebrow">Business dashboard</span>
         <h1>TireTrack</h1>
-        <p>Inventory, appointments, invoices, and revenue in one polished shop workspace.</p>
-        <button className="primary-button with-icon" onClick={onLogin} type="button">
-          <LogIn size={18} />
-          Enter Dashboard
-        </button>
+        <p>Sign in to manage inventory, appointments, invoices, and analytics.</p>
+
+        {error ? <div className="alert error">{error}</div> : null}
+
+        <form onSubmit={onSubmit} className="login-form">
+          <label>
+            Email
+            <input
+              type="email"
+              value={loginForm.email}
+              onChange={(event) => setLoginForm({ ...loginForm, email: event.target.value })}
+              required
+            />
+          </label>
+          <label>
+            Password
+            <input
+              type="password"
+              value={loginForm.password}
+              onChange={(event) => setLoginForm({ ...loginForm, password: event.target.value })}
+              required
+            />
+          </label>
+          <button className="primary-button with-icon" disabled={isSubmitting} type="submit">
+            <LogIn size={18} />
+            {isSubmitting ? "Signing In..." : "Sign In"}
+          </button>
+          <button className="ghost-button" onClick={() => { window.location.href = "/booking"; }} type="button">
+            Customer Booking
+          </button>
+          <button className="ghost-button" onClick={() => { window.location.href = "/customer/signup"; }} type="button">
+            Create Customer Account
+          </button>
+        </form>
+      </motion.section>
+    </main>
+  );
+}
+
+function CustomerSignupScreen({ error, form, isSubmitting, onSubmit, setForm }) {
+  return (
+    <main className="login-shell">
+      <motion.section
+        animate={{ opacity: 1, y: 0 }}
+        className="login-panel"
+        initial={{ opacity: 0, y: 16 }}
+        transition={{ duration: 0.4 }}
+      >
+        <div className="brand-mark large"><UserCircle size={30} /></div>
+        <span className="eyebrow">Customer account</span>
+        <h1>TireTrack</h1>
+        <p>Create an account to save vehicles, book faster, and view your invoices.</p>
+
+        {error ? <div className="alert error">{error}</div> : null}
+
+        <form className="login-form" onSubmit={onSubmit}>
+          <label>
+            Full name
+            <input required value={form.fullName} onChange={(event) => setForm({ ...form, fullName: event.target.value })} />
+          </label>
+          <label>
+            Email
+            <input required type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
+          </label>
+          <label>
+            Phone
+            <input required value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} />
+          </label>
+          <label>
+            Password
+            <input required type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} />
+          </label>
+          <button className="primary-button with-icon" disabled={isSubmitting} type="submit">
+            <LogIn size={18} />
+            {isSubmitting ? "Creating..." : "Create Account"}
+          </button>
+          <button className="ghost-button" onClick={() => { window.location.href = "/login"; }} type="button">
+            Staff / Customer Sign In
+          </button>
+        </form>
       </motion.section>
     </main>
   );
@@ -2756,11 +3660,11 @@ function DashboardSkeleton() {
   );
 }
 
-function ActivityPanel({ children, icon: Icon, title }) {
+function ActivityPanel({ children, icon: Icon, title, className = "" }) {
   return (
     <motion.section
       animate={{ opacity: 1, y: 0 }}
-      className="activity-panel panel"
+      className={`activity-panel panel ${className}`}
       initial={{ opacity: 0, y: 10 }}
       transition={{ duration: 0.35 }}
     >
@@ -2771,6 +3675,312 @@ function ActivityPanel({ children, icon: Icon, title }) {
       <div className="activity-list">{children}</div>
     </motion.section>
   );
+}
+
+function AuditLogsPage({ logs }) {
+  const normalizedLogs = logs.map(normalizeAuditLog);
+  const actionCounts = normalizedLogs.reduce((counts, log) => {
+    const action = log.action || "UNKNOWN";
+    counts[action] = (counts[action] || 0) + 1;
+    return counts;
+  }, {});
+
+  return (
+    <section className="work-area">
+      <div className="audit-summary">
+        <div className="panel audit-summary-card">
+          <span className="metric-icon small"><ClipboardList size={17} /></span>
+          <span>Total Events</span>
+          <strong>{normalizedLogs.length}</strong>
+        </div>
+        {Object.entries(actionCounts).slice(0, 3).map(([action, count]) => (
+          <div className="panel audit-summary-card" key={action}>
+            <span className="metric-icon small"><ShieldCheck size={17} /></span>
+            <span>{action}</span>
+            <strong>{count}</strong>
+          </div>
+        ))}
+      </div>
+
+      <section className="panel audit-log-panel">
+        <div className="section-toolbar">
+          <div>
+            <span className="eyebrow">Admin traceability</span>
+            <h3>Audit Logs</h3>
+          </div>
+          <span className="audit-count">{normalizedLogs.length} latest records</span>
+        </div>
+
+        <DataTable
+          columns={["Action", "Entity", "Entity ID", "Performed By", "Message", "Timestamp"]}
+          emptyText="No audit logs yet."
+          rows={normalizedLogs.map((log) => ({
+            key: `audit-${log.id || log.createdAt}`,
+            values: [
+              log.action,
+              log.entityType,
+              log.entityId,
+              log.performedBy || "system",
+              log.label || log.message || "-",
+              dateTime(log.createdAt)
+            ],
+            source: log
+          }))}
+        />
+      </section>
+    </section>
+  );
+}
+
+function CustomersPage({ customers, onSendNotice }) {
+  const [noticeDrafts, setNoticeDrafts] = useState({});
+  const [noticeMessage, setNoticeMessage] = useState("");
+  const [selectedCustomerId, setSelectedCustomerId] = useState(null);
+  const totalRevenue = customers.reduce((sum, customer) => sum + Number(customer.totalSpent || 0), 0);
+  const outstandingTotal = customers.reduce((sum, customer) => sum + Number(customer.outstandingBalance || 0), 0);
+  const urgentCustomers = customers.filter((customer) => customer.hasOverdueBalance || customer.hasBalanceDueSoon).length;
+  const selectedCustomer = customers.find((customer) => Number(customer.id) === Number(selectedCustomerId)) || customers[0];
+
+  function updateDraft(customerId, field, value) {
+    setNoticeDrafts((current) => ({
+      ...current,
+      [customerId]: {
+        title: "Account notice",
+        type: "NOTICE",
+        message: "",
+        ...(current[customerId] || {}),
+        [field]: value
+      }
+    }));
+  }
+
+  async function sendNotice(customer) {
+    const draft = noticeDrafts[customer.id] || {};
+    setNoticeMessage("");
+
+    if (!draft.message?.trim()) {
+      setNoticeMessage("Write a notice message before sending.");
+      return;
+    }
+
+    await onSendNotice(customer.id, draft);
+    setNoticeDrafts((current) => ({ ...current, [customer.id]: { title: "Account notice", type: "NOTICE", message: "" } }));
+    setNoticeMessage(`Notice sent to ${customer.fullName}.`);
+  }
+
+  function suggestPaymentNotice(customer) {
+    const dueText = customer.nextPaymentDueDate ? ` by ${customer.nextPaymentDueDate}` : "";
+    updateDraft(customer.id, "title", customer.hasOverdueBalance ? "Payment overdue" : "Payment due soon");
+    updateDraft(customer.id, "type", "PAYMENT_DUE");
+    updateDraft(customer.id, "message", `Invoice #${customer.nextUnpaidInvoiceId || ""} has an outstanding balance of ${money(customer.outstandingBalance)}${dueText}. Please pay it through your TireTrack account.`);
+  }
+
+  function suggestAppointmentNotice(customer) {
+    updateDraft(customer.id, "title", "Appointment reminder");
+    updateDraft(customer.id, "type", "APPOINTMENT");
+    updateDraft(customer.id, "message", `Reminder: you have an appointment scheduled for ${dateTime(customer.nextAppointmentDate)}${customer.nextAppointmentVehicle ? ` for ${customer.nextAppointmentVehicle}` : ""}.`);
+  }
+
+  return (
+    <section className="work-area">
+      <section className="metric-grid">
+        <div className="metric-card"><span>Customers</span><strong>{customers.length}</strong></div>
+        <div className="metric-card"><span>Total customer revenue</span><strong>{money(totalRevenue)}</strong></div>
+        <div className="metric-card"><span>Outstanding balance</span><strong>{money(outstandingTotal)}</strong></div>
+        <div className="metric-card"><span>Payment alerts</span><strong>{urgentCustomers}</strong></div>
+        <div className="metric-card"><span>Vehicles saved</span><strong>{customers.reduce((sum, customer) => sum + Number(customer.vehicleCount || 0), 0)}</strong></div>
+      </section>
+      <section className="customer-crm-layout">
+        <section className="panel audit-log-panel">
+          <div className="section-toolbar">
+            <div>
+              <span className="eyebrow">Customer CRM</span>
+              <h3>Customer Activity</h3>
+            </div>
+            <span className="audit-count">{customers.length} accounts</span>
+          </div>
+
+          <DataTable
+            actions={(customer) => (
+              <button className="ghost-button" onClick={() => setSelectedCustomerId(customer.id)} type="button">
+                Open
+              </button>
+            )}
+            columns={["Status", "Customer", "Phone", "Outstanding", "Due", "Next Booking", ""]}
+            emptyText="No customer accounts yet."
+            rows={customers.map((customer) => ({
+              key: `customer-${customer.id}`,
+              values: [
+                { value: <CustomerAlertPill customer={customer} />, text: customerAlertLabel(customer) },
+                customer.fullName,
+                customer.phone,
+                {
+                  value: money(customer.outstandingBalance),
+                  text: money(customer.outstandingBalance),
+                  className: customerAlertClass(customer)
+                },
+                {
+                  value: customer.nextPaymentDueDate || "-",
+                  text: customer.nextPaymentDueDate || "-",
+                  className: customerAlertClass(customer)
+                },
+                customer.nextAppointmentDate ? dateTime(customer.nextAppointmentDate) : "-"
+              ],
+              source: customer
+            }))}
+          />
+        </section>
+
+        <aside className="customer-detail-panel panel">
+          {selectedCustomer ? (
+            <CustomerDetail
+              customer={selectedCustomer}
+              noticeDrafts={noticeDrafts}
+              noticeMessage={noticeMessage}
+              onSendNotice={sendNotice}
+              onSuggestAppointment={suggestAppointmentNotice}
+              onSuggestPayment={suggestPaymentNotice}
+              onUpdateDraft={updateDraft}
+            />
+          ) : (
+            <p className="empty-note">Select a customer to view details.</p>
+          )}
+        </aside>
+      </section>
+    </section>
+  );
+}
+
+function CustomerDetail({ customer, noticeDrafts, noticeMessage, onSendNotice, onSuggestAppointment, onSuggestPayment, onUpdateDraft }) {
+  const draft = noticeDrafts[customer.id] || { title: "Account notice", type: "NOTICE", message: "" };
+
+  return (
+    <>
+      <div className="customer-detail-header">
+        <div>
+          <span className="eyebrow">Selected customer</span>
+          <h3>{customer.fullName}</h3>
+          <p>{customer.email} · {customer.phone}</p>
+        </div>
+        <CustomerAlertPill customer={customer} />
+      </div>
+      <div className="customer-detail-stats">
+        <div><span>Outstanding</span><strong>{money(customer.outstandingBalance)}</strong></div>
+        <div><span>Payment due</span><strong>{customer.nextPaymentDueDate || "-"}</strong></div>
+        <div><span>Next booking</span><strong>{customer.nextAppointmentDate ? dateTime(customer.nextAppointmentDate) : "-"}</strong></div>
+        <div><span>Total paid</span><strong>{money(customer.totalSpent)}</strong></div>
+      </div>
+      <div className="customer-notice-composer">
+        <input value={draft.title} onChange={(event) => onUpdateDraft(customer.id, "title", event.target.value)} placeholder="Notice title" />
+        <select value={draft.type} onChange={(event) => onUpdateDraft(customer.id, "type", event.target.value)}>
+          <option value="NOTICE">Notice</option>
+          <option value="PAYMENT_DUE">Payment Due</option>
+          <option value="APPOINTMENT">Appointment</option>
+        </select>
+        <textarea value={draft.message} onChange={(event) => onUpdateDraft(customer.id, "message", event.target.value)} placeholder="Message" rows="4" />
+        <div className="toolbar-actions">
+          {Number(customer.outstandingBalance || 0) > 0 && (
+            <button className={customer.hasOverdueBalance ? "danger-button" : "ghost-button"} onClick={() => onSuggestPayment(customer)} type="button">
+              Payment Notice
+            </button>
+          )}
+          {customer.hasUpcomingAppointment && (
+            <button className="ghost-button" onClick={() => onSuggestAppointment(customer)} type="button">
+              Reminder
+            </button>
+          )}
+          <button className="primary-button" onClick={() => onSendNotice(customer)} type="button">
+            Send Notice
+          </button>
+        </div>
+      </div>
+      {noticeMessage && <div className={noticeMessage.includes("sent") ? "success-alert" : "alert"}>{noticeMessage}</div>}
+    </>
+  );
+}
+
+function customerAlertLabel(customer) {
+  if (customer.hasOverdueBalance) {
+    return "Due";
+  }
+
+  if (Number(customer.outstandingBalance || 0) > 0) {
+    return customer.hasBalanceDueSoon ? "Due Soon" : "Outstanding";
+  }
+
+  if (customer.hasUpcomingAppointment) {
+    return "Booked";
+  }
+
+  return "Clear";
+}
+
+function customerAlertClass(customer) {
+  if (customer.hasOverdueBalance) {
+    return "customer-cell-red";
+  }
+
+  if (Number(customer.outstandingBalance || 0) > 0) {
+    return "customer-cell-yellow";
+  }
+
+  if (customer.hasUpcomingAppointment) {
+    return "customer-cell-blue";
+  }
+
+  return "";
+}
+
+function CustomerAlertPill({ customer }) {
+  const label = customerAlertLabel(customer);
+  const tone = customer.hasOverdueBalance
+    ? "red"
+    : Number(customer.outstandingBalance || 0) > 0
+      ? "yellow"
+      : customer.hasUpcomingAppointment
+        ? "blue"
+        : "green";
+
+  return <span className={`customer-alert-pill ${tone}`}>{label}</span>;
+}
+
+function normalizeAuditLog(log) {
+  const message = log.label || log.message || "";
+  const inferredAction = message.split(" ")[0]?.toUpperCase() || "UNKNOWN";
+  const inferredEntity = log.tab ? log.tab.replace(/s$/, "") : inferEntityFromMessage(message);
+  const inferredEntityId = inferEntityIdFromMessage(message);
+
+  return {
+    ...log,
+    action: log.action || inferredAction,
+    entityType: log.entityType || inferredEntity || "-",
+    entityId: log.entityId ?? inferredEntityId ?? "-",
+    performedBy: log.performedBy || "system",
+    label: message || log.action || "Audit event"
+  };
+}
+
+function inferEntityFromMessage(message) {
+  const text = message.toLowerCase();
+
+  if (text.includes("invoice")) {
+    return "Invoice";
+  }
+
+  if (text.includes("appointment")) {
+    return "Appointment";
+  }
+
+  if (text.includes("tire") || text.includes("inventory")) {
+    return "Tire";
+  }
+
+  return "-";
+}
+
+function inferEntityIdFromMessage(message) {
+  const match = /#(\d+)/.exec(message);
+  return match ? match[1] : null;
 }
 
 function SettingsPage({ onSave, settings }) {
@@ -2944,6 +4154,7 @@ function Select({ label, onChange, optionLabel, options, value, ...props }) {
     <label>
       <span>{label}</span>
       <select {...props} value={value} onChange={(event) => onChange(event.target.value)}>
+        {options.length === 0 && <option value="">None available</option>}
         {options.map((option) => (
           <option key={option} value={option}>
             {optionLabel ? optionLabel(option) : option}

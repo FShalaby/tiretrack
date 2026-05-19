@@ -2,15 +2,19 @@ package com.aem.tiretrack.service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.aem.tiretrack.enums.InvoiceItemType;
 import com.aem.tiretrack.enums.AppointmentStatus;
+import com.aem.tiretrack.enums.InvoiceItemType;
 import com.aem.tiretrack.model.Appointment;
 import com.aem.tiretrack.model.Invoice;
 import com.aem.tiretrack.model.InvoiceItem;
@@ -18,18 +22,21 @@ import com.aem.tiretrack.model.Tire;
 import com.aem.tiretrack.repository.AppointmentRepository;
 import com.aem.tiretrack.repository.InvoiceRepository;
 import com.aem.tiretrack.repository.TireRepository;
+import com.aem.tiretrack.repository.UserRepository;
 
 @Service
 public class InvoiceService {
     private final InvoiceRepository invoiceRepository;
     private final TireRepository tireRepository;
     private final AppointmentRepository appointmentRepository;
+    private final UserRepository userRepository;
     private final AuditLogService auditLogService;
 
-    public InvoiceService(InvoiceRepository invoiceRepository, TireRepository tireRepository, AppointmentRepository appointmentRepository, AuditLogService auditLogService) {
+    public InvoiceService(InvoiceRepository invoiceRepository, TireRepository tireRepository, AppointmentRepository appointmentRepository, UserRepository userRepository, AuditLogService auditLogService) {
         this.invoiceRepository = invoiceRepository;
         this.tireRepository = tireRepository;
         this.appointmentRepository = appointmentRepository;
+        this.userRepository = userRepository;
         this.auditLogService = auditLogService;
     }
 
@@ -46,8 +53,10 @@ public class InvoiceService {
     public Invoice saveInvoice(Invoice invoice) {
         try {
             prepareInvoice(invoice);
+            linkCustomerByPhone(invoice);
+            prepareInvoiceLifecycle(invoice);
             Invoice savedInvoice = invoiceRepository.saveAndFlush(invoice);
-            auditLogService.record("CREATED", "Invoice", savedInvoice.getId(), "Created invoice for " + savedInvoice.getCustomerName());
+            auditLogService.record("CREATED", "Invoice", savedInvoice.getId(), "Created invoice for " + savedInvoice.getCustomerName(), getCurrentUsername());
             return savedInvoice;
         } catch (RuntimeException exception) {
             throw new RuntimeException(rootMessage(exception), exception);
@@ -57,7 +66,7 @@ public class InvoiceService {
     public void deleteInvoice(Long id) {
         Invoice invoice = getInvoiceById(id);
         invoiceRepository.deleteById(id);
-        auditLogService.record("DELETED", "Invoice", id, "Deleted invoice for " + invoice.getCustomerName());
+        auditLogService.record("DELETED", "Invoice", id, "Deleted invoice for " + invoice.getCustomerName(), getCurrentUsername());
     }
 
     @Transactional
@@ -66,6 +75,7 @@ public class InvoiceService {
         invoice.setStatus(status);
 
         if ("PAID".equalsIgnoreCase(status) && invoice.getAppointmentId() != null) {
+            invoice.setPaidAt(LocalDateTime.now());
             Appointment appointment = appointmentRepository.findById(invoice.getAppointmentId())
                     .orElseThrow(() -> new RuntimeException("Appointment not found"));
 
@@ -73,8 +83,13 @@ public class InvoiceService {
             appointment.setStatus(AppointmentStatus.COMPLETED);
         }
 
+        if ("PAID".equalsIgnoreCase(status)) {
+            invoice.setPaidAt(LocalDateTime.now());
+            invoice.setPaymentMethod(invoice.getPaymentMethod() == null ? "Manual" : invoice.getPaymentMethod());
+        }
+
         Invoice savedInvoice = invoiceRepository.save(invoice);
-        auditLogService.record("STATUS_CHANGED", "Invoice", savedInvoice.getId(), "Invoice #" + savedInvoice.getId() + " marked " + status);
+        auditLogService.record("STATUS_CHANGED", "Invoice", savedInvoice.getId(), "Invoice #" + savedInvoice.getId() + " marked " + status, getCurrentUsername());
         return savedInvoice;
     }
 
@@ -123,6 +138,23 @@ public class InvoiceService {
         invoice.setTaxRate(taxRate);
         invoice.setTaxAmount(taxAmount);
         invoice.setTotal(total);
+    }
+
+    private void prepareInvoiceLifecycle(Invoice invoice) {
+        if ("PAID".equalsIgnoreCase(invoice.getStatus())) {
+            invoice.setPaidAt(LocalDateTime.now());
+            return;
+        }
+
+        if (invoice.getDueDate() == null) {
+            invoice.setDueDate(LocalDate.now().plusDays(14));
+        }
+    }
+
+    private void linkCustomerByPhone(Invoice invoice) {
+        if (invoice.getCustomerId() == null && invoice.getPhone() != null) {
+            userRepository.findByPhone(invoice.getPhone()).ifPresent(user -> invoice.setCustomerId(user.getId()));
+        }
     }
 
     private void handleTireItem(InvoiceItem item, Appointment appointment, Map<Long, Integer> consumedAppointmentReservations) {
@@ -208,6 +240,13 @@ public class InvoiceService {
 
         tire.setReservedQuantity(Math.max(0, tire.getReservedQuantity() - remainingToRelease));
         consumedAppointmentReservations.merge(tireId, remainingToRelease, Integer::sum);
+    }
+
+    private String getCurrentUsername() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        return authentication != null && authentication.isAuthenticated() && authentication.getName() != null
+                ? authentication.getName()
+                : "system";
     }
 
     private String rootMessage(Throwable throwable) {

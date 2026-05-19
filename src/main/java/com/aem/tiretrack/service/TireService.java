@@ -2,6 +2,8 @@ package com.aem.tiretrack.service;
 
 import java.util.List;
 
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import com.aem.tiretrack.enums.Condition;
@@ -12,9 +14,11 @@ import com.aem.tiretrack.repository.TireRepository;
 public class TireService
 {
     private final TireRepository tireRepository;
+    private final AuditLogService auditLogService;
 
-    public TireService(TireRepository tireRepository) {
+    public TireService(TireRepository tireRepository, AuditLogService auditLogService) {
         this.tireRepository = tireRepository;
+        this.auditLogService = auditLogService;
     }
 
     public List<Tire> getAllTires() {
@@ -27,7 +31,9 @@ public class TireService
     }
 
     public Tire saveTire(Tire tire) {
-        return tireRepository.save(tire);
+        Tire savedTire = tireRepository.save(tire);
+        auditLogService.record("INVENTORY_CREATED", "Tire", savedTire.getId(), "Created tire " + savedTire.getBrand() + " " + savedTire.getTireSize(), getCurrentUsername());
+        return savedTire;
     }
 
     public Tire updateTire(Long id, Tire updatedTire) 
@@ -45,7 +51,9 @@ public class TireService
         existingTire.setPrice(updatedTire.getPrice());
         existingTire.setLocation(updatedTire.getLocation());
 
-        return tireRepository.save(existingTire);
+        Tire savedTire = tireRepository.save(existingTire);
+        auditLogService.record("INVENTORY_UPDATED", "Tire", savedTire.getId(), "Updated tire " + savedTire.getBrand() + " " + savedTire.getTireSize(), getCurrentUsername());
+        return savedTire;
     }
 
     public List<Tire> searchByBrand(String brand) {
@@ -73,7 +81,13 @@ public class TireService
     }
 
     public void deleteTire(Long id) {
+        Tire tire = getTireById(id);
         tireRepository.deleteById(id);
+        auditLogService.record("INVENTORY_DELETED", "Tire", id, "Deleted tire " + tire.getBrand() + " " + tire.getTireSize(), getCurrentUsername());
     }
-
-}
+    private String getCurrentUsername() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        return authentication != null && authentication.isAuthenticated() && authentication.getName() != null
+                ? authentication.getName()
+                : "system";
+    }}

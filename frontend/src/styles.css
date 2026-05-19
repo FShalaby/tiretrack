@@ -119,6 +119,27 @@ button {
   color: #ffffff;
 }
 
+.sidebar-booking-link {
+  align-items: center;
+  background: rgba(24, 211, 178, 0.12);
+  border: 1px solid rgba(24, 211, 178, 0.24);
+  border-radius: 12px;
+  color: #bffcf0;
+  display: inline-flex;
+  font-weight: 900;
+  gap: 8px;
+  justify-content: center;
+  min-height: 42px;
+  padding: 9px 12px;
+  width: 100%;
+}
+
+.sidebar-booking-link:hover {
+  background: rgba(24, 211, 178, 0.18);
+  border-color: rgba(24, 211, 178, 0.38);
+  color: #ffffff;
+}
+
 .content {
   align-content: start;
   display: grid;
@@ -375,6 +396,386 @@ button {
   margin: 0 0 8px;
 }
 
+.login-form {
+  display: grid;
+  gap: 14px;
+}
+
+.login-form label {
+  text-align: left;
+}
+
+.alert.error {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(248, 113, 113, 0.28);
+  color: #fecaca;
+  font-weight: 800;
+}
+
+.loading-state {
+  color: #aeb4c1;
+  font-weight: 800;
+}
+
+.public-booking-shell {
+  align-items: center;
+  background:
+    linear-gradient(135deg, rgba(17, 17, 20, 0.72), rgba(17, 17, 20, 0.92)),
+    radial-gradient(circle at 16% 12%, rgba(24, 211, 178, 0.16), transparent 30%),
+    radial-gradient(circle at 84% 20%, rgba(124, 140, 255, 0.22), transparent 30%),
+    #111114;
+  display: grid;
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.public-booking-panel {
+  background: rgba(25, 25, 31, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 18px;
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.34);
+  display: grid;
+  gap: 18px;
+  margin: 0 auto;
+  max-width: 980px;
+  padding: 24px;
+  width: min(100%, 980px);
+}
+
+.public-booking-header {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+}
+
+.public-booking-header .brand-mark {
+  margin: 0;
+}
+
+.public-booking-header h1 {
+  color: #ffffff;
+  font-size: clamp(1.8rem, 5vw, 3rem);
+  line-height: 1.05;
+  margin: 4px 0 0;
+}
+
+.public-booking-form {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+}
+
+.public-slot-picker,
+.public-notes,
+.public-booking-actions {
+  grid-column: 1 / -1;
+}
+
+.public-slot-picker {
+  background: #17171d;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 16px;
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 16px;
+}
+
+.public-slot-picker legend {
+  background: #25252d;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  color: #d7d9e0;
+  font-size: 0.8rem;
+  font-weight: 800;
+  padding: 4px 10px;
+}
+
+.public-notes textarea {
+  background: #17171d;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 12px;
+  color: #ffffff;
+  padding: 12px;
+  resize: vertical;
+  width: 100%;
+}
+
+.public-notes textarea:focus {
+  border-color: #7c8cff;
+  outline: 3px solid rgba(124, 140, 255, 0.16);
+}
+
+.public-booking-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.customer-portal {
+  display: grid;
+  gap: 18px;
+  min-height: 100vh;
+  padding: 18px;
+}
+
+.customer-header {
+  align-items: center;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.customer-header h1 {
+  color: #ffffff;
+  font-size: clamp(1.8rem, 5vw, 3rem);
+  line-height: 1.05;
+  margin: 4px 0 0;
+}
+
+.customer-metrics {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+}
+
+.customer-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(2, minmax(320px, 1fr));
+  min-width: 0;
+}
+
+.customer-card-form {
+  align-content: start;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  min-width: 0;
+  overflow: hidden;
+  padding: 18px;
+}
+
+.customer-card-form .settings-header,
+.customer-card-form .customer-notes,
+.customer-card-form .customer-slot-picker,
+.customer-card-form .customer-form-note {
+  grid-column: 1 / -1;
+}
+
+.customer-card-form label,
+.customer-card-form input,
+.customer-card-form select,
+.customer-card-form button {
+  min-width: 0;
+}
+
+.customer-card-form .primary-button {
+  grid-column: 1 / -1;
+  justify-self: end;
+  min-width: min(220px, 100%);
+}
+
+.customer-notes textarea {
+  background: #17171d;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 12px;
+  color: #ffffff;
+  padding: 12px;
+  resize: vertical;
+  width: 100%;
+}
+
+.customer-notification-panel {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+}
+
+.customer-notice-list {
+  display: grid;
+  gap: 10px;
+}
+
+.customer-notice {
+  align-items: start;
+  background: #17171d;
+  border: 1px solid rgba(124, 140, 255, 0.2);
+  border-radius: 14px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 13px;
+}
+
+.customer-notice.read {
+  border-color: rgba(255, 255, 255, 0.07);
+  opacity: 0.72;
+}
+
+.customer-notice span,
+.customer-notice small {
+  color: #8f95a3;
+  font-size: 0.76rem;
+  font-weight: 900;
+}
+
+.customer-notice strong {
+  color: #ffffff;
+  display: block;
+  margin-top: 4px;
+}
+
+.customer-notice p {
+  color: #cfd3dc;
+  font-weight: 700;
+  margin: 6px 0;
+}
+
+.customer-notice-actions {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 130px 130px minmax(180px, 1fr) auto auto auto;
+  min-width: 760px;
+}
+
+.customer-notice-actions input,
+.customer-notice-actions select {
+  min-height: 36px;
+}
+
+.customer-crm-layout {
+  align-items: start;
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1.35fr) minmax(340px, 0.65fr);
+}
+
+.customer-detail-panel {
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+  position: sticky;
+  top: 18px;
+}
+
+.customer-detail-header {
+  align-items: start;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.customer-detail-header h3 {
+  color: #ffffff;
+  margin: 4px 0;
+}
+
+.customer-detail-header p {
+  color: #8f95a3;
+  font-weight: 800;
+  margin: 0;
+}
+
+.customer-detail-stats {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.customer-detail-stats div {
+  background: #17171d;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 12px;
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+}
+
+.customer-detail-stats span {
+  color: #8f95a3;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.customer-detail-stats strong {
+  color: #ffffff;
+}
+
+.customer-notice-composer {
+  display: grid;
+  gap: 10px;
+}
+
+.customer-notice-composer textarea {
+  background: #17171d;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 12px;
+  color: #ffffff;
+  padding: 12px;
+  resize: vertical;
+  width: 100%;
+}
+
+.customer-alert-pill {
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 0.72rem;
+  font-weight: 900;
+  padding: 5px 9px;
+  white-space: nowrap;
+}
+
+.customer-alert-pill.red,
+td.customer-cell-red {
+  animation: urgentStockBlink 1.15s ease-in-out infinite;
+  background: rgba(239, 68, 68, 0.14);
+  color: #fecaca;
+  font-weight: 900;
+}
+
+.customer-alert-pill.yellow,
+td.customer-cell-yellow {
+  background: rgba(245, 158, 11, 0.16);
+  color: #fde68a;
+  font-weight: 900;
+}
+
+.customer-alert-pill.blue,
+td.customer-cell-blue {
+  background: rgba(59, 130, 246, 0.14);
+  color: #93c5fd;
+  font-weight: 900;
+}
+
+.customer-alert-pill.green {
+  background: rgba(34, 197, 94, 0.14);
+  color: #86efac;
+}
+
+.customer-slot-picker {
+  background: #17171d;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 14px;
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  min-width: 0;
+  padding: 14px;
+}
+
+.customer-slot-picker legend {
+  background: #25252d;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  color: #d7d9e0;
+  font-size: 0.8rem;
+  font-weight: 800;
+  padding: 4px 10px;
+}
+
 .skeleton-stack {
   display: grid;
   gap: 18px;
@@ -494,6 +895,7 @@ button {
   display: grid;
   gap: 16px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
 }
 
 .today-panel {
@@ -646,6 +1048,51 @@ button {
   font-weight: 800;
 }
 
+.audit-summary {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+}
+
+.audit-summary-card {
+  display: grid;
+  gap: 10px;
+  min-height: 118px;
+  padding: 16px;
+}
+
+.audit-summary-card .metric-icon {
+  margin-bottom: 2px;
+}
+
+.audit-summary-card span:not(.metric-icon) {
+  color: #8f95a3;
+  font-size: 0.82rem;
+  font-weight: 900;
+}
+
+.audit-summary-card strong {
+  align-self: end;
+  color: #ffffff;
+  font-size: 1.8rem;
+}
+
+.audit-log-panel {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+}
+
+.audit-log-panel .section-toolbar {
+  margin: 0;
+}
+
+.audit-count {
+  color: #bffcf0;
+  font-size: 0.84rem;
+  font-weight: 900;
+}
+
 .split > div {
   display: grid;
   gap: 12px;
@@ -703,8 +1150,95 @@ button {
 .activity-panel {
   display: grid;
   gap: 14px;
-  min-height: 270px;
+  min-height: 240px;
   padding: 16px;
+  align-items: start;
+}
+
+.activity-panel.follow-up {
+  min-height: auto;
+  padding: 12px;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+}
+
+.activity-panel.follow-up .activity-list {
+  gap: 6px;
+}
+
+.follow-up-list {
+  display: grid;
+  gap: 8px;
+  overflow-y: auto;
+  padding-right: 4px;
+  min-height: 120px;
+}
+
+.follow-up-summary {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+  margin-bottom: 6px;
+}
+
+.follow-up-summary div {
+  background: #17171d;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 10px;
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 8px;
+}
+
+.follow-up-card {
+  align-items: center;
+  background: #17171d;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 12px;
+  color: #ffffff;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-height: 54px;
+  padding: 8px;
+  text-align: left;
+}
+
+.follow-up-card span,
+.follow-up-card small {
+  color: #8f95a3;
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 900;
+}
+
+.follow-up-card strong {
+  display: block;
+  font-size: 0.86rem;
+  margin: 2px 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.follow-up-card b {
+  border-radius: 999px;
+  font-size: 0.68rem;
+  padding: 4px 7px;
+  white-space: nowrap;
+}
+
+.follow-up-card:hover {
+  border-color: rgba(124, 140, 255, 0.38);
+  transform: translateY(-1px);
+}
+
+.follow-up-more {
+  color: #8f95a3;
+  font-size: 0.74rem;
+  margin: 0;
+  padding-top: 4px;
 }
 
 .activity-title {
@@ -751,6 +1285,34 @@ button {
 .activity-row strong {
   color: #ffffff;
   font-size: 0.84rem;
+}
+
+.follow-up-card.danger {
+  animation: urgentStockBlink 1.15s ease-in-out infinite;
+  border-color: rgba(239, 68, 68, 0.28);
+}
+
+.follow-up-card.danger b {
+  background: rgba(239, 68, 68, 0.18);
+  color: #fecaca;
+}
+
+.follow-up-card.warning {
+  border-color: rgba(245, 158, 11, 0.28);
+}
+
+.follow-up-card.warning b {
+  background: rgba(245, 158, 11, 0.16);
+  color: #fde68a;
+}
+
+.follow-up-card.info {
+  border-color: rgba(59, 130, 246, 0.24);
+}
+
+.follow-up-card.info b {
+  background: rgba(59, 130, 246, 0.14);
+  color: #93c5fd;
 }
 
 .mini-chart {
@@ -2655,6 +3217,7 @@ tr:last-child td {
 @media (max-width: 1180px) {
   .metric-grid,
   .dashboard-density,
+  .audit-summary,
   .today-stats,
   .dashboard-filters,
   .settings-form,
@@ -2714,6 +3277,7 @@ tr:last-child td {
 
   .metric-grid,
   .dashboard-density,
+  .audit-summary,
   .split,
   .health-panel,
   .today-stats,
@@ -2725,6 +3289,70 @@ tr:last-child td {
   .form-grid,
   .inventory-filters,
   .invoice-item-row {
+    grid-template-columns: 1fr;
+  }
+
+  .public-booking-shell {
+    align-items: start;
+    padding: 14px;
+  }
+
+  .public-booking-panel {
+    border-radius: 14px;
+    padding: 18px;
+  }
+
+  .public-booking-form {
+    grid-template-columns: 1fr;
+  }
+
+  .public-booking-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .customer-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .customer-metrics,
+  .customer-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .customer-notice {
+    grid-template-columns: 1fr;
+  }
+
+  .customer-notice-actions {
+    grid-template-columns: 1fr;
+    min-width: 0;
+  }
+
+  .customer-crm-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .customer-detail-panel {
+    position: static;
+  }
+
+  .customer-card-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .customer-card-form .settings-header,
+  .customer-card-form .customer-notes,
+  .customer-card-form .primary-button {
+    grid-column: 1 / -1;
+  }
+
+  .customer-card-form .primary-button {
+    justify-self: stretch;
+  }
+
+  .follow-up-summary {
     grid-template-columns: 1fr;
   }
 
@@ -2794,6 +3422,12 @@ tr:last-child td {
 
   .tire-setup-fields {
     grid-column: auto;
+  }
+}
+
+@media (max-width: 520px) {
+  .customer-card-form {
+    grid-template-columns: 1fr;
   }
 }
 

@@ -9,6 +9,8 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,17 +19,23 @@ import com.aem.tiretrack.model.Appointment;
 import com.aem.tiretrack.model.Tire;
 import com.aem.tiretrack.repository.AppointmentRepository;
 import com.aem.tiretrack.repository.TireRepository;
+import com.aem.tiretrack.repository.UserRepository;
 
 @Service
 public class AppointmentService {
+    private static final LocalTime SLOT_START = LocalTime.of(9, 0);
+    private static final LocalTime SLOT_END = LocalTime.of(17, 0);
+    private static final int SLOT_MINUTES = 30;
 
     private final AppointmentRepository appointmentRepository;
     private final TireRepository tireRepository;
+    private final UserRepository userRepository;
     private final AuditLogService auditLogService;
 
-    public AppointmentService(AppointmentRepository appointmentRepository, TireRepository tireRepository, AuditLogService auditLogService) {
+    public AppointmentService(AppointmentRepository appointmentRepository, TireRepository tireRepository, UserRepository userRepository, AuditLogService auditLogService) {
         this.appointmentRepository = appointmentRepository;
         this.tireRepository = tireRepository;
+        this.userRepository = userRepository;
         this.auditLogService = auditLogService;
     }
 
@@ -45,16 +53,23 @@ public class AppointmentService {
         LocalDateTime dayEnd = date.atTime(LocalTime.MAX);
 
         Set<LocalTime> bookedTimes = appointmentRepository.findByAppointmentDateBetween(dayStart, dayEnd).stream()
+                .filter(this::shouldReserve)
                 .map(appointment -> appointment.getAppointmentDate().toLocalTime())
                 .collect(Collectors.toSet());
 
-        LocalTime slotStart = LocalTime.of(9, 0);
-        LocalTime slotEnd = LocalTime.of(17, 0);
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("HH:mm");
+        LocalDate today = LocalDate.now();
+        LocalTime now = LocalTime.now();
+
+        if (date.isBefore(today)) {
+            return List.of();
+        }
 
         List<String> availableSlots = new ArrayList<>();
-        for (LocalTime slot = slotStart; !slot.isAfter(slotEnd.minusMinutes(30)); slot = slot.plusMinutes(30)) {
-            if (!bookedTimes.contains(slot)) {
+        for (LocalTime slot = SLOT_START; !slot.isAfter(SLOT_END.minusMinutes(SLOT_MINUTES)); slot = slot.plusMinutes(SLOT_MINUTES)) {
+            boolean isPastTodaySlot = date.isEqual(today) && !slot.isAfter(now);
+
+            if (!isPastTodaySlot && !bookedTimes.contains(slot)) {
                 availableSlots.add(slot.format(formatter));
             }
         }
@@ -65,6 +80,7 @@ public class AppointmentService {
     @Transactional
     public Appointment saveAppointment(Appointment appointment) {
         validateAppointmentTime(appointment, null);
+        linkCustomerByPhone(appointment);
         reserveAppointmentTires(appointment);
         Appointment savedAppointment = appointmentRepository.save(appointment);
         auditLogService.record("BOOKED", "Appointment", savedAppointment.getId(), "Booked appointment for " + savedAppointment.getCustomerName());
@@ -95,9 +111,10 @@ public class AppointmentService {
         existingAppointment.setCancelReason(updatedAppointment.getCancelReason());
 
         if (updatedAppointment.getStatus() != null) {
-            existingAppointment.setStatus(updatedAppointment.getStatus());
+        existingAppointment.setStatus(updatedAppointment.getStatus());
         }
 
+        linkCustomerByPhone(existingAppointment);
         reserveAppointmentTires(existingAppointment);
         Appointment savedAppointment = appointmentRepository.save(existingAppointment);
         auditLogService.record("UPDATED", "Appointment", savedAppointment.getId(), "Updated appointment for " + savedAppointment.getCustomerName());
@@ -109,8 +126,9 @@ public class AppointmentService {
         Appointment appointment = getAppointmentById(id);
         releaseAppointmentTires(appointment);
         appointmentRepository.delete(appointment);
-        auditLogService.record("DELETED", "Appointment", id, "Deleted appointment for " + appointment.getCustomerName());
+        auditLogService.record("CANCELLED", "Appointment", id, "Cancelled appointment for " + appointment.getCustomerName(), getCurrentUsername());
     }
+
 
     private void reserveAppointmentTires(Appointment appointment) {
         if (!shouldReserve(appointment)) {
@@ -137,6 +155,21 @@ public class AppointmentService {
     private void validateAppointmentTime(Appointment appointment, Long ignoredAppointmentId) {
         if (appointment.getAppointmentDate() == null || !shouldReserve(appointment)) {
             return;
+        }
+
+        LocalDateTime appointmentDate = appointment.getAppointmentDate();
+        LocalTime appointmentTime = appointmentDate.toLocalTime();
+
+        if (appointmentDate.isBefore(LocalDateTime.now())) {
+            throw new RuntimeException("Choose a future appointment time");
+        }
+
+        if (appointmentTime.isBefore(SLOT_START) || appointmentTime.isAfter(SLOT_END.minusMinutes(SLOT_MINUTES))) {
+            throw new RuntimeException("Choose an appointment during business hours");
+        }
+
+        if (appointmentTime.getMinute() % SLOT_MINUTES != 0 || appointmentTime.getSecond() != 0 || appointmentTime.getNano() != 0) {
+            throw new RuntimeException("Choose a valid appointment slot");
         }
 
         boolean hasConflict = appointmentRepository.findByAppointmentDate(appointment.getAppointmentDate()).stream()
@@ -167,5 +200,18 @@ public class AppointmentService {
         }
 
         tire.setReservedQuantity(nextReservedQuantity);
+    }
+
+    private void linkCustomerByPhone(Appointment appointment) {
+        if (appointment.getCustomerId() == null && appointment.getPhone() != null) {
+            userRepository.findByPhone(appointment.getPhone()).ifPresent(user -> appointment.setCustomerId(user.getId()));
+        }
+    }
+
+    private String getCurrentUsername() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        return authentication != null && authentication.isAuthenticated() && authentication.getName() != null
+                ? authentication.getName()
+                : "system";
     }
 }

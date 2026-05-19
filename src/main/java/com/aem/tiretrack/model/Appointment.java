@@ -33,6 +33,9 @@ public class Appointment {
     private String phone;
     private String vehicle;
 
+    @Column(name = "customer_id")
+    private Long customerId;
+
     @Column(name = "tire_size")
     private String tireSize;
 
@@ -126,6 +129,14 @@ public class Appointment {
 
     public void setVehicle(String vehicle) {
         this.vehicle = vehicle;
+    }
+
+    public Long getCustomerId() {
+        return customerId;
+    }
+
+    public void setCustomerId(Long customerId) {
+        this.customerId = customerId;
     }
 
     public String getTireSize() {
