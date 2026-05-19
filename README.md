@@ -231,8 +231,8 @@ src/main/java/com/aem/tiretrack
 ├── repository
 ├── security
 └── service
-
-🧪 Current Status
+```
+# 🧪 Current Status
 
 TireTrack is actively evolving with production-inspired architecture and business workflows.
 
@@ -246,11 +246,12 @@ Technician assignment
 Deployment & cloud hosting
 Unit/integration testing
 Refresh token hardening
-📸 Screenshots
 
-Add dashboard, invoice, booking, and analytics screenshots here.
+# 📸 Screenshots
 
-👨‍💻 Author
+coming soon.
+
+# 👨‍💻 Author
 Fouad Shalaby
 
 Computer Science Graduate passionate about backend engineering, scalable software architecture, business systems, and full-stack application development.
