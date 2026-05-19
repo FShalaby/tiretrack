@@ -15,357 +15,256 @@
 
 # Overview
 
-TireTrack is a professional full-stack management system designed for tire shops to manage:
+TireTrack 🚗
 
-* Tire inventory
-* Customer appointments
-* Invoice generation
-* Dashboard analytics
-* Stock monitoring
-* Sales tracking
+A modern full-stack tire shop management platform built for real-world automotive businesses. TireTrack combines inventory management, appointment scheduling, invoicing, customer booking, analytics, authentication, and role-based business operations into a single scalable system.
 
-The system was built with scalability and real business workflows in mind rather than simple CRUD functionality.
+Designed with production-style architecture using Spring Boot, MySQL, React, JWT authentication, and enterprise-inspired backend workflows.
 
----
+✨ Features
+🔐 Authentication & Security
+JWT authentication
+Refresh token system
+BCrypt password hashing
+Role-Based Access Control (RBAC)
+Secure protected APIs
+Environment-based secret management
+Stateless authentication architecture
+👥 Multi-Role System
+ADMIN
+Full dashboard analytics
+Financial reporting
+Inventory management
+Employee management
+Settings management
+Audit logs
+Invoice/payment oversight
+EMPLOYEE
+Appointment management
+Tire inventory operations
+Customer checkout/invoicing
+Reservation handling
+CUSTOMER / PUBLIC
+Public appointment booking
+Available time slot viewing
+Customer portal access
+Appointment tracking
+📊 Dashboard & Analytics
+Revenue analytics
+Inventory distribution charts
+Tire condition breakdown
+Top inventory insights
+Operational overview panels
+Recent activity feed
+Appointment overview
+Invoice summaries
+Animated metric cards
+Interactive charts using Recharts
+🛞 Tire Inventory Management
+New & used tire tracking
+Inventory quantity management
+Reserved inventory system
+Low-stock warnings
+Out-of-stock indicators
+Fast-moving inventory detection
+Tire search & filtering
+Refill existing inventory
+CSV inventory export
+Tire detail drawer
+Size-based searching
+Condition tracking
+📅 Appointment System
+Public customer booking
+Business-hours scheduling
+Available slot generation
+Double-booking prevention
+Appointment validation
+Reservation-aware inventory logic
+Customer vehicle tracking
+Time-slot scheduling
+Appointment status management
+Employee/admin appointment workflows
+Upcoming appointments panel
+🧾 Invoicing & Payments
+Dynamic invoice generation
+Printable invoices
+PDF invoice export
+Invoice lifecycle management
+Tax calculation system
+Appointment-linked invoices
+Inventory deduction workflows
+Reservation consumption handling
+Invoice CSV export
+Payment status tracking
+Company branding support
+Monthly sales reports
+🏢 Company Settings
+Shop name management
+Logo URL support
+Phone/address management
+Configurable tax rates
+Default invoice terms
+Persistent settings storage
+🧠 Backend Architecture
 
-# Features
+TireTrack follows layered backend architecture:
 
-## Dashboard Analytics
-
-* Real-time business dashboard
-* Total inventory count
-* Revenue tracking
-* Invoice analytics
-* Low-stock monitoring
-* Daily appointment summaries
-
-## Tire Inventory Management
-
-* Create, update, delete, and manage tires
-* Tire sizing support:
-
-  * Width
-  * Aspect ratio
-  * Rim size
-* Tire condition support:
-
-  * NEW
-  * USED
-* Season support:
-
-  * Summer
-  * Winter
-  * All Season
-* Inventory quantity tracking
-* Tire location management
-* Advanced filtering and search
-
-## Appointment System
-
-* Customer appointment booking
-* Appointment status tracking
-* Tire/service scheduling
-* Date and time support
-* Service type management
-* Real-time appointment dashboard integration
-
-## Invoice System
-
-* Invoice creation and management
-* Multiple invoice items
-* Tire inventory deduction after sales
-* Automatic total calculations
-* Service and tire item support
-* Payment method tracking
-* Sales history tracking
-
----
-
-# Tech Stack
-
-## Backend
-
-* Java 21
-* Spring Boot 3
-* Spring Data JPA
-* Hibernate
-* Maven
-* MySQL
-
-## Frontend
-
-* React
-* Vite
-* JavaScript
-* Modern CSS
-
-## Development Tools
-
-* VS Code
-* Postman
-* Git
-* GitHub
-
----
-
-# System Architecture
-
-```text
-React Frontend
-       ↓
-Spring Boot REST API
-       ↓
+Controller Layer
+↓
 Service Layer
-       ↓
-JPA/Hibernate
-       ↓
-MySQL Database
-```
+↓
+Repository Layer
+↓
+Database
+Backend Technologies
+Java
+Spring Boot
+Spring Security
+JWT
+JPA / Hibernate
+MySQL
+Maven
+Architectural Highlights
+DTO separation
+Service-layer business logic
+Repository abstraction
+JWT authentication filter
+Role-based route protection
+Transactional workflows
+Environment configuration
+Public/internal API separation
+🎨 Frontend
 
----
+Modern React frontend focused on usability and operational efficiency.
 
-# Database Design
+Frontend Technologies
+React
+Vite
+Axios
+Recharts
+Framer Motion
+Lucide React
+CSS
+Frontend Features
+Responsive UI
+Animated dashboard
+Protected frontend routes
+Role-aware navigation
+Public booking page
+Global search
+Notifications system
+Sticky sidebar
+Interactive charts
+Pagination & searchable tables
+Loading skeletons
+Modern business UI/UX
+🔄 Real-World Business Logic
 
-The application uses a relational MySQL database with:
+TireTrack was designed around realistic tire shop workflows:
 
-* Tires
-* Appointments
-* Invoices
-* Invoice Items
+Inventory Reservation Logic
 
-Key relationships include:
+Appointments reserve tire inventory before checkout.
 
-* One invoice → many invoice items
-* Inventory deduction during invoice processing
-* Dashboard aggregation queries across multiple modules
+When invoicing:
 
----
+Reserved inventory is consumed first
+Remaining stock is validated
+Inventory quantities update automatically
+Appointment status updates when paid
+Scheduling Logic
+Prevents overlapping appointments
+Prevents past bookings
+Generates valid business-hour slots
+Supports operational scheduling workflows
+Security Logic
+Employees cannot access business analytics
+Admin routes are protected
+Public booking routes remain open
+Tokens are validated on protected requests
+📂 Project Structure
+src/main/java/com/aem/tiretrack
+├── config
+├── controller
+├── dto
+├── enums
+├── exception
+├── model
+├── repository
+├── security
+└── service
+🚀 Getting Started
+Prerequisites
+Java 17+
+Maven
+MySQL
+Node.js
+npm
+⚙️ Backend Setup
+1. Clone Repository
+git clone https://github.com/FShalaby/tiretrack.git
+cd tiretrack
+2. Configure Environment Variables
 
-# Backend Highlights
+Set JWT secret in your system environment variables:
 
-## Validation
+JWT_SECRET=your_secure_secret_here
+3. Configure Database
 
-The backend includes robust validation using Jakarta Validation:
+Update:
 
-* Required field validation
-* Numeric constraints
-* Tire size validation
-* Enum validation
-* Business rule enforcement
-
-## Business Logic
-
-* Automatic invoice total calculations
-* Automatic inventory deduction
-* Low-stock detection
-* Dashboard aggregation logic
-* Appointment tracking
-
-## REST API
-
-Structured RESTful API design with:
-
-* Controller layer
-* Service layer
-* Repository layer
-* DTO usage
-* Transactional invoice processing
-
----
-
-# Dashboard Preview
-
-The frontend dashboard includes:
-
-* Premium modern admin dashboard UI
-* Real-time inventory monitoring
-* Appointment management system
-* Invoice management workflow
-* Business analytics and KPI tracking
-* Analytical dashboard charts
-* Revenue and inventory insights
-* Responsive cross-device layout
-* Low-stock visualization
-* Operational business summaries
-
-The dashboard experience was designed to resemble modern enterprise SaaS platforms used in production business environments.
-
----
-
-# API Endpoints
-
-## Tires
-
-```http
-GET    /api/tires
-POST   /api/tires
-PUT    /api/tires/{id}
-DELETE /api/tires/{id}
-```
-
-## Tire Search
-
-```http
-GET /api/tires/search/brand
-GET /api/tires/search/size
-GET /api/tires/search/condition
-GET /api/tires/search/season
-GET /api/tires/search/location
-GET /api/tires/low-stock
-```
-
-## Appointments
-
-```http
-GET    /api/appointments
-POST   /api/appointments
-PUT    /api/appointments/{id}
-DELETE /api/appointments/{id}
-```
-
-## Invoices
-
-```http
-GET    /api/invoices
-POST   /api/invoices
-DELETE /api/invoices/{id}
-```
-
-## Dashboard
-
-```http
-GET /api/dashboard
-```
-
----
-
-# Frontend Setup
-
-```bash
-cd tiretrack-frontend
-npm install
-npm run dev
-```
-
-Frontend runs on:
-
-```text
-http://localhost:5173
-```
-
----
-
-# Backend Setup
-
-## Configure MySQL
-
-Update your:
-
-```properties
-application.properties
-```
-
-with your MySQL credentials.
+src/main/resources/application.properties
 
 Example:
 
-```properties
 spring.datasource.url=jdbc:mysql://localhost:3306/tiretrack
 spring.datasource.username=root
 spring.datasource.password=yourpassword
-```
-
-## Run Backend
-
-```bash
+4. Run Backend
 mvn spring-boot:run
-```
+💻 Frontend Setup
+cd frontend
+npm install
+npm run dev
+🔑 API Security Example
 
-Backend runs on:
+Protected requests require:
 
-```text
-http://localhost:8080
-```
+Authorization: Bearer YOUR_TOKEN
+📌 Example API Routes
+Public Booking
+POST /api/public/bookings
+Login
+POST /api/auth/login
+Dashboard (Admin Only)
+GET /api/dashboard
+Inventory
+GET /api/tires
+🧪 Current Status
 
----
+TireTrack is actively evolving with production-inspired architecture and business workflows.
 
-# Future Improvements
+Planned Improvements
+Automated reminders
+Email notifications
+SMS integration
+Multi-location support
+Advanced reporting
+Technician assignment
+Deployment & cloud hosting
+Unit/integration testing
+Refresh token hardening
+📸 Screenshots
 
-Planned future upgrades include:
+Add dashboard, invoice, booking, and analytics screenshots here.
 
-* Authentication & authorization
-* Role-based access control
-* PDF invoice exports
-* Customer management
-* Email/SMS appointment reminders
-* Sales analytics charts
-* Inventory forecasting
-* Cloud deployment
+👨‍💻 Author
+Fouad Shalaby
 
----
+Computer Science Graduate passionate about backend engineering, scalable software architecture, business systems, and full-stack application development.
 
-# What Makes This Project Different
+GitHub: FShalaby GitHub
+LinkedIn: LinkedIn Profile
+📄 License
 
-Unlike simple CRUD applications, TireTrack focuses on:
-
-* Real business workflows
-* Inventory synchronization
-* Invoice automation
-* Analytics aggregation
-* Professional full-stack architecture
-* Scalable backend design
-* Interactive dashboard analytics
-* Operational data visualization
-* Business intelligence concepts
-* Real-time inventory management
-
-The project was intentionally designed to resemble production-level business software rather than a tutorial-style application.
-
-The backend architecture demonstrates understanding of:
-
-* REST API design
-* Service-oriented architecture
-* Transaction management
-* Relational database modeling
-* Entity relationships
-* Validation and business rules
-* DTO-based data transfer
-* Aggregation queries and analytics
-
-The frontend demonstrates:
-
-* Modern React architecture
-* Responsive admin dashboard design
-* State management concepts
-* API integration
-* Dynamic data rendering
-* Professional UI/UX styling
-* Business dashboard visualization patterns
-
-This project reflects practical software engineering decisions commonly found in real operational management systems.
-
----
-
-# Author
-
-## Fouad Shalaby
-
-Computer Science Graduate
-
-* Backend Development
-* Full-Stack Engineering
-* Spring Boot & Java
-* React Development
-* System Architecture
-
-GitHub:
-
-```text
-https://github.com/FShalaby
-```
-
----
-
-# License
-
-This project is for educational, portfolio, and demonstration purposes.
+This project is licensed under the MIT License.
