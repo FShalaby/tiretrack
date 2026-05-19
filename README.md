@@ -258,6 +258,7 @@ Computer Science Graduate passionate about backend engineering, scalable softwar
 
 GitHub: https://github.com/FShalaby
 LinkedIn: https://www.linkedin.com/in/shalabyt
-📄 License
+
+# 📄 License
 
 This project is licensed under the MIT License.
