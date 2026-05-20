@@ -12,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.aem.tiretrack.dto.customer.CustomerAppointmentRequest;
 import com.aem.tiretrack.dto.customer.CustomerNoticeRequest;
+import com.aem.tiretrack.dto.customer.CustomerProfile;
 import com.aem.tiretrack.dto.customer.CustomerPortalResponse;
 import com.aem.tiretrack.dto.customer.CustomerSummary;
 import com.aem.tiretrack.enums.AppointmentStatus;
@@ -48,7 +49,7 @@ public class CustomerPortalService {
     public CustomerPortalResponse portal() {
         User customer = currentCustomer();
         return new CustomerPortalResponse(
-                customer,
+                new CustomerProfile(customer),
                 vehicleRepository.findByCustomerOrderByCreatedAtDesc(customer),
                 appointmentRepository.findCustomerHistory(customer.getId(), customer.getPhone()),
                 invoiceRepository.findCustomerHistory(customer.getId(), customer.getPhone()),

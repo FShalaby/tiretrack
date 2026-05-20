@@ -11,6 +11,8 @@ import com.aem.tiretrack.dto.auth.RefreshTokenRequest;
 import com.aem.tiretrack.dto.auth.RegisterRequest;
 import com.aem.tiretrack.service.AuthService;
 
+import jakarta.validation.Valid;
+
 @RestController
 @RequestMapping("/api/auth")
 public class AuthController {
@@ -22,17 +24,17 @@ public class AuthController {
     }
 
     @PostMapping("/register")
-    public LoginResponse register(@RequestBody RegisterRequest request) {
+    public LoginResponse register(@Valid @RequestBody RegisterRequest request) {
         return authService.register(request);
     }
 
     @PostMapping("/login")
-    public LoginResponse login(@RequestBody LoginRequest request) {
+    public LoginResponse login(@Valid @RequestBody LoginRequest request) {
         return authService.login(request);
     }
 
     @PostMapping("/refresh")
-    public LoginResponse refresh(@RequestBody RefreshTokenRequest request) {
+    public LoginResponse refresh(@Valid @RequestBody RefreshTokenRequest request) {
         return authService.refreshToken(request);
     }
 }

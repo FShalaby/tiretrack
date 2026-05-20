@@ -24,6 +24,11 @@ public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Excepti
 
     http
         .csrf(csrf -> csrf.disable())
+        .headers(headers -> headers
+            .contentSecurityPolicy(csp -> csp.policyDirectives("default-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'"))
+            .frameOptions(frame -> frame.deny())
+            .httpStrictTransportSecurity(hsts -> hsts.includeSubDomains(true).preload(true))
+        )
         .authorizeHttpRequests(auth -> auth
 
             // Public auth endpoints
@@ -33,6 +38,7 @@ public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Excepti
             .requestMatchers("/api/dashboard/**").hasRole("ADMIN")
             .requestMatchers("/api/settings/**").hasRole("ADMIN")
             .requestMatchers("/api/reports/**").hasRole("ADMIN")
+            .requestMatchers("/api/accounting/**").hasRole("ADMIN")
             .requestMatchers("/api/audit-logs/**").hasRole("ADMIN")
             .requestMatchers("/api/customers/**").hasRole("ADMIN")
             .requestMatchers("/api/customer/**").hasRole("CUSTOMER")

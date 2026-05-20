@@ -2,6 +2,8 @@ package com.aem.tiretrack.model;
 
 import java.time.LocalDateTime;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -20,8 +22,10 @@ public class RefreshToken {
     private Long id;
 
     @Column(unique = true, nullable = false)
+    @JsonIgnore
     private String token;
 
+    @JsonIgnore
     @ManyToOne
     @JoinColumn(name = "user_id", nullable = false)
     private User user;

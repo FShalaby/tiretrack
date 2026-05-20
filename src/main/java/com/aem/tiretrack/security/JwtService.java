@@ -21,6 +21,12 @@ public class JwtService {
     @Value("${jwt.expiration}")
     private long expirationTime;
 
+    @Value("${jwt.issuer:TireTrack}")
+    private String issuer;
+
+    @Value("${jwt.audience:TireTrack-Web}")
+    private String audience;
+
     private SecretKey getSigningKey() {
         byte[] keyBytes = Decoders.BASE64.decode(this.secretKey);
         return Keys.hmacShaKeyFor(keyBytes);
@@ -31,6 +37,8 @@ public class JwtService {
 
         return Jwts.builder()
                 .setSubject(email)
+                .setIssuer(issuer)
+                .setAudience(audience)
                 .setIssuedAt(new Date(now))
                 .setExpiration(new Date(now + expirationTime))
                 .signWith(getSigningKey())
@@ -40,6 +48,8 @@ public class JwtService {
     public String extractEmail(String token) {
         Claims claims = Jwts.parserBuilder()
                 .setSigningKey(getSigningKey())
+                .requireIssuer(issuer)
+                .requireAudience(audience)
                 .build()
                 .parseClaimsJws(token)
                 .getBody();
@@ -50,6 +60,8 @@ public class JwtService {
     public boolean isTokenValid(String token) {
         Claims claims = Jwts.parserBuilder()
                 .setSigningKey(getSigningKey())
+                .requireIssuer(issuer)
+                .requireAudience(audience)
                 .build()
                 .parseClaimsJws(token)
                 .getBody();

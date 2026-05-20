@@ -165,6 +165,30 @@ export function getAuditLogs() {
   return request("/api/audit-logs");
 }
 
+export function getNotifications() {
+  return request("/api/notifications");
+}
+
+export function createNotification(notification) {
+  return request("/api/notifications", {
+    method: "POST",
+    headers: jsonHeaders,
+    body: JSON.stringify(notification)
+  });
+}
+
+export function markNotificationRead(id) {
+  return request(`/api/notifications/${id}/read`, {
+    method: "PUT"
+  });
+}
+
+export function markAllNotificationsRead() {
+  return request("/api/notifications/read-all", {
+    method: "PUT"
+  });
+}
+
 export function updateSettings(settings) {
   return request("/api/settings", {
     method: "PUT",
@@ -331,5 +355,52 @@ export function sendCustomerNotice(id, notice) {
     method: "POST",
     headers: jsonHeaders,
     body: JSON.stringify(notice)
+  });
+}
+
+export function getAccountingReport(start, end) {
+  const params = new URLSearchParams();
+  if (start) params.set("start", start);
+  if (end) params.set("end", end);
+  return request(`/api/accounting/reports${params.toString() ? `?${params.toString()}` : ""}`);
+}
+
+export function getAccountingAccounts() {
+  return request("/api/accounting/accounts");
+}
+
+export function createAccountingAccount(account) {
+  return request("/api/accounting/accounts", {
+    method: "POST",
+    headers: jsonHeaders,
+    body: JSON.stringify(account)
+  });
+}
+
+export function createExpense(expense) {
+  return request("/api/accounting/expenses", {
+    method: "POST",
+    headers: jsonHeaders,
+    body: JSON.stringify(expense)
+  });
+}
+
+export function payExpense(id, payment) {
+  return request(`/api/accounting/expenses/${id}/pay`, {
+    method: "POST",
+    headers: jsonHeaders,
+    body: JSON.stringify(payment || {})
+  });
+}
+
+export function getVendors() {
+  return request("/api/accounting/vendors");
+}
+
+export function createVendor(vendor) {
+  return request("/api/accounting/vendors", {
+    method: "POST",
+    headers: jsonHeaders,
+    body: JSON.stringify(vendor)
   });
 }

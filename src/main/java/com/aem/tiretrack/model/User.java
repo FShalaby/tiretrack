@@ -3,6 +3,7 @@ package com.aem.tiretrack.model;
 import java.time.LocalDateTime;
 
 import com.aem.tiretrack.enums.UserRole;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -36,6 +37,7 @@ public class User
 
     @NotNull(message = "Password is required")
     @Column(name = "password_hash")
+    @JsonIgnore
     private String passwordHash;
 
     @NotNull(message = "Role is required")

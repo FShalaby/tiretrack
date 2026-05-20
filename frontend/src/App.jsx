@@ -23,27 +23,36 @@ import {
   Area,
   AreaChart,
   CartesianGrid,
+  Line,
+  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis
 } from "recharts";
 import {
+  createAccountingAccount,
   createAppointment,
   createCustomerAppointment,
   createCustomerVehicle,
+  createExpense,
   createInvoice,
+  createNotification,
   createPublicBooking,
   createTire,
+  createVendor,
   deleteAppointment,
   deleteCustomerVehicle,
   deleteInvoice,
   deleteTire,
   getAppointments,
+  getAccountingAccounts,
+  getAccountingReport,
   getAuditLogs,
   getDashboard,
   getInvoice,
   getInvoices,
+  getNotifications,
   getLowStockTires,
   getSalesData,
   getSettings,
@@ -51,9 +60,13 @@ import {
   getAvailableSlots,
   getCustomerPortal,
   getCustomers,
+  getVendors,
   login as loginApi,
   logout as logoutApi,
   markCustomerNotificationRead,
+  markAllNotificationsRead,
+  markNotificationRead,
+  payExpense as payExpenseApi,
   payCustomerInvoice,
   register as registerApi,
   refreshToken as refreshTokenApi,
@@ -69,14 +82,15 @@ import {
   updateTire
 } from "./api";
 
-const tabs = ["Dashboard", "Tires", "Appointments", "Invoices", "Customers", "Audit Logs", "Settings"];
-const employeeHiddenTabs = ["Dashboard", "Customers", "Audit Logs", "Settings"];
+const tabs = ["Dashboard", "Tires", "Appointments", "Invoices", "Customers", "Accounting", "Audit Logs", "Settings"];
+const employeeHiddenTabs = ["Dashboard", "Customers", "Accounting", "Audit Logs", "Settings"];
 const tabIcons = {
   Dashboard: Gauge,
   Tires: Disc3,
   Appointments: CalendarDays,
   Invoices: FileText,
   Customers: UserCircle,
+  Accounting: CircleDollarSign,
   "Audit Logs": ClipboardList,
   Settings: SettingsIcon
 };
@@ -93,7 +107,7 @@ const statusClassMap = {
   COMPLETED: "green",
   CANCELLED: "red",
   PAID: "green",
-  UNPAID: "red",
+  UNPAID: "yellow",
   PARTIAL: "yellow",
   OVERDUE: "red",
   DUE_SOON: "yellow",
@@ -103,6 +117,78 @@ const statusClassMap = {
 };
 const chartColors = ["#18d3b2", "#7c8cff", "#ef4444", "#f59e0b"];
 const appointmentTimes = ["08:00", "09:00", "10:00", "11:00", "13:00", "14:00", "15:00", "16:00"];
+const accountingTabs = ["Dashboard", "Expenses", "Vendors", "Accounts", "Reports", "Ledger"];
+const accountingTabMeta = {
+  Dashboard: {
+    description: "High-level financial snapshot with the reports most owners check first.",
+    eyebrow: "Overview",
+    nav: "Snapshot",
+    statLabel: "Net income",
+    statValue: ({ report }) => money(report?.netIncome)
+  },
+  Expenses: {
+    description: "Post vendor costs, track due dates, and keep payable status visible.",
+    eyebrow: "Spend control",
+    nav: "Record costs",
+    statLabel: "Recent expenses",
+    statValue: ({ recentExpenses }) => recentExpenses.length
+  },
+  Vendors: {
+    description: "Manage suppliers and quickly understand current-period vendor spending.",
+    eyebrow: "Supplier book",
+    nav: "Suppliers",
+    statLabel: "Vendors",
+    statValue: ({ vendors }) => vendors.length
+  },
+  Accounts: {
+    description: "Maintain the chart of accounts that powers expenses, reports, and ledger posting.",
+    eyebrow: "Setup",
+    nav: "Chart",
+    statLabel: "Accounts",
+    statValue: ({ accounts }) => accounts.length
+  },
+  Reports: {
+    description: "Review core statements without mixing them into day-to-day entry screens.",
+    eyebrow: "Statements",
+    nav: "P&L / balance",
+    statLabel: "Revenue",
+    statValue: ({ report }) => money(report?.revenue)
+  },
+  Ledger: {
+    description: "Audit double-entry postings and verify debits, credits, and account balances.",
+    eyebrow: "Audit trail",
+    nav: "Journal",
+    statLabel: "Entries",
+    statValue: ({ recentJournalEntries }) => recentJournalEntries.length
+  }
+};
+const expenseCategoryOptions = [
+  "INVENTORY",
+  "SUPPLIES",
+  "RENT",
+  "UTILITIES",
+  "PAYROLL",
+  "EQUIPMENT",
+  "MARKETING",
+  "INSURANCE",
+  "PROFESSIONAL_SERVICES",
+  "REPAIRS_MAINTENANCE",
+  "BANK_FEES",
+  "OTHER"
+];
+const vendorCategoryOptions = [
+  "TIRE_SUPPLIER",
+  "PARTS_SUPPLIER",
+  "EQUIPMENT",
+  "UTILITIES",
+  "RENT",
+  "INSURANCE",
+  "PROFESSIONAL_SERVICES",
+  "MARKETING",
+  "GENERAL",
+  "OTHER"
+];
+const accountingPaymentOptions = ["CASH", "DEBIT", "CREDIT_CARD", "BANK_TRANSFER", "CHEQUE", "OTHER"];
 const tooltipStyle = {
   background: "#17171d",
   border: "1px solid rgba(255,255,255,0.08)",
@@ -153,6 +239,43 @@ const emptyAppointment = {
   confirmationStatus: "PENDING",
   cancelReason: "",
   status: "BOOKED"
+};
+
+const emptyExpense = {
+  vendor: "",
+  vendorId: "",
+  expenseAccountId: "",
+  category: "Supplies",
+  categoryKey: "SUPPLIES",
+  customCategory: "",
+  expenseDate: todayDateKey(),
+  dueDate: "",
+  subtotal: "0.00",
+  taxAmount: "0.00",
+  total: "0.00",
+  status: "PAID",
+  paymentMethod: "Cash",
+  paymentMethodKey: "CASH",
+  customPaymentMethod: "",
+  notes: ""
+};
+
+const emptyAccount = {
+  code: "",
+  name: "",
+  type: "EXPENSE",
+  active: true,
+  systemAccount: false
+};
+
+const emptyVendor = {
+  name: "",
+  email: "",
+  phone: "",
+  category: "General",
+  categoryKey: "GENERAL",
+  customCategory: "",
+  notes: ""
 };
 
 const emptyInvoice = {
@@ -260,6 +383,13 @@ function clearStoredAuth() {
   localStorage.removeItem("tiretrack-refresh-token");
 }
 
+function scrollPageToTop() {
+  window.requestAnimationFrame(() => {
+    document.querySelector(".content")?.scrollTo?.({ top: 0, behavior: "smooth" });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+}
+
 function defaultTabForRole(role) {
   if (role === "CUSTOMER") {
     return "Portal";
@@ -287,10 +417,35 @@ function downloadTextFile(filename, content, type = "text/plain") {
   URL.revokeObjectURL(url);
 }
 
+function accountingOptionLabel(value) {
+  return String(value || "")
+    .toLowerCase()
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function resolveAccountingLabel(key, customValue) {
+  if (key === "OTHER" && customValue?.trim()) {
+    return customValue.trim();
+  }
+
+  return accountingOptionLabel(key);
+}
+
 function csvEscape(value) {
   const text = String(value ?? "");
 
   return /[",\n]/.test(text) ? `"${text.replaceAll("\"", "\"\"")}"` : text;
+}
+
+function htmlEscape(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll("\"", "&quot;")
+    .replaceAll("'", "&#39;");
 }
 
 function toCsv(headers, rows) {
@@ -369,8 +524,10 @@ function App() {
   const [signupError, setSignupError] = useState("");
   const [signupSubmitting, setSignupSubmitting] = useState(false);
   const [activeTab, setActiveTab] = useState(() => defaultTabForRole(loadStoredAuth()?.role));
+  const [activeAccountingTab, setActiveAccountingTab] = useState("Dashboard");
   const [globalQuery, setGlobalQuery] = useState("");
   const [showNotifications, setShowNotifications] = useState(false);
+  const [appNotifications, setAppNotifications] = useState([]);
   const [highlightedRow, setHighlightedRow] = useState(null);
   const [activityLog, setActivityLog] = useState(() => {
     try {
@@ -388,6 +545,13 @@ function App() {
   const [salesData, setSalesData] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [customerPortal, setCustomerPortal] = useState(null);
+  const [accountingReport, setAccountingReport] = useState(null);
+  const [accountingAccounts, setAccountingAccounts] = useState([]);
+  const [vendors, setVendors] = useState([]);
+  const [expenseForm, setExpenseForm] = useState(emptyExpense);
+  const [accountForm, setAccountForm] = useState(emptyAccount);
+  const [vendorForm, setVendorForm] = useState(emptyVendor);
+  const [accountingMessage, setAccountingMessage] = useState("");
   const [tireForm, setTireForm] = useState(emptyTire);
   const [tireFilters, setTireFilters] = useState(emptyTireFilters);
   const [appointmentForm, setAppointmentForm] = useState(emptyAppointment);
@@ -396,6 +560,18 @@ function App() {
   const [generatedInvoice, setGeneratedInvoice] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
+
+  function scrollToFeedback() {
+    scrollPageToTop();
+  }
+
+  function notifySuccess(message) {
+    setError("");
+    setSuccessMessage(message);
+    recordNotification("Change saved", message, activeTab, "SUCCESS");
+    scrollToFeedback();
+  }
 
   async function loadData(currentAuth = auth) {
     setLoading(true);
@@ -410,7 +586,7 @@ function App() {
       }
 
       if (currentAuth?.role === "ADMIN") {
-        const [summary, tireList, appointmentList, invoiceList, salesList, savedSettings, auditLogs, customerList] = await Promise.all([
+        const [summary, tireList, appointmentList, invoiceList, salesList, savedSettings, auditLogs, customerList, accounting, accounts, vendorList, notifications] = await Promise.all([
           getDashboard(),
           getTires(),
           getAppointments(),
@@ -418,7 +594,11 @@ function App() {
           getSalesData(),
           getSettings().catch(() => loadCompanySettings()),
           getAuditLogs().catch(() => []),
-          getCustomers().catch(() => [])
+          getCustomers().catch(() => []),
+          getAccountingReport().catch(() => null),
+          getAccountingAccounts().catch(() => []),
+          getVendors().catch(() => []),
+          getNotifications().catch(() => [])
         ]);
 
         const mergedSettings = { ...defaultCompanySettings, ...(savedSettings || {}) };
@@ -429,6 +609,10 @@ function App() {
         setInvoices(invoiceList || []);
         setSalesData(salesList || []);
         setCustomers(customerList || []);
+        setAccountingReport(accounting);
+        setAccountingAccounts(accounts || []);
+        setVendors(vendorList || []);
+        setAppNotifications(notifications || []);
         setActivityLog((auditLogs || []).map((log) => ({
           id: log.id,
           action: log.action,
@@ -455,10 +639,15 @@ function App() {
         setInvoices(invoiceList || []);
         setSalesData([]);
         setCustomers([]);
+        setAccountingReport(null);
+        setAccountingAccounts([]);
+        setVendors([]);
+        setAppNotifications([]);
         setCompanySettings(loadCompanySettings());
       }
     } catch (err) {
       setError(err.message);
+      scrollToFeedback();
     } finally {
       setLoading(false);
     }
@@ -519,6 +708,18 @@ function App() {
     }
   }, [activeTab, auth]);
 
+  useEffect(() => {
+    setError("");
+    setSuccessMessage("");
+    setAccountingMessage("");
+  }, [activeTab, activeAccountingTab]);
+
+  useEffect(() => {
+    if (error || successMessage || accountingMessage) {
+      scrollToFeedback();
+    }
+  }, [accountingMessage, error, successMessage]);
+
   async function handleLogin(event) {
     event.preventDefault();
     setLoginError("");
@@ -573,6 +774,7 @@ function App() {
 
   async function saveCustomerVehicle(vehicle) {
     await createCustomerVehicle(vehicle);
+    scrollToFeedback();
     await refreshCustomerPortal();
   }
 
@@ -583,11 +785,13 @@ function App() {
 
   async function bookCustomerAppointment(appointment) {
     await createCustomerAppointment(appointment);
+    scrollToFeedback();
     await refreshCustomerPortal();
   }
 
   async function payInvoiceFromPortal(id) {
     await payCustomerInvoice(id);
+    scrollToFeedback();
     await refreshCustomerPortal();
   }
 
@@ -598,8 +802,102 @@ function App() {
 
   async function sendNoticeToCustomer(id, notice) {
     await sendCustomerNotice(id, notice);
+    await recordNotification("Notice sent", notice.title || "Customer notice sent.", "Customers", "SUCCESS");
     const customerList = await getCustomers().catch(() => customers);
     setCustomers(customerList || []);
+  }
+
+  async function refreshAccounting() {
+    const [accounting, accounts, vendorList] = await Promise.all([
+      getAccountingReport().catch(() => null),
+      getAccountingAccounts().catch(() => []),
+      getVendors().catch(() => [])
+    ]);
+    setAccountingReport(accounting);
+    setAccountingAccounts(accounts || []);
+    setVendors(vendorList || []);
+  }
+
+  async function refreshNotifications() {
+    const notifications = await getNotifications().catch(() => []);
+    setAppNotifications(notifications || []);
+  }
+
+  async function recordNotification(title, message, targetTab = activeTab, type = "INFO") {
+    await createNotification({ title, message, targetTab, type }).catch(() => null);
+    await refreshNotifications();
+  }
+
+  async function openNotification(notification) {
+    if (!notification.read) {
+      await markNotificationRead(notification.id).catch(() => null);
+      await refreshNotifications();
+    }
+    setActiveTab(notification.targetTab || "Dashboard");
+    setShowNotifications(false);
+  }
+
+  async function readAllNotifications() {
+    await markAllNotificationsRead().catch(() => null);
+    await refreshNotifications();
+  }
+
+  async function submitExpense(event) {
+    event.preventDefault();
+    setAccountingMessage("");
+    setSuccessMessage("");
+    await createExpense({
+      ...expenseForm,
+      vendorId: expenseForm.vendorId || null,
+      expenseAccountId: expenseForm.expenseAccountId || null,
+      category: resolveAccountingLabel(expenseForm.categoryKey, expenseForm.customCategory),
+      paymentMethod: resolveAccountingLabel(expenseForm.paymentMethodKey, expenseForm.customPaymentMethod),
+      subtotal: Number(expenseForm.subtotal || 0),
+      taxAmount: Number(expenseForm.taxAmount || 0),
+      total: calculateExpenseTotal(expenseForm)
+    });
+    setExpenseForm(emptyExpense);
+    setAccountingMessage("Expense recorded and posted to the ledger.");
+    recordNotification("Expense posted", "Expense recorded and posted to the ledger.", "Accounting", "SUCCESS");
+    scrollToFeedback();
+    await refreshAccounting();
+  }
+
+  async function submitAccountingAccount(event) {
+    event.preventDefault();
+    setAccountingMessage("");
+    setSuccessMessage("");
+    await createAccountingAccount(accountForm);
+    setAccountForm(emptyAccount);
+    setAccountingMessage("Account added to the chart of accounts.");
+    recordNotification("Account added", "Account added to the chart of accounts.", "Accounting", "SUCCESS");
+    scrollToFeedback();
+    await refreshAccounting();
+  }
+
+  async function submitVendor(event) {
+    event.preventDefault();
+    setAccountingMessage("");
+    setSuccessMessage("");
+    await createVendor({
+      ...vendorForm,
+      category: resolveAccountingLabel(vendorForm.categoryKey, vendorForm.customCategory)
+    });
+    setVendorForm(emptyVendor);
+    setAccountingMessage("Vendor added and ready for expense posting.");
+    recordNotification("Vendor added", "Vendor added and ready for expense posting.", "Accounting", "SUCCESS");
+    scrollToFeedback();
+    await refreshAccounting();
+  }
+
+  async function payAccountingExpense(expense, paymentMethodKey = "CASH") {
+    setAccountingMessage("");
+    setSuccessMessage("");
+    await payExpenseApi(expense.id, { paymentMethodKey });
+    setAccountingMessage(`Expense #${expense.id} marked paid.`);
+    recordNotification("Expense paid", `Expense #${expense.id} marked paid.`, "Accounting", "SUCCESS");
+    scrollToFeedback();
+    await refreshAccounting();
   }
 
   function jumpToResult(result) {
@@ -636,6 +934,7 @@ function App() {
       ...current,
       companyName: mergedSettings.shopName || defaultCompanySettings.shopName
     }));
+    scrollToFeedback();
   }
 
   const lowStockTires = useMemo(
@@ -719,7 +1018,7 @@ function App() {
   }, [appointments, globalQuery, invoices, tires]);
   const visibleTabs = tabs.filter((tab) => canAccessTab(auth?.role, tab));
 
-  const notifications = useMemo(() => {
+  const ignoredDerivedNotifications = useMemo(() => {
     const today = todayDateKey();
     const todaysAppointments = activeAppointments.filter((appointment) => appointmentDateKey(appointment.appointmentDate) === today);
     const urgentLowStock = lowStockTires.filter((tire) => Number(tire.quantity || 0) < 3);
@@ -739,10 +1038,12 @@ function App() {
       }))
     ];
   }, [activeAppointments, lowStockTires]);
+  const unreadNotifications = appNotifications.filter((notification) => !notification.read);
 
   async function submitTire(event) {
     event.preventDefault();
     setError("");
+    setSuccessMessage("");
 
     const tirePayload = {
       ...tireForm,
@@ -773,9 +1074,11 @@ function App() {
 
       setTireForm(emptyTire);
       logActivity(matchingTire ? `Refilled ${tirePayload.brand}` : `Added ${tirePayload.brand}`, "Tires");
-      loadData();
+      notifySuccess(matchingTire ? `${tirePayload.brand} inventory refilled.` : `${tirePayload.brand} added to inventory.`);
+      await loadData();
     } catch (err) {
       setError(err.message);
+      scrollToFeedback();
     }
   }
 
@@ -818,6 +1121,7 @@ function App() {
   async function submitAppointment(event) {
     event.preventDefault();
     setError("");
+    setSuccessMessage("");
 
     const appointment = {
       customerName: appointmentForm.customerName,
@@ -840,6 +1144,7 @@ function App() {
 
     if (appointmentForm.serviceType === "INSTALLATION" && !appointment.frontTireId) {
       setError("Select an inventory tire for this installation appointment.");
+      scrollToFeedback();
       return;
     }
 
@@ -848,6 +1153,7 @@ function App() {
 
     if (!selectedDate || selectedDate < todayDateKey()) {
       setError("Choose today or a future date for this appointment.");
+      scrollToFeedback();
       return;
     }
 
@@ -860,6 +1166,7 @@ function App() {
 
     if (matchingAppointment) {
       setError(`That time is already booked for ${matchingAppointment.customerName}. Pick another slot.`);
+      scrollToFeedback();
       return;
     }
 
@@ -873,9 +1180,11 @@ function App() {
       setAppointmentForm(emptyAppointment);
       setEditingAppointmentId(null);
       logActivity(`${editingAppointmentId ? "Updated" : "Booked"} appointment for ${appointment.customerName}`, "Appointments");
-      loadData();
+      notifySuccess(`${editingAppointmentId ? "Appointment updated" : "Appointment booked"} for ${appointment.customerName}.`);
+      await loadData();
     } catch (err) {
       setError(err.message);
+      scrollToFeedback();
     }
   }
 
@@ -912,6 +1221,7 @@ function App() {
   async function submitInvoice(event) {
     event.preventDefault();
     setError("");
+    setSuccessMessage("");
 
     const items = invoiceForm.items.map((item) => ({
       ...item,
@@ -924,6 +1234,7 @@ function App() {
 
     if (invalidTireItem) {
       setError("Select an inventory tire for every tire line on the invoice.");
+      scrollToFeedback();
       return;
     }
 
@@ -940,15 +1251,18 @@ function App() {
       setGeneratedInvoice(printableInvoice);
       logActivity(`Created invoice for ${invoiceForm.customerName}`, "Invoices");
       setInvoiceForm(makeInvoiceForm(companySettings));
+      notifySuccess(`Invoice created for ${invoiceForm.customerName}.`);
       await loadData();
     } catch (err) {
       setError(err.message);
+      scrollToFeedback();
     }
   }
 
   async function removeTire(id) {
     await deleteTire(id);
-    loadData();
+    notifySuccess("Tire deleted.");
+    await loadData();
   }
 
   function refillTire(tire) {
@@ -965,11 +1279,13 @@ function App() {
       price: tire.price ?? "0.00",
       location: tire.location || ""
     });
+    notifySuccess("Refill details loaded. Review quantity and save.");
   }
 
   async function removeAppointment(id) {
     await deleteAppointment(id);
-    loadData();
+    notifySuccess("Appointment deleted.");
+    await loadData();
   }
 
   async function cancelAppointment(appointment) {
@@ -987,17 +1303,20 @@ function App() {
       notes: appointment.notes || "",
       status: "CANCELLED"
     });
-    loadData();
+    notifySuccess(`Appointment cancelled for ${appointment.customerName}.`);
+    await loadData();
   }
 
   async function removeInvoice(id) {
     await deleteInvoice(id);
-    loadData();
+    notifySuccess("Invoice deleted.");
+    await loadData();
   }
 
   async function markInvoicePaid(invoice) {
     await updateInvoiceStatus(invoice.id, "PAID");
     logActivity(`Marked invoice #${invoice.id} paid`, "Invoices");
+    notifySuccess(`Invoice #${invoice.id} marked paid.`);
     await loadData();
   }
 
@@ -1009,6 +1328,7 @@ function App() {
   async function updateInvoiceLifecycleStatus(invoice, status) {
     await updateInvoiceStatus(invoice.id, status);
     logActivity(`Marked invoice #${invoice.id} ${status}`, "Invoices");
+    notifySuccess(`Invoice #${invoice.id} marked ${status}.`);
     await loadData();
   }
 
@@ -1128,21 +1448,34 @@ function App() {
         </motion.div>
 
         <nav className="tabs" aria-label="Main navigation">
-          {visibleTabs.map((tab) => (
-            <motion.button
-              className={activeTab === tab ? "active" : ""}
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              whileHover={{ x: 3 }}
-              type="button"
-            >
-              {(() => {
-                const Icon = tabIcons[tab];
-                return Icon ? <Icon size={18} /> : null;
-              })()}
-              {tab}
-            </motion.button>
-          ))}
+          {visibleTabs.map((tab) => {
+            const Icon = tabIcons[tab];
+            const isAccounting = tab === "Accounting";
+
+            return (
+              <div className={isAccounting ? "nav-group" : ""} key={tab}>
+                <motion.button
+                  className={activeTab === tab ? "active" : ""}
+                  onClick={() => setActiveTab(tab)}
+                  whileHover={{ x: 3 }}
+                  type="button"
+                >
+                  {Icon ? <Icon size={18} /> : null}
+                  {tab}
+                </motion.button>
+                {isAccounting && activeTab === "Accounting" && (
+                  <div className="sidebar-subnav" aria-label="Accounting sections">
+                    {accountingTabs.map((section) => (
+                      <button className={activeAccountingTab === section ? "active" : ""} key={section} onClick={() => setActiveAccountingTab(section)} type="button">
+                        <span>{section}</span>
+                        <small>{accountingTabMeta[section]?.nav}</small>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </nav>
 
         <button className="sidebar-booking-link with-icon" onClick={() => { window.location.href = "/booking"; }} type="button">
@@ -1193,25 +1526,28 @@ function App() {
                 type="button"
               >
                 <Bell size={18} />
-                {notifications.length > 0 && <span>{notifications.length}</span>}
+                {unreadNotifications.length > 0 && <span>{unreadNotifications.length}</span>}
               </button>
               {showNotifications && (
                 <div className="notification-menu">
-                  <strong>Notifications</strong>
-                  {notifications.length === 0 ? (
-                    <p>No urgent alerts.</p>
+                  <div className="notification-menu-head">
+                    <strong>Notifications</strong>
+                    {unreadNotifications.length > 0 && (
+                      <button onClick={readAllNotifications} type="button">Mark all read</button>
+                    )}
+                  </div>
+                  {appNotifications.length === 0 ? (
+                    <p>No notifications yet.</p>
                   ) : (
-                    notifications.map((notification) => (
+                    appNotifications.map((notification) => (
                       <button
+                        className={notification.read ? "read" : ""}
                         key={notification.id}
-                        onClick={() => {
-                          setActiveTab(notification.tab);
-                          setShowNotifications(false);
-                        }}
+                        onClick={() => openNotification(notification)}
                         type="button"
                       >
-                        <span>{notification.label}</span>
-                        <small>{notification.meta}</small>
+                        <span>{notification.title}</span>
+                        <small>{notification.message}</small>
                       </button>
                     ))
                   )}
@@ -1233,6 +1569,7 @@ function App() {
           </div>
         </header>
 
+        {successMessage && <div className="success-alert">{successMessage}</div>}
         {error && <div className="alert">{error}</div>}
         {loading ? <DashboardSkeleton /> : null}
 
@@ -1305,6 +1642,27 @@ function App() {
 
         {!loading && activeTab === "Customers" && (
           <CustomersPage customers={customers} onSendNotice={sendNoticeToCustomer} />
+        )}
+
+        {!loading && activeTab === "Accounting" && (
+          <AccountingPage
+            accountForm={accountForm}
+            accounts={accountingAccounts}
+            activeAccountingTab={activeAccountingTab}
+            expenseForm={expenseForm}
+            message={accountingMessage}
+            onAccountChange={setAccountForm}
+            onExpenseChange={setExpenseForm}
+            onSubmitAccount={submitAccountingAccount}
+            onSubmitExpense={submitExpense}
+            onSubmitVendor={submitVendor}
+            onPayExpense={payAccountingExpense}
+            onTabChange={setActiveAccountingTab}
+            onVendorChange={setVendorForm}
+            report={accountingReport}
+            vendorForm={vendorForm}
+            vendors={vendors}
+          />
         )}
 
         {!loading && activeTab === "Audit Logs" && (
@@ -1494,8 +1852,8 @@ function Dashboard({
         </ActivityPanel>
       </section>
 
-      <section className="split">
-        <ActivityPanel className="follow-up-panel" icon={Bell} title="Customer Follow Ups">
+      <section className="split dashboard-secondary">
+        <ActivityPanel className="follow-up" icon={Bell} title="Customer Follow Ups">
           {followUpCustomers.length === 0 ? (
             <p className="empty-note">No customer follow ups.</p>
           ) : (
@@ -1541,7 +1899,7 @@ function Dashboard({
               <div className="activity-row" key={invoice.id}>
                 <span>{invoice.customerName}</span>
                 <strong>{money(invoice.total)}</strong>
-                <StatusBadge value={invoice.status || "UNPAID"} />
+                <StatusBadge value={invoiceDisplayStatus(invoice)} />
               </div>
             ))
           )}
@@ -2727,14 +3085,14 @@ function Invoices({
     const reportHtml = `
       <html><head><title>Monthly Sales Report</title></head>
       <body style="font-family: Arial, sans-serif; padding: 32px;">
-        <h1>${settings.shopName || "Shop"} Monthly Sales Report</h1>
+        <h1>${htmlEscape(settings.shopName || "Shop")} Monthly Sales Report</h1>
         <p>${now.toLocaleString(undefined, { month: "long", year: "numeric" })}</p>
         <h2>${money(revenue)} revenue</h2>
         <p>${monthlyInvoices.length} invoices</p>
         <table style="width:100%;border-collapse:collapse;margin-top:24px;">
           <thead><tr><th align="left">Customer</th><th align="left">Status</th><th align="right">Total</th></tr></thead>
           <tbody>
-            ${monthlyInvoices.map((invoice) => `<tr><td>${invoice.customerName}</td><td>${invoice.status || ""}</td><td align="right">${money(invoice.total)}</td></tr>`).join("")}
+            ${monthlyInvoices.map((invoice) => `<tr><td>${htmlEscape(invoice.customerName)}</td><td>${htmlEscape(invoice.status || "")}</td><td align="right">${htmlEscape(money(invoice.total))}</td></tr>`).join("")}
           </tbody>
         </table>
         <script>window.print()</script>
@@ -3158,6 +3516,12 @@ function CustomerPortalShell({ auth, onBookAppointment, onDeleteVehicle, onLogou
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
+  useEffect(() => {
+    if (message || error) {
+      scrollPageToTop();
+    }
+  }, [message, error]);
+
   const vehicles = portal?.vehicles || [];
   const appointments = portal?.appointments || [];
   const invoices = portal?.invoices || [];
@@ -3411,6 +3775,12 @@ function PublicBookingPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (message || error) {
+      scrollPageToTop();
+    }
+  }, [message, error]);
 
   useEffect(() => {
     async function loadSlots() {
@@ -3677,6 +4047,722 @@ function ActivityPanel({ children, icon: Icon, title, className = "" }) {
   );
 }
 
+function AccountingPage({
+  accountForm,
+  accounts,
+  activeAccountingTab,
+  expenseForm,
+  message,
+  onAccountChange,
+  onExpenseChange,
+  onSubmitAccount,
+  onSubmitExpense,
+  onSubmitVendor,
+  onPayExpense,
+  onTabChange,
+  onVendorChange,
+  report,
+  vendorForm,
+  vendors
+}) {
+  const trialBalance = report?.trialBalance || [];
+  const profitAndLoss = report?.profitAndLoss || [];
+  const balanceSheet = report?.balanceSheet || [];
+  const recentExpenses = report?.recentExpenses || [];
+  const recentJournalEntries = report?.recentJournalEntries || [];
+  const expenseAccounts = accounts.filter((account) => account.type === "EXPENSE");
+  const expenseTotal = calculateExpenseTotal(expenseForm);
+  const paidExpenses = recentExpenses.filter((expense) => String(expense.status || "").toUpperCase() === "PAID");
+  const unpaidExpenses = recentExpenses.filter((expense) => String(expense.status || "").toUpperCase() === "UNPAID");
+  const overdueExpenses = recentExpenses.filter((expense) => expenseDisplayStatus(expense) === "OVERDUE");
+  const paidExpenseTotal = paidExpenses.reduce((sum, expense) => sum + Number(expense.total || 0), 0);
+  const unpaidExpenseTotal = unpaidExpenses.reduce((sum, expense) => sum + Number(expense.total || 0), 0);
+  const overdueExpenseTotal = overdueExpenses.reduce((sum, expense) => sum + Number(expense.total || 0), 0);
+  const vendorTotals = recentExpenses.reduce((totals, expense) => {
+    const vendor = expense.vendor || "Unknown";
+    totals[vendor] = (totals[vendor] || 0) + Number(expense.total || 0);
+    return totals;
+  }, {});
+  const topVendorSpend = Object.entries(vendorTotals)
+    .map(([name, value]) => ({ name, value }))
+    .sort((first, second) => second.value - first.value)
+    .slice(0, 5);
+  const activeMeta = accountingTabMeta[activeAccountingTab] || accountingTabMeta.Dashboard;
+  const [selectedLedgerAccountId, setSelectedLedgerAccountId] = useState("");
+  const selectedLedgerAccount = trialBalance.find((account) => String(account.accountId) === String(selectedLedgerAccountId)) || trialBalance[0] || null;
+  const selectedLedgerLines = selectedLedgerAccount
+    ? recentJournalEntries.flatMap((entry) =>
+      (entry.lines || [])
+        .filter((line) => String(line.account?.id) === String(selectedLedgerAccount.accountId))
+        .map((line) => ({ entry, line }))
+    )
+    : [];
+  const accountsByType = ["ASSET", "LIABILITY", "EQUITY", "REVENUE", "EXPENSE"].map((type) => ({
+    type,
+    accounts: accounts.filter((account) => account.type === type),
+    balance: trialBalance
+      .filter((balance) => balance.type === type)
+      .reduce((sum, balance) => sum + Number(balance.balance || 0), 0)
+  }));
+
+  return (
+    <section className="accounting-page accounting-page-full">
+      <main className="accounting-main">
+        <section className="accounting-hero panel">
+          <div>
+            <span className="eyebrow">{activeMeta.eyebrow}</span>
+            <h2>{activeAccountingTab}</h2>
+            <p>{activeMeta.description}</p>
+          </div>
+          <div className="accounting-hero-stat">
+            <span>{activeMeta.statLabel}</span>
+            <strong>{activeMeta.statValue({ report, recentExpenses, vendors, accounts, recentJournalEntries })}</strong>
+          </div>
+        </section>
+
+        <div className="accounting-mobile-nav">
+          <select aria-label="Accounting section" value={activeAccountingTab} onChange={(event) => onTabChange(event.target.value)}>
+            {accountingTabs.map((tab) => <option key={tab} value={tab}>{tab}</option>)}
+          </select>
+        </div>
+
+        {message && <div className="success-alert">{message}</div>}
+
+        {activeAccountingTab === "Dashboard" && (
+          <>
+            <section className="accounting-dashboard-strip panel">
+              <div className="accounting-dashboard-title">
+                <span className="eyebrow">Finance Workspace</span>
+                <h3>Accounting Health</h3>
+              </div>
+              <div className="accounting-mini-ledger">
+                <div className="paid"><span>Paid</span><strong>{paidExpenses.length}</strong></div>
+                <div className="unpaid"><span>Unpaid</span><strong>{unpaidExpenses.length}</strong></div>
+                <div className="overdue"><span>Overdue</span><strong>{overdueExpenses.length}</strong></div>
+                <div><span>Accounts</span><strong>{accounts.length}</strong></div>
+              </div>
+            </section>
+            <section className="accounting-kpis">
+              <AccountingKpi label="Revenue" value={money(report?.revenue)} detail="Posted sales" />
+              <AccountingKpi label="Expenses" value={money(report?.expenses)} detail="Posted costs" />
+              <AccountingKpi label="Net income" value={money(report?.netIncome)} detail="Revenue less expenses" />
+            </section>
+            <section className="accounting-chart-grid">
+              <AccountingFinancialChart report={report} />
+              <AccountingExpenseStatusChart paid={paidExpenses.length} unpaid={unpaidExpenses.length} overdue={overdueExpenses.length} />
+              <AccountingVendorSpendChart vendors={topVendorSpend} />
+            </section>
+            <section className="accounting-overview-grid">
+              <ReportPanel title="Profit & Loss" rows={profitAndLoss} />
+              <ReportPanel title="Balance Sheet" rows={balanceSheet} />
+            </section>
+          </>
+        )}
+
+        {activeAccountingTab === "Expenses" && (
+          <section className="expenses-workspace">
+            <section className="expense-status-overview">
+              <AccountingKpi label="Paid Expenses" value={money(paidExpenseTotal)} detail={`${paidExpenses.length} posted`} />
+              <AccountingKpi label="Unpaid Bills" value={money(unpaidExpenseTotal)} detail={`${unpaidExpenses.length} open`} />
+              <AccountingKpi label="Overdue" value={money(overdueExpenseTotal)} detail={`${overdueExpenses.length} urgent`} />
+            </section>
+
+            <section className="expenses-stack">
+              <form className="panel accounting-form accounting-form-card" onSubmit={onSubmitExpense}>
+              <div className="accounting-panel-head">
+            <div>
+              <span className="eyebrow">Expenses</span>
+              <h3>Record Expense</h3>
+              <p>Creates an expense record and balanced journal entry.</p>
+            </div>
+          </div>
+          <div className="accounting-field-grid">
+            <label>
+              <span>Vendor</span>
+              <select value={expenseForm.vendorId} onChange={(event) => {
+                const vendor = vendors.find((entry) => String(entry.id) === event.target.value);
+                onExpenseChange({
+                  ...expenseForm,
+                  vendorId: event.target.value,
+                  vendor: vendor?.name || "",
+                  category: vendor?.category || expenseForm.category,
+                  categoryKey: vendor?.categoryKey === "OTHER" ? "OTHER" : expenseForm.categoryKey,
+                  customCategory: vendor?.categoryKey === "OTHER" ? vendor?.customCategory || "" : expenseForm.customCategory
+                });
+              }}>
+                <option value="">Manual vendor</option>
+                {vendors.map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.name}</option>)}
+              </select>
+            </label>
+            <label><span>Vendor name</span><input placeholder="Supplier or payee" value={expenseForm.vendor} onChange={(event) => onExpenseChange({ ...expenseForm, vendor: event.target.value, vendorId: "" })} required /></label>
+            <label><span>Date</span><input type="date" value={expenseForm.expenseDate} onChange={(event) => onExpenseChange({ ...expenseForm, expenseDate: event.target.value })} /></label>
+          </div>
+          <div className="accounting-field-grid">
+            <label>
+              <span>Expense account</span>
+              <select value={expenseForm.expenseAccountId} onChange={(event) => onExpenseChange({ ...expenseForm, expenseAccountId: event.target.value })}>
+                <option value="">5000 - Operating Expenses</option>
+                {expenseAccounts.map((account) => <option key={account.id} value={account.id}>{account.code} - {account.name}</option>)}
+              </select>
+            </label>
+            <label>
+              <span>Category</span>
+              <select value={expenseForm.categoryKey} onChange={(event) => onExpenseChange({ ...expenseForm, categoryKey: event.target.value, category: resolveAccountingLabel(event.target.value, expenseForm.customCategory) })}>
+                {expenseCategoryOptions.map((option) => <option key={option} value={option}>{accountingOptionLabel(option)}</option>)}
+              </select>
+            </label>
+            {expenseForm.categoryKey === "OTHER" && (
+              <label><span>Custom category</span><input placeholder="Add category" value={expenseForm.customCategory} onChange={(event) => onExpenseChange({ ...expenseForm, customCategory: event.target.value, category: event.target.value })} /></label>
+            )}
+          </div>
+          <div className="accounting-field-grid totals">
+            <label><span>Subtotal</span><input min="0" step="0.01" type="number" value={expenseForm.subtotal} onChange={(event) => onExpenseChange({ ...expenseForm, subtotal: event.target.value })} /></label>
+            <label><span>Tax</span><input min="0" step="0.01" type="number" value={expenseForm.taxAmount} onChange={(event) => onExpenseChange({ ...expenseForm, taxAmount: event.target.value })} /></label>
+            <label><span>Total</span><input readOnly value={money(expenseTotal)} /></label>
+          </div>
+          <div className="accounting-field-grid payment">
+            <label><span>Status</span><select value={expenseForm.status} onChange={(event) => onExpenseChange({ ...expenseForm, status: event.target.value })}><option>PAID</option><option>UNPAID</option></select></label>
+            <label>
+              <span>Payment method</span>
+              <select value={expenseForm.paymentMethodKey} onChange={(event) => onExpenseChange({ ...expenseForm, paymentMethodKey: event.target.value, paymentMethod: resolveAccountingLabel(event.target.value, expenseForm.customPaymentMethod) })}>
+                {accountingPaymentOptions.map((option) => <option key={option} value={option}>{accountingOptionLabel(option)}</option>)}
+              </select>
+            </label>
+            {expenseForm.paymentMethodKey === "OTHER" && (
+              <label><span>Custom method</span><input placeholder="Add method" value={expenseForm.customPaymentMethod} onChange={(event) => onExpenseChange({ ...expenseForm, customPaymentMethod: event.target.value, paymentMethod: event.target.value })} /></label>
+            )}
+            {expenseForm.status === "UNPAID" && (
+              <label><span>Due date</span><input type="date" value={expenseForm.dueDate} onChange={(event) => onExpenseChange({ ...expenseForm, dueDate: event.target.value })} /></label>
+            )}
+          </div>
+          <label className="accounting-notes"><span>Internal note</span><textarea rows="3" value={expenseForm.notes} onChange={(event) => onExpenseChange({ ...expenseForm, notes: event.target.value })} /></label>
+          <div className="accounting-submit-row">
+            <span>Posts to the selected expense account plus Cash/AP.</span>
+            <button className="primary-button" type="submit">Post Expense</button>
+          </div>
+              </form>
+              <AccountingTablePanel title="Recent Expenses" detail="Posted vendor costs and unpaid bills.">
+                <DataTable
+                  actions={(expense) => (
+                    expenseDisplayStatus(expense) !== "PAID" ? (
+                      <div className="table-actions compact">
+                        <button className="primary-button" onClick={() => onPayExpense(expense, "CASH")} type="button">Pay Cash</button>
+                        <button className="ghost-button" onClick={() => onPayExpense(expense, "CREDIT_CARD")} type="button">Pay Credit</button>
+                      </div>
+                    ) : null
+                  )}
+                  columns={["Date", "Due", "Vendor", "Account", "Category", "Status", "Total", "Paid At", "Admin", ""]}
+                  emptyText="No expenses recorded."
+                  rows={recentExpenses.map((expense) => ({
+                    key: `expense-${expense.id}`,
+                    source: expense,
+                    values: [
+                      expense.expenseDate || "-",
+                      expense.dueDate || "-",
+                      expense.vendor,
+                      accountName(accounts, expense.expenseAccountId),
+                      expense.category || "-",
+                      expenseDisplayStatus(expense),
+                      money(expense.total),
+                      dateTime(expense.paidAt),
+                      expense.createdBy || "-"
+                    ]
+                  }))}
+                />
+              </AccountingTablePanel>
+            </section>
+          </section>
+        )}
+
+        {activeAccountingTab === "Vendors" && (
+          <section className="vendors-workspace">
+            <section className="vendor-summary-grid">
+              <AccountingKpi label="Vendors" value={vendors.length} detail="Saved suppliers" />
+              <AccountingKpi label="Vendor Spend" value={money(Object.values(vendorTotals).reduce((sum, value) => sum + Number(value || 0), 0))} detail="Current report" />
+              <AccountingKpi label="Top Vendor" value={topVendorSpend[0]?.name || "-"} detail={topVendorSpend[0] ? money(topVendorSpend[0].value) : "No spend yet"} />
+            </section>
+
+            {topVendorSpend.length > 0 && (
+              <section className="top-vendor-list panel">
+                <div className="accounting-section-title">
+                  <h3>Vendor Activity</h3>
+                  <p>Top suppliers by posted expense total.</p>
+                </div>
+                <div className="leader-bars">
+                  {topVendorSpend.map((vendor, index) => (
+                    <div className="leader-bar-row" key={vendor.name}>
+                      <div className="leader-bar-label">
+                        <span title={vendor.name}><b>{index + 1}</b>{vendor.name}</span>
+                        <small>Current report spend</small>
+                        <strong>{money(vendor.value)}</strong>
+                      </div>
+                      <div className="leader-bar-track">
+                        <motion.div
+                          animate={{ width: `${Math.max((vendor.value / Math.max(topVendorSpend[0]?.value || 1, 1)) * 100, 4)}%` }}
+                          className="leader-bar-fill"
+                          initial={{ width: 0 }}
+                          transition={{ duration: 0.8, ease: "easeOut" }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            <section className="vendors-stack">
+              <form className="panel accounting-form accounting-form-card" onSubmit={onSubmitVendor}>
+            <div className="accounting-panel-head">
+              <div>
+                <span className="eyebrow">Vendors</span>
+                <h3>Add Vendor</h3>
+                <p>Save common suppliers so expenses link to vendor history.</p>
+              </div>
+            </div>
+            <label><span>Name</span><input placeholder="Vendor name" value={vendorForm.name} onChange={(event) => onVendorChange({ ...vendorForm, name: event.target.value })} required /></label>
+            <label>
+              <span>Category</span>
+              <select value={vendorForm.categoryKey} onChange={(event) => onVendorChange({ ...vendorForm, categoryKey: event.target.value, category: resolveAccountingLabel(event.target.value, vendorForm.customCategory) })}>
+                {vendorCategoryOptions.map((option) => <option key={option} value={option}>{accountingOptionLabel(option)}</option>)}
+              </select>
+            </label>
+            {vendorForm.categoryKey === "OTHER" && (
+              <label><span>Custom category</span><input placeholder="Add category" value={vendorForm.customCategory} onChange={(event) => onVendorChange({ ...vendorForm, customCategory: event.target.value, category: event.target.value })} /></label>
+            )}
+            <label><span>Email</span><input value={vendorForm.email} onChange={(event) => onVendorChange({ ...vendorForm, email: event.target.value })} /></label>
+            <label><span>Phone</span><input value={vendorForm.phone} onChange={(event) => onVendorChange({ ...vendorForm, phone: event.target.value })} /></label>
+            <button className="primary-button" type="submit">Add Vendor</button>
+              </form>
+              <AccountingTablePanel title="Vendors" detail="Saved suppliers and current-period spending.">
+                <DataTable
+                  columns={["Vendor", "Category", "Phone", "Spent", "Admin"]}
+                  emptyText="No vendors configured."
+                  rows={vendors.map((vendor) => [
+                    vendor.name,
+                    vendor.category || "-",
+                    vendor.phone || "-",
+                    money(vendorTotals[vendor.name] || 0),
+                    vendor.createdBy || "-"
+                  ])}
+                />
+              </AccountingTablePanel>
+            </section>
+          </section>
+        )}
+
+        {activeAccountingTab === "Accounts" && (
+          <section className="accounts-workspace">
+            <section className="accounts-overview">
+              {accountsByType.map((group) => (
+                <AccountingKpi
+                  detail={`${group.accounts.length} account${group.accounts.length === 1 ? "" : "s"}`}
+                  key={group.type}
+                  label={accountingOptionLabel(group.type)}
+                  value={money(group.balance)}
+                />
+              ))}
+            </section>
+
+            <section className="accounting-two-column accounts-layout">
+              <form className="panel accounting-form accounting-form-card" onSubmit={onSubmitAccount}>
+                <div className="accounting-panel-head">
+                  <div>
+                    <span className="eyebrow">Chart of accounts</span>
+                    <h3>Add Account</h3>
+                    <p>Expense accounts become selectable when posting vendor costs.</p>
+                  </div>
+                </div>
+                <label><span>Code</span><input placeholder="Example: 6100" value={accountForm.code} onChange={(event) => onAccountChange({ ...accountForm, code: event.target.value })} required /></label>
+                <label><span>Name</span><input placeholder="Account name" value={accountForm.name} onChange={(event) => onAccountChange({ ...accountForm, name: event.target.value })} required /></label>
+                <label><span>Type</span><select value={accountForm.type} onChange={(event) => onAccountChange({ ...accountForm, type: event.target.value })}><option>ASSET</option><option>LIABILITY</option><option>EQUITY</option><option>REVENUE</option><option>EXPENSE</option></select></label>
+                <button className="primary-button" type="submit">Add Account</button>
+              </form>
+              <AccountingTablePanel title="Expense Accounts" detail="Only EXPENSE accounts appear in the expense posting dropdown.">
+                <DataTable
+                  columns={["Code", "Account", "Created By"]}
+                  emptyText="No expense accounts configured."
+                  rows={expenseAccounts.map((account) => [
+                    account.code,
+                    account.name,
+                    account.createdBy || "-"
+                  ])}
+                />
+              </AccountingTablePanel>
+            </section>
+
+            <section className="account-type-grid">
+              {accountsByType.map((group) => (
+                <AccountTypePanel key={group.type} group={group} />
+              ))}
+            </section>
+          </section>
+        )}
+
+        {activeAccountingTab === "Reports" && (
+          <section className="reports-workspace">
+            <section className="report-statement-strip panel">
+              <div>
+                <span className="eyebrow">Reports</span>
+                <h3>Financial Statements</h3>
+                <p>Review performance and position from posted invoice, payment, and expense journals.</p>
+              </div>
+              <div className="report-statement-metrics">
+                <div><span>Net Income</span><strong>{money(report?.netIncome)}</strong></div>
+                <div><span>Assets</span><strong>{money(report?.assets)}</strong></div>
+                <div><span>Liabilities</span><strong>{money(report?.liabilities)}</strong></div>
+                <div><span>Equity</span><strong>{money(report?.equity)}</strong></div>
+              </div>
+            </section>
+
+            <section className="accounting-two-column">
+              <ReportPanel title="Profit & Loss" rows={profitAndLoss} />
+              <ReportPanel title="Balance Sheet" rows={balanceSheet} />
+            </section>
+          </section>
+        )}
+
+        {activeAccountingTab === "Ledger" && (
+          <section className="ledger-account-view">
+            <section className="panel ledger-account-toolbar">
+              <div>
+                <span className="eyebrow">Ledger</span>
+                <h3>Account Detail</h3>
+                <p>Select one account to review its balance and journal activity.</p>
+              </div>
+              <label>
+                <span>Account</span>
+                <select value={selectedLedgerAccount ? String(selectedLedgerAccount.accountId) : ""} onChange={(event) => setSelectedLedgerAccountId(event.target.value)}>
+                  {trialBalance.map((account) => (
+                    <option key={account.accountId} value={account.accountId}>{account.code} - {account.name}</option>
+                  ))}
+                </select>
+              </label>
+            </section>
+
+            {selectedLedgerAccount && (
+              <section className="ledger-account-summary">
+                <AccountingKpi label="Debits" value={money(selectedLedgerAccount.debits)} detail={selectedLedgerAccount.code} />
+                <AccountingKpi label="Credits" value={money(selectedLedgerAccount.credits)} detail={selectedLedgerAccount.type} />
+                <AccountingKpi label="Balance" value={money(selectedLedgerAccount.balance)} detail={selectedLedgerAccount.name} />
+              </section>
+            )}
+
+            <AccountingTablePanel title="Selected Account Balance" detail="Focused trial balance row for the selected account.">
+              <DataTable
+                columns={["Code", "Account", "Type", "Debits", "Credits", "Balance"]}
+                emptyText="No ledger activity."
+                rows={(selectedLedgerAccount ? [selectedLedgerAccount] : []).map((account) => [
+                  account.code,
+                  account.name,
+                  account.type,
+                  money(account.debits),
+                  money(account.credits),
+                  money(account.balance)
+                ])}
+              />
+            </AccountingTablePanel>
+            <AccountingTablePanel title="Account Journal Lines" detail="Only entries touching the selected account are shown.">
+              <DataTable
+                columns={["Date", "Description", "Source", "Debit", "Credit", "Memo", "Posted By"]}
+                emptyText="No journal lines for this account in the current report range."
+                rows={selectedLedgerLines.map(({ entry, line }) => [
+                  entry.entryDate,
+                  entry.description,
+                  entry.source || "-",
+                  money(line.debit),
+                  money(line.credit),
+                  line.memo || "-",
+                  entry.postedBy || "-"
+                ])}
+              />
+            </AccountingTablePanel>
+          </section>
+        )}
+      </main>
+    </section>
+  );
+}
+
+function AccountingKpi({ detail, label, value }) {
+  return (
+    <article className="accounting-kpi-card panel">
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <small>{detail}</small>
+    </article>
+  );
+}
+
+function AccountingChartCard({ children, detail, title }) {
+  return (
+    <section className="analytics-panel accounting-chart-card panel">
+      <div className="sales-chart-header">
+        <div>
+          <span className="eyebrow">Accounting</span>
+          <h3>{title}</h3>
+          <p>{detail}</p>
+        </div>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function AccountingFinancialChart({ report }) {
+  const data = [
+    { className: "available", name: "Revenue", value: Number(report?.revenue || 0) },
+    { className: "warning", name: "Expenses", value: Number(report?.expenses || 0) },
+    { className: Number(report?.netIncome || 0) >= 0 ? "available" : "urgent", name: "Net income", value: Number(report?.netIncome || 0) }
+  ];
+  const maxValue = Math.max(...data.map((item) => Math.abs(item.value)), 1);
+
+  return (
+    <AccountingChartCard title="Financial Mix" detail="Revenue, expenses, and net income.">
+      <div className="bar-chart accounting-bar-chart">
+        {data.map((item) => (
+          <div className="bar-row" key={item.name}>
+            <span>{item.name}</span>
+            <div className="bar-track">
+              <motion.div
+                animate={{ width: `${Math.max((Math.abs(item.value) / maxValue) * 100, item.value === 0 ? 0 : 4)}%` }}
+                className={`bar-fill ${item.className}`}
+                initial={{ width: 0 }}
+                transition={{ duration: 0.8, ease: "easeOut" }}
+              />
+            </div>
+            <strong>{money(item.value)}</strong>
+          </div>
+        ))}
+      </div>
+    </AccountingChartCard>
+  );
+}
+
+function AccountingExpenseStatusChart({ overdue, paid, unpaid }) {
+  const segments = [
+    { className: "available", color: "#18d3b2", label: "Paid", value: paid },
+    { className: "warning", color: "#f59e0b", label: "Unpaid", value: unpaid },
+    { className: "urgent", color: "#ef4444", label: "Overdue", value: overdue }
+  ];
+  const visibleSegments = segments.filter((segment) => Number(segment.value || 0) > 0);
+  const total = visibleSegments.reduce((sum, segment) => sum + Number(segment.value || 0), 0);
+  const radius = 15.9155;
+  let offset = 25;
+
+  return (
+    <AccountingChartCard title="Expense Status" detail="Vendor bills that need attention.">
+      <div className="accounting-donut-chart">
+        {total === 0 ? (
+          <p className="empty-note">No expense status data yet.</p>
+        ) : (
+          <div className="accounting-donut-safe">
+            <div className="accounting-donut-visual" aria-label="Accounting expense status chart">
+              <svg viewBox="0 0 42 42" role="img">
+                <circle className="donut-ring" cx="21" cy="21" r={radius} />
+                {visibleSegments.map((segment) => {
+                  const length = (Number(segment.value || 0) / total) * 100;
+                  const dashArray = `${length} ${100 - length}`;
+                  const strokeDashoffset = offset;
+                  offset -= length;
+
+                  return (
+                    <circle
+                      className={`donut-segment ${segment.className}`}
+                      cx="21"
+                      cy="21"
+                      key={segment.label}
+                      r={radius}
+                      strokeDasharray={dashArray}
+                      strokeDashoffset={strokeDashoffset}
+                    />
+                  );
+                })}
+              </svg>
+              <div className="donut-center">
+                <strong>{total}</strong>
+                <span>bills</span>
+              </div>
+            </div>
+            <div className="accounting-donut-legend">
+              {segments.map((segment) => (
+                <div key={segment.label}>
+                  <span style={{ background: segment.color }} />
+                  <strong>{segment.label}</strong>
+                  <small>{segment.value}</small>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </AccountingChartCard>
+  );
+}
+
+function AccountingVendorSpendChart({ vendors }) {
+  const trendData = vendors.map((vendor, index) => ({
+    name: vendor.name,
+    value: vendor.value,
+    rank: index + 1
+  }));
+
+  return (
+    <AccountingChartCard title="Top Vendor Spend" detail="Largest expense vendors in the current report.">
+      {vendors.length === 0 ? (
+        <p className="empty-note">No vendor expense data yet.</p>
+      ) : (
+        <div className="sales-line-chart accounting-chart">
+          <ResponsiveContainer width="100%" height={210}>
+            <LineChart data={trendData} margin={{ bottom: 4, left: 0, right: 18, top: 16 }}>
+              <defs>
+                <linearGradient id="vendorSpendGradient" x1="0" x2="0" y1="0" y2="1">
+                  <stop offset="0%" stopColor="#18d3b2" stopOpacity={0.28} />
+                  <stop offset="100%" stopColor="#18d3b2" stopOpacity={0.02} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
+              <XAxis dataKey="name" tick={{ fill: "#8f95a3", fontSize: 11 }} tickFormatter={shortChartLabel} tickLine={false} axisLine={false} interval={0} />
+              <YAxis tick={{ fill: "#8f95a3", fontSize: 11 }} tickLine={false} axisLine={false} tickFormatter={(value) => `$${Number(value || 0).toLocaleString()}`} width={72} />
+              <Tooltip formatter={(value) => money(value)} contentStyle={tooltipStyle} />
+              <Area dataKey="value" fill="url(#vendorSpendGradient)" stroke="none" type="monotone" />
+              <Line type="monotone" dataKey="value" stroke="#18d3b2" strokeWidth={4} dot={{ fill: "#18d3b2", r: 4 }} activeDot={{ r: 6 }} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+    </AccountingChartCard>
+  );
+}
+
+function shortChartLabel(value) {
+  const text = String(value || "");
+  return text.length > 10 ? `${text.slice(0, 9)}...` : text;
+}
+
+function AccountingSimplePanel({ children, detail, title }) {
+  return (
+    <section className="accounting-card panel">
+      <AccountingSectionTitle title={title} detail={detail} />
+      {children}
+    </section>
+  );
+}
+
+function AccountingTablePanel({ children, detail, title }) {
+  return (
+    <section className="accounting-table-card">
+      <AccountingSectionTitle title={title} detail={detail} />
+      {children}
+    </section>
+  );
+}
+
+function AccountTypePanel({ group }) {
+  return (
+    <section className="panel account-type-panel">
+      <div className="account-type-head">
+        <div>
+          <span className="eyebrow">{group.type}</span>
+          <h3>{accountingOptionLabel(group.type)}</h3>
+        </div>
+        <strong>{money(group.balance)}</strong>
+      </div>
+      {group.accounts.length === 0 ? (
+        <p className="empty-note">No accounts yet.</p>
+      ) : (
+        <div className="account-type-list">
+          {group.accounts.map((account) => (
+            <div key={account.id}>
+              <span>{account.code}</span>
+              <strong>{account.name}</strong>
+              <small>{account.systemAccount ? "System" : account.createdBy || "Custom"}</small>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function StatusPill({ label, tone, value }) {
+  return (
+    <div className={`accounting-status-pill ${tone}`}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function accountName(accounts, id) {
+  const account = accounts.find((entry) => String(entry.id) === String(id));
+  return account ? `${account.code} - ${account.name}` : "5000 - Operating Expenses";
+}
+
+function calculateExpenseTotal(expense) {
+  return Number((Number(expense.subtotal || 0) + Number(expense.taxAmount || 0)).toFixed(2));
+}
+
+function expenseDisplayStatus(expense) {
+  if (String(expense.status || "").toUpperCase() === "UNPAID") {
+    const dateValue = expense.dueDate ? new Date(`${expense.dueDate}T00:00:00`) : null;
+    if (dateValue && dateValue < new Date(new Date().setHours(0, 0, 0, 0))) {
+      return "OVERDUE";
+    }
+  }
+
+  return expense.status || "PAID";
+}
+
+function invoiceDisplayStatus(invoice) {
+  const status = String(invoice.status || "UNPAID").toUpperCase();
+
+  if (status === "PAID") {
+    return "PAID";
+  }
+
+  if (invoice.dueDate) {
+    const dueDate = new Date(`${invoice.dueDate}T00:00:00`);
+    const today = new Date(new Date().setHours(0, 0, 0, 0));
+
+    if (dueDate < today) {
+      return "OVERDUE";
+    }
+  }
+
+  return status === "UNPAID" ? "UNPAID" : status;
+}
+
+function ReportPanel({ rows, title }) {
+  const detail = title === "Profit & Loss"
+    ? "Revenue and expense performance."
+    : "Assets, liabilities, and equity position.";
+
+  return (
+    <div>
+      <AccountingSectionTitle title={title} detail={detail} />
+      <DataTable
+        columns={["Code", "Account", "Type", "Balance"]}
+        emptyText="No report data yet."
+        rows={rows.map((account) => [
+          account.code,
+          account.name,
+          account.type,
+          money(account.balance)
+        ])}
+      />
+    </div>
+  );
+}
+
+function AccountingSectionTitle({ detail, title }) {
+  return (
+    <div className="accounting-section-title">
+      <h3>{title}</h3>
+      <p>{detail}</p>
+    </div>
+  );
+}
+
 function AuditLogsPage({ logs }) {
   const normalizedLogs = logs.map(normalizeAuditLog);
   const actionCounts = normalizedLogs.reduce((counts, log) => {
@@ -3740,6 +4826,16 @@ function CustomersPage({ customers, onSendNotice }) {
   const outstandingTotal = customers.reduce((sum, customer) => sum + Number(customer.outstandingBalance || 0), 0);
   const urgentCustomers = customers.filter((customer) => customer.hasOverdueBalance || customer.hasBalanceDueSoon).length;
   const selectedCustomer = customers.find((customer) => Number(customer.id) === Number(selectedCustomerId)) || customers[0];
+
+  useEffect(() => {
+    if (noticeMessage) {
+      scrollPageToTop();
+    }
+  }, [noticeMessage]);
+
+  useEffect(() => {
+    setNoticeMessage("");
+  }, [selectedCustomerId]);
 
   function updateDraft(customerId, field, value) {
     setNoticeDrafts((current) => ({
@@ -3987,6 +5083,12 @@ function SettingsPage({ onSave, settings }) {
   const [draft, setDraft] = useState(settings);
   const [saveMessage, setSaveMessage] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (saveMessage) {
+      scrollPageToTop();
+    }
+  }, [saveMessage]);
 
   function update(field, value) {
     setDraft((current) => ({ ...current, [field]: value }));

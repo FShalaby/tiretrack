@@ -31,13 +31,15 @@ public class InvoiceService {
     private final AppointmentRepository appointmentRepository;
     private final UserRepository userRepository;
     private final AuditLogService auditLogService;
+    private final AccountingService accountingService;
 
-    public InvoiceService(InvoiceRepository invoiceRepository, TireRepository tireRepository, AppointmentRepository appointmentRepository, UserRepository userRepository, AuditLogService auditLogService) {
+    public InvoiceService(InvoiceRepository invoiceRepository, TireRepository tireRepository, AppointmentRepository appointmentRepository, UserRepository userRepository, AuditLogService auditLogService, AccountingService accountingService) {
         this.invoiceRepository = invoiceRepository;
         this.tireRepository = tireRepository;
         this.appointmentRepository = appointmentRepository;
         this.userRepository = userRepository;
         this.auditLogService = auditLogService;
+        this.accountingService = accountingService;
     }
 
     public List<Invoice> getAllInvoices() {
@@ -56,6 +58,10 @@ public class InvoiceService {
             linkCustomerByPhone(invoice);
             prepareInvoiceLifecycle(invoice);
             Invoice savedInvoice = invoiceRepository.saveAndFlush(invoice);
+            accountingService.recordInvoiceIssued(savedInvoice);
+            if ("PAID".equalsIgnoreCase(savedInvoice.getStatus())) {
+                accountingService.recordInvoicePayment(savedInvoice);
+            }
             auditLogService.record("CREATED", "Invoice", savedInvoice.getId(), "Created invoice for " + savedInvoice.getCustomerName(), getCurrentUsername());
             return savedInvoice;
         } catch (RuntimeException exception) {
@@ -89,6 +95,9 @@ public class InvoiceService {
         }
 
         Invoice savedInvoice = invoiceRepository.save(invoice);
+        if ("PAID".equalsIgnoreCase(status)) {
+            accountingService.recordInvoicePayment(savedInvoice);
+        }
         auditLogService.record("STATUS_CHANGED", "Invoice", savedInvoice.getId(), "Invoice #" + savedInvoice.getId() + " marked " + status, getCurrentUsername());
         return savedInvoice;
     }

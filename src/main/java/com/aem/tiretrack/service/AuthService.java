@@ -13,6 +13,7 @@ import com.aem.tiretrack.dto.auth.LoginRequest;
 import com.aem.tiretrack.dto.auth.LoginResponse;
 import com.aem.tiretrack.dto.auth.RegisterRequest;
 import com.aem.tiretrack.dto.auth.RefreshTokenRequest;
+import com.aem.tiretrack.enums.UserRole;
 import com.aem.tiretrack.model.RefreshToken;
 import com.aem.tiretrack.model.User;
 import com.aem.tiretrack.repository.RefreshTokenRepository;
@@ -49,7 +50,7 @@ public class AuthService {
         user.setEmail(request.getEmail());
         user.setPhone(request.getPhone());
         user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
-        user.setRole(request.getRole());
+        user.setRole(UserRole.CUSTOMER);
 
         User savedUser = userRepository.save(user);
 
@@ -62,6 +63,9 @@ public class AuthService {
     public LoginResponse login(LoginRequest request) {
         User user = userRepository.findByEmail(request.getEmail())
                 .orElseThrow(() -> new IllegalArgumentException("Invalid email or password"));
+        if (!user.isActive()) {
+            throw new IllegalArgumentException("Invalid email or password");
+        }
         if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
             throw new IllegalArgumentException("Invalid email or password");
         }
@@ -81,6 +85,10 @@ public class AuthService {
         }
 
         User user = storedToken.getUser();
+        if (!user.isActive()) {
+            refreshTokenRepository.delete(storedToken);
+            throw new IllegalArgumentException("Invalid refresh token");
+        }
         String token = jwtService.generateToken(user.getEmail());
         String refreshToken = createRefreshToken(user);
         refreshTokenRepository.delete(storedToken);
