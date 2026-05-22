@@ -257,7 +257,7 @@ Fouad Shalaby
 Computer Science Graduate passionate about backend engineering, scalable software architecture, business systems, and full-stack application development.
 
 GitHub: https://github.com/FShalaby
-LinkedIn: https://www.linkedin.com/in/shalabyt
+LinkedIn: https://www.linkedin.com/in/shalabyf
 
 # 📄 License
 
