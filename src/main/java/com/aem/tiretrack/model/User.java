@@ -50,6 +50,15 @@ public class User
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 
+    @Column(name = "hourly_rate")
+    private Double hourlyRate;
+
+    @Column(name = "payroll_enabled")
+    private boolean payrollEnabled = false;
+
+    @Column(name = "employment_type")
+    private String employmentType;
+
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();
