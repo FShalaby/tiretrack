@@ -66,7 +66,10 @@ public class GlobalExceptionHandler {
             return exception.getMessage();
         }
 
-        return "The request could not be completed. Please check the details and try again.";
+        String message = rootMessage(exception);
+        return message == null || message.isBlank()
+                ? "The request could not be completed. Please check the details and try again."
+                : message;
     }
 
     private String rootMessage(Throwable throwable) {

@@ -404,3 +404,134 @@ export function createVendor(vendor) {
     body: JSON.stringify(vendor)
   });
 }
+
+export function getPayrollPeriods() {
+  return request("/api/payroll/periods");
+}
+
+export function createPayrollPeriod(period) {
+  return request("/api/payroll/periods", {
+    method: "POST",
+    headers: jsonHeaders,
+    body: JSON.stringify(period)
+  });
+}
+
+export function updatePayrollPeriod(id, period) {
+  return request(`/api/payroll/periods/${id}`, {
+    method: "PUT",
+    headers: jsonHeaders,
+    body: JSON.stringify(period)
+  });
+}
+
+export function deletePayrollPeriod(id) {
+  return request(`/api/payroll/periods/${id}`, {
+    method: "DELETE"
+  });
+}
+
+export function generatePayroll(id) {
+  return request(`/api/payroll/periods/${id}/generate`, {
+    method: "POST"
+  });
+}
+
+export function getPayrollRecordsForPeriod(id) {
+  return request(`/api/payroll/periods/${id}/records`);
+}
+
+export function getPayrollRecordsForEmployee(employeeId) {
+  return request(`/api/payroll/employees/${employeeId}/records`);
+}
+
+export function approvePayrollRecord(id) {
+  return request(`/api/payroll/records/${id}/approve`, {
+    method: "POST"
+  });
+}
+
+export function payPayrollRecord(id) {
+  return request(`/api/payroll/records/${id}/pay`, {
+    method: "POST"
+  });
+}
+
+export function cancelPayrollRecord(id) {
+  return request(`/api/payroll/records/${id}/cancel`, {
+    method: "POST"
+  });
+}
+
+export function getPayrollEmployees() {
+  return request("/api/payroll/employees");
+}
+
+export function updateEmployeePayrollSettings(employeeId, settings) {
+  return request(`/api/payroll/employees/${employeeId}/settings`, {
+    method: "PUT",
+    headers: jsonHeaders,
+    body: JSON.stringify(settings)
+  });
+}
+
+export function getWorkShifts() {
+  return request("/api/shifts");
+}
+
+export function createWorkShift(shift) {
+  return request("/api/shifts", {
+    method: "POST",
+    headers: jsonHeaders,
+    body: JSON.stringify(shift)
+  });
+}
+
+export function deleteWorkShift(id) {
+  return request(`/api/shifts/${id}`, {
+    method: "DELETE"
+  });
+}
+
+export function getPayrollShiftSlots(periodId) {
+  const query = periodId ? `?periodId=${encodeURIComponent(periodId)}` : "";
+  return request(`/api/payroll/shift-slots${query}`);
+}
+
+export function createPayrollShiftSlot(slot) {
+  return request("/api/payroll/shift-slots", {
+    method: "POST",
+    headers: jsonHeaders,
+    body: JSON.stringify(slot)
+  });
+}
+
+export function deletePayrollShiftSlot(id) {
+  return request(`/api/payroll/shift-slots/${id}`, {
+    method: "DELETE"
+  });
+}
+
+export function signupForPayrollShiftSlot(id) {
+  return request(`/api/payroll/shift-slots/${id}/signup`, {
+    method: "POST"
+  });
+}
+
+export function cancelPayrollShiftSignup(id) {
+  return request(`/api/payroll/shift-slots/${id}/signup`, {
+    method: "DELETE"
+  });
+}
+
+export function assignEmployeeToPayrollShiftSlot(slotId, employeeId) {
+  return request(`/api/payroll/shift-slots/${slotId}/employees/${employeeId}`, {
+    method: "POST"
+  });
+}
+
+export function removePayrollShiftSignup(slotId, signupId) {
+  return request(`/api/payroll/shift-slots/${slotId}/signups/${signupId}`, {
+    method: "DELETE"
+  });
+}

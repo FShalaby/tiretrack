@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import {
   AlertTriangle,
   Bell,
+  BriefcaseBusiness,
   CalendarDays,
   CheckCircle2,
   CircleDollarSign,
@@ -37,14 +38,23 @@ import {
   createCustomerVehicle,
   createExpense,
   createInvoice,
+  createPayrollPeriod,
+  createPayrollShiftSlot,
   createNotification,
   createPublicBooking,
   createTire,
   createVendor,
+  createWorkShift,
   deleteAppointment,
   deleteCustomerVehicle,
   deleteInvoice,
+  deletePayrollPeriod,
+  deletePayrollShiftSlot,
   deleteTire,
+  deleteWorkShift,
+  approvePayrollRecord,
+  cancelPayrollRecord,
+  generatePayroll,
   getAppointments,
   getAccountingAccounts,
   getAccountingReport,
@@ -61,6 +71,12 @@ import {
   getCustomerPortal,
   getCustomers,
   getVendors,
+  getPayrollEmployees,
+  getPayrollPeriods,
+  getPayrollRecordsForEmployee,
+  getPayrollRecordsForPeriod,
+  getPayrollShiftSlots,
+  getWorkShifts,
   login as loginApi,
   logout as logoutApi,
   markCustomerNotificationRead,
@@ -68,6 +84,7 @@ import {
   markNotificationRead,
   payExpense as payExpenseApi,
   payCustomerInvoice,
+  payPayrollRecord,
   register as registerApi,
   refreshToken as refreshTokenApi,
   searchTiresByBrand,
@@ -78,11 +95,17 @@ import {
   sendCustomerNotice,
   updateAppointment,
   updateInvoiceStatus,
+  updateEmployeePayrollSettings,
+  updatePayrollPeriod,
   updateSettings,
-  updateTire
+  updateTire,
+  signupForPayrollShiftSlot,
+  cancelPayrollShiftSignup,
+  assignEmployeeToPayrollShiftSlot,
+  removePayrollShiftSignup
 } from "./api";
 
-const tabs = ["Dashboard", "Tires", "Appointments", "Invoices", "Customers", "Accounting", "Audit Logs", "Settings"];
+const tabs = ["Dashboard", "Tires", "Appointments", "Invoices", "Customers", "Accounting", "Payroll", "My Payroll", "Audit Logs", "Settings"];
 const employeeHiddenTabs = ["Dashboard", "Customers", "Accounting", "Audit Logs", "Settings"];
 const tabIcons = {
   Dashboard: Gauge,
@@ -91,6 +114,8 @@ const tabIcons = {
   Invoices: FileText,
   Customers: UserCircle,
   Accounting: CircleDollarSign,
+  Payroll: BriefcaseBusiness,
+  "My Payroll": CircleDollarSign,
   "Audit Logs": ClipboardList,
   Settings: SettingsIcon
 };
@@ -110,6 +135,8 @@ const statusClassMap = {
   UNPAID: "yellow",
   PARTIAL: "yellow",
   OVERDUE: "red",
+  PENDING: "yellow",
+  APPROVED: "blue",
   DUE_SOON: "yellow",
   REMINDER: "blue",
   NEW: "green",
@@ -401,6 +428,14 @@ function defaultTabForRole(role) {
 function canAccessTab(role, tab) {
   if (role === "CUSTOMER") {
     return tab === "Portal";
+  }
+
+  if (tab === "Payroll") {
+    return role === "ADMIN";
+  }
+
+  if (tab === "My Payroll") {
+    return role === "EMPLOYEE";
   }
 
   return role !== "EMPLOYEE" || !employeeHiddenTabs.includes(tab);
@@ -1663,6 +1698,14 @@ function App() {
             vendorForm={vendorForm}
             vendors={vendors}
           />
+        )}
+
+        {!loading && activeTab === "Payroll" && auth?.role === "ADMIN" && (
+          <PayrollPage auth={auth} mode="admin" />
+        )}
+
+        {!loading && activeTab === "My Payroll" && auth?.role === "EMPLOYEE" && (
+          <PayrollPage auth={auth} mode="employee" />
         )}
 
         {!loading && activeTab === "Audit Logs" && (
@@ -4761,6 +4804,783 @@ function AccountingSectionTitle({ detail, title }) {
       <p>{detail}</p>
     </div>
   );
+}
+
+function PayrollPage({ auth, mode }) {
+  const isAdmin = mode === "admin" && auth?.role === "ADMIN";
+  const isEmployee = mode === "employee" && auth?.role === "EMPLOYEE";
+  const emptyPeriodForm = { startDate: "", endDate: "", notes: "" };
+  const emptyShiftForm = { employeeId: "", shiftDate: "", clockIn: "09:00", clockOut: "17:00", breakMinutes: "30", notes: "" };
+  const emptySlotForm = { shiftDate: "", startTime: "09:00", endTime: "17:00", requiredEmployees: "2", notes: "" };
+  const [periods, setPeriods] = useState([]);
+  const [records, setRecords] = useState([]);
+  const [employees, setEmployees] = useState([]);
+  const [workShifts, setWorkShifts] = useState([]);
+  const [shiftSlots, setShiftSlots] = useState([]);
+  const [employeeDrafts, setEmployeeDrafts] = useState({});
+  const [selectedPeriodId, setSelectedPeriodId] = useState("");
+  const [periodForm, setPeriodForm] = useState(emptyPeriodForm);
+  const [shiftForm, setShiftForm] = useState(emptyShiftForm);
+  const [slotForm, setSlotForm] = useState(emptySlotForm);
+  const [editingPeriodId, setEditingPeriodId] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isWorking, setIsWorking] = useState(false);
+  const [message, setMessage] = useState("");
+  const [payrollError, setPayrollError] = useState("");
+  const periodFormRef = useRef(null);
+  const summary = payrollSummary(records);
+
+  useEffect(() => {
+    loadPayroll();
+  }, [auth?.id, mode]);
+
+  async function loadPayroll(nextPeriodId = selectedPeriodId) {
+    setIsLoading(true);
+    setPayrollError("");
+
+    try {
+      if (isAdmin) {
+        const [periodList, employeeList, shiftList] = await Promise.all([
+          getPayrollPeriods().catch((err) => {
+            throw err;
+          }),
+          getPayrollEmployees().catch(() => []),
+          getWorkShifts().catch(() => [])
+        ]);
+        const safePeriods = periodList || [];
+        const safeEmployees = employeeList || [];
+        const resolvedPeriodId = nextPeriodId || safePeriods[0]?.id || "";
+        const selectedPeriod = safePeriods.find((period) => String(period.id) === String(resolvedPeriodId));
+
+        setPeriods(safePeriods);
+        setEmployees(safeEmployees);
+        setWorkShifts(shiftList || []);
+        setShiftSlots(resolvedPeriodId ? await getPayrollShiftSlots(resolvedPeriodId).catch(() => []) : []);
+        setEmployeeDrafts(makeEmployeeDrafts(safeEmployees));
+        setSelectedPeriodId(resolvedPeriodId);
+        setShiftForm((current) => ({
+          ...current,
+          employeeId: current.employeeId || safeEmployees[0]?.id || "",
+          shiftDate: current.shiftDate || selectedPeriod?.startDate || todayDateKey()
+        }));
+        setSlotForm((current) => ({
+          ...current,
+          shiftDate: current.shiftDate || selectedPeriod?.startDate || todayDateKey()
+        }));
+        setRecords(resolvedPeriodId ? await getPayrollRecordsForPeriod(resolvedPeriodId).catch(() => []) : []);
+      } else if (isEmployee && auth?.id) {
+        const [employeeRecords, slots] = await Promise.all([
+          getPayrollRecordsForEmployee(auth.id).catch((err) => {
+            throw err;
+          }),
+          getPayrollShiftSlots().catch(() => [])
+        ]);
+        setRecords(employeeRecords || []);
+        setShiftSlots(slots || []);
+      }
+    } catch (err) {
+      setPayrollError(payrollErrorMessage(err));
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function reloadShiftSlots(periodId = selectedPeriodId) {
+    setShiftSlots(await getPayrollShiftSlots(periodId || null).catch(() => []));
+  }
+
+  async function runPayrollAction(action, successText) {
+    setIsWorking(true);
+    setMessage("");
+    setPayrollError("");
+
+    try {
+      const result = await action();
+      setMessage(successText(result));
+      await loadPayroll(selectedPeriodId);
+    } catch (err) {
+      setPayrollError(payrollErrorMessage(err));
+    } finally {
+      setIsWorking(false);
+    }
+  }
+
+  async function submitPeriod(event) {
+    event.preventDefault();
+    setIsWorking(true);
+    setMessage("");
+    setPayrollError("");
+
+    try {
+      const wasEditing = Boolean(editingPeriodId);
+      const saved = wasEditing
+        ? await updatePayrollPeriod(editingPeriodId, periodForm)
+        : await createPayrollPeriod(periodForm);
+      const nextPeriodId = saved?.id || selectedPeriodId;
+
+      setEditingPeriodId(null);
+      setPeriodForm(emptyPeriodForm);
+      setSelectedPeriodId(nextPeriodId);
+      setMessage(wasEditing ? "Payroll period updated." : "Payroll period created.");
+      await loadPayroll(nextPeriodId);
+    } catch (err) {
+      setPayrollError(payrollErrorMessage(err));
+    } finally {
+      setIsWorking(false);
+    }
+  }
+
+  function editPeriod(period) {
+    setEditingPeriodId(period.id);
+    setPeriodForm({
+      startDate: period.startDate || "",
+      endDate: period.endDate || "",
+      notes: period.notes || ""
+    });
+    window.requestAnimationFrame(() => {
+      periodFormRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+    });
+  }
+
+  async function selectPeriod(periodId) {
+    setSelectedPeriodId(periodId);
+    setPayrollError("");
+    setMessage("");
+    setIsWorking(true);
+
+    try {
+      const period = periods.find((entry) => String(entry.id) === String(periodId));
+      if (period?.startDate) {
+        setShiftForm((current) => ({ ...current, shiftDate: period.startDate }));
+        setSlotForm((current) => ({ ...current, shiftDate: period.startDate }));
+      }
+      setShiftSlots(periodId ? await getPayrollShiftSlots(periodId).catch(() => []) : []);
+      setRecords(periodId ? await getPayrollRecordsForPeriod(periodId) || [] : []);
+    } catch (err) {
+      setPayrollError(payrollErrorMessage(err));
+    } finally {
+      setIsWorking(false);
+    }
+  }
+
+  async function generatePeriodPayroll(periodId) {
+    setIsWorking(true);
+    setMessage("");
+    setPayrollError("");
+    setSelectedPeriodId(periodId);
+
+    try {
+      const createdRecords = await generatePayroll(periodId);
+      const periodRecords = await getPayrollRecordsForPeriod(periodId).catch(() => []);
+
+      setRecords(periodRecords || []);
+      await loadPayroll(periodId);
+      setMessage((createdRecords || []).length === 0
+        ? existingPayrollMessage(periodRecords)
+        : `Generated ${(createdRecords || []).length} payroll records.`);
+    } catch (err) {
+      setPayrollError(payrollErrorMessage(err));
+    } finally {
+      setIsWorking(false);
+    }
+  }
+
+  async function saveEmployeeSettings(employeeId) {
+    const draft = employeeDrafts[employeeId] || {};
+    await runPayrollAction(
+      () => updateEmployeePayrollSettings(employeeId, {
+        payrollEnabled: Boolean(draft.payrollEnabled),
+        hourlyRate: draft.hourlyRate === "" ? null : Number(draft.hourlyRate),
+        employmentType: draft.employmentType || null
+      }),
+      () => "Employee payroll settings saved."
+    );
+  }
+
+  function updateEmployeeDraft(employeeId, field, value) {
+    setEmployeeDrafts((current) => ({
+      ...current,
+      [employeeId]: {
+        ...(current[employeeId] || {}),
+        [field]: value
+      }
+    }));
+  }
+
+  async function submitWorkShift(event) {
+    event.preventDefault();
+    setIsWorking(true);
+    setMessage("");
+    setPayrollError("");
+
+    try {
+      await createWorkShift({
+        employeeId: Number(shiftForm.employeeId),
+        shiftDate: shiftForm.shiftDate,
+        clockIn: `${shiftForm.shiftDate}T${shiftForm.clockIn}`,
+        clockOut: `${shiftForm.shiftDate}T${shiftForm.clockOut}`,
+        breakMinutes: Number(shiftForm.breakMinutes || 0),
+        notes: shiftForm.notes || "Payroll shift"
+      });
+      setMessage("Work shift added. Generate payroll after all shifts are entered.");
+      await loadPayroll(selectedPeriodId);
+    } catch (err) {
+      setPayrollError(payrollErrorMessage(err));
+    } finally {
+      setIsWorking(false);
+    }
+  }
+
+  async function removeWorkShift(id) {
+    await runPayrollAction(
+      () => deleteWorkShift(id),
+      () => "Work shift deleted."
+    );
+  }
+
+  async function submitShiftSlot(event) {
+    event.preventDefault();
+    setIsWorking(true);
+    setMessage("");
+    setPayrollError("");
+
+    try {
+      await createPayrollShiftSlot({
+        payrollPeriodId: Number(selectedPeriodId),
+        shiftDate: slotForm.shiftDate,
+        startTime: slotForm.startTime,
+        endTime: slotForm.endTime,
+        requiredEmployees: Number(slotForm.requiredEmployees || 1),
+        notes: slotForm.notes
+      });
+      setMessage("Shift slot added. Employees can sign up until spots are filled.");
+      await reloadShiftSlots(selectedPeriodId);
+    } catch (err) {
+      setPayrollError(payrollErrorMessage(err));
+    } finally {
+      setIsWorking(false);
+    }
+  }
+
+  async function runSlotAction(action, successText) {
+    setIsWorking(true);
+    setMessage("");
+    setPayrollError("");
+
+    try {
+      await action();
+      setMessage(successText);
+      await reloadShiftSlots(isAdmin ? selectedPeriodId : null);
+    } catch (err) {
+      setPayrollError(payrollErrorMessage(err));
+    } finally {
+      setIsWorking(false);
+    }
+  }
+
+  if (!isAdmin && !isEmployee) {
+    return <div className="alert error">You do not have permission to access this payroll resource.</div>;
+  }
+
+  const selectedPeriod = periods.find((period) => String(period.id) === String(selectedPeriodId));
+  const visibleWorkShifts = isAdmin
+    ? workShifts.filter((shift) => isShiftInPeriod(shift, selectedPeriod))
+    : [];
+  const visibleShiftSlots = isAdmin
+    ? shiftSlots
+    : shiftSlots.filter((slot) => slot.spotsLeft > 0 || slot.signedUpByCurrentUser);
+
+  return (
+    <section className="work-area payroll-page">
+      <div className="section-toolbar">
+        <div>
+          <span className="eyebrow">{isAdmin ? "Payroll administration" : "Payroll history"}</span>
+          <h3>{isAdmin ? "Payroll" : "My Payroll"}</h3>
+        </div>
+        {isAdmin && (
+          <button className="ghost-button with-icon" disabled={isWorking} onClick={() => loadPayroll(selectedPeriodId)} type="button">
+            <RefreshCw size={16} />
+            Refresh Payroll
+          </button>
+        )}
+      </div>
+
+      {isLoading && <div className="loading">Loading payroll data...</div>}
+      {payrollError && <div className="alert error">{payrollError}</div>}
+      {message && <div className="success-alert">{message}</div>}
+
+      {!isLoading && (
+        <>
+          <section className="metric-grid">
+            <div className="metric-card"><span>Total records</span><strong>{summary.totalRecords}</strong></div>
+            <div className="metric-card"><span>Pending payroll</span><strong>{summary.pending}</strong></div>
+            <div className="metric-card"><span>Approved payroll</span><strong>{summary.approved}</strong></div>
+            <div className="metric-card"><span>Paid payroll</span><strong>{summary.paid}</strong></div>
+            <div className="metric-card"><span>Cancelled payroll</span><strong>{summary.cancelled}</strong></div>
+            <div className="metric-card"><span>Total gross pay</span><strong>{money(summary.grossPay)}</strong></div>
+          </section>
+
+          {isAdmin && (
+            <>
+              <form className="panel form-grid payroll-period-form" onSubmit={submitPeriod} ref={periodFormRef}>
+                <div className="settings-header">
+                  <span className="brand-mark"><BriefcaseBusiness size={20} /></span>
+                  <div>
+                    <span className="eyebrow">Payroll periods</span>
+                    <h3>{editingPeriodId ? "Update Period" : "Create Period"}</h3>
+                  </div>
+                </div>
+                <Input label="Start date" required type="date" value={periodForm.startDate} onChange={(startDate) => setPeriodForm({ ...periodForm, startDate })} />
+                <Input label="End date" required type="date" value={periodForm.endDate} onChange={(endDate) => setPeriodForm({ ...periodForm, endDate })} />
+                <label className="settings-terms">
+                  <span>Notes</span>
+                  <textarea rows="3" value={periodForm.notes} onChange={(event) => setPeriodForm({ ...periodForm, notes: event.target.value })} />
+                </label>
+                <div className="toolbar-actions">
+                  {editingPeriodId && (
+                    <button className="ghost-button" onClick={() => { setEditingPeriodId(null); setPeriodForm(emptyPeriodForm); }} type="button">
+                      Cancel Edit
+                    </button>
+                  )}
+                  <button className="primary-button" disabled={isWorking} type="submit">
+                    {editingPeriodId ? "Update Period" : "Create Period"}
+                  </button>
+                </div>
+              </form>
+
+              <section className="panel audit-log-panel">
+                <div className="section-toolbar">
+                  <div>
+                    <span className="eyebrow">Pay cycles</span>
+                    <h3>Payroll Periods</h3>
+                  </div>
+                  <label className="payroll-period-picker">
+                    <span>Selected records period</span>
+                    <select value={selectedPeriodId} onChange={(event) => selectPeriod(event.target.value)}>
+                      <option value="">No period selected</option>
+                      {periods.map((period) => (
+                        <option key={period.id} value={period.id}>
+                          {period.startDate} to {period.endDate}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <DataTable
+                  actions={(period) => (
+                    <div className="table-actions compact">
+                      <button className="ghost-button" onClick={() => editPeriod(period)} type="button">Edit</button>
+                      <button className="primary-button" disabled={isWorking} onClick={() => generatePeriodPayroll(period.id)} type="button">Generate</button>
+                      <button className="ghost-button" onClick={() => selectPeriod(period.id)} type="button">Records</button>
+                      <button className="danger-button" disabled={isWorking} onClick={() => runPayrollAction(() => deletePayrollPeriod(period.id), () => "Payroll period deleted.")} type="button">Delete</button>
+                    </div>
+                  )}
+                  columns={["Start", "End", "Status", "Notes", "Created", ""]}
+                  emptyText="No payroll periods yet."
+                  rows={periods.map((period) => ({
+                    key: `payroll-period-${period.id}`,
+                    source: period,
+                    values: [
+                      period.startDate || "-",
+                      period.endDate || "-",
+                      period.status || "-",
+                      period.notes || "-",
+                      dateTime(period.createdAt)
+                    ]
+                  }))}
+                />
+              </section>
+
+              <section className="panel audit-log-panel payroll-schedule-panel">
+                <div className="section-toolbar">
+                  <div>
+                    <span className="eyebrow">Availability schedule</span>
+                    <h3>Shift Signups</h3>
+                  </div>
+                  <span className="audit-count">First come, first serve</span>
+                </div>
+
+                <form className="payroll-slot-form" onSubmit={submitShiftSlot}>
+                  <Input label="Shift date" required type="date" value={slotForm.shiftDate} onChange={(shiftDate) => setSlotForm({ ...slotForm, shiftDate })} />
+                  <Input label="Start time" required type="time" value={slotForm.startTime} onChange={(startTime) => setSlotForm({ ...slotForm, startTime })} />
+                  <Input label="End time" required type="time" value={slotForm.endTime} onChange={(endTime) => setSlotForm({ ...slotForm, endTime })} />
+                  <Input label="People needed" min="1" required type="number" value={slotForm.requiredEmployees} onChange={(requiredEmployees) => setSlotForm({ ...slotForm, requiredEmployees })} />
+                  <Input label="Notes" value={slotForm.notes} onChange={(notes) => setSlotForm({ ...slotForm, notes })} placeholder="Front desk, bay 1, closing..." />
+                  <button className="primary-button" disabled={isWorking || !selectedPeriodId} type="submit">Add Slot</button>
+                </form>
+
+                <ShiftSlotBoard
+                  employees={employees}
+                  isAdmin={isAdmin}
+                  isWorking={isWorking}
+                  onAssign={(slotId, employeeId) => runSlotAction(() => assignEmployeeToPayrollShiftSlot(slotId, employeeId), "Employee assigned to shift.")}
+                  onCancel={(slotId) => runSlotAction(() => cancelPayrollShiftSignup(slotId), "Shift signup cancelled.")}
+                  onDelete={(slotId) => runSlotAction(() => deletePayrollShiftSlot(slotId), "Shift slot deleted.")}
+                  onRemoveSignup={(slotId, signupId) => runSlotAction(() => removePayrollShiftSignup(slotId, signupId), "Employee removed from shift.")}
+                  onSignup={(slotId) => runSlotAction(() => signupForPayrollShiftSlot(slotId), "You are signed up for this shift.")}
+                  slots={visibleShiftSlots}
+                />
+              </section>
+
+              <section className="panel audit-log-panel payroll-shifts-panel">
+                <div className="section-toolbar">
+                  <div>
+                    <span className="eyebrow">Hours source</span>
+                    <h3>Work Shifts</h3>
+                  </div>
+                  <span className="audit-count">
+                    {selectedPeriod ? `${selectedPeriod.startDate} to ${selectedPeriod.endDate}` : "Select a period"}
+                  </span>
+                </div>
+
+                <form className="payroll-shift-form" onSubmit={submitWorkShift}>
+                  <label>
+                    <span>Employee</span>
+                    <select required value={shiftForm.employeeId} onChange={(event) => setShiftForm({ ...shiftForm, employeeId: event.target.value })}>
+                      <option value="">Choose employee</option>
+                      {employees.map((employee) => (
+                        <option key={employee.id} value={employee.id}>{employee.fullName}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <Input label="Shift date" required type="date" value={shiftForm.shiftDate} onChange={(shiftDate) => setShiftForm({ ...shiftForm, shiftDate })} />
+                  <Input label="Clock in" required type="time" value={shiftForm.clockIn} onChange={(clockIn) => setShiftForm({ ...shiftForm, clockIn })} />
+                  <Input label="Clock out" required type="time" value={shiftForm.clockOut} onChange={(clockOut) => setShiftForm({ ...shiftForm, clockOut })} />
+                  <Input label="Break minutes" min="0" type="number" value={shiftForm.breakMinutes} onChange={(breakMinutes) => setShiftForm({ ...shiftForm, breakMinutes })} />
+                  <Input label="Notes" value={shiftForm.notes} onChange={(notes) => setShiftForm({ ...shiftForm, notes })} placeholder="Payroll shift" />
+                  <button className="primary-button" disabled={isWorking} type="submit">Add Shift</button>
+                </form>
+
+                <DataTable
+                  actions={(shift) => (
+                    <button className="danger-button" disabled={isWorking} onClick={() => removeWorkShift(shift.id)} type="button">
+                      Delete
+                    </button>
+                  )}
+                  columns={["Employee", "Date", "Clock In", "Clock Out", "Break", "Hours", "Notes", ""]}
+                  emptyText="No work shifts in this payroll period yet."
+                  rows={visibleWorkShifts.map((shift) => ({
+                    key: `work-shift-${shift.id}`,
+                    source: shift,
+                    values: [
+                      shift.employee?.fullName || "-",
+                      shift.shiftDate || "-",
+                      compactTime(shift.clockIn),
+                      compactTime(shift.clockOut),
+                      `${shift.breakMinutes ?? 0} min`,
+                      numberCell(shift.workedHours),
+                      shift.notes || "-"
+                    ]
+                  }))}
+                />
+              </section>
+            </>
+          )}
+
+          {isEmployee && (
+            <section className="panel audit-log-panel payroll-schedule-panel">
+              <div className="section-toolbar">
+                <div>
+                  <span className="eyebrow">Available shifts</span>
+                  <h3>Shift Signups</h3>
+                </div>
+                <span className="audit-count">First come, first serve</span>
+              </div>
+              <ShiftSlotBoard
+                employees={[]}
+                isAdmin={false}
+                isWorking={isWorking}
+                onCancel={(slotId) => runSlotAction(() => cancelPayrollShiftSignup(slotId), "Shift signup cancelled.")}
+                onSignup={(slotId) => runSlotAction(() => signupForPayrollShiftSlot(slotId), "You are signed up for this shift.")}
+                slots={visibleShiftSlots}
+              />
+            </section>
+          )}
+
+          <section className="panel audit-log-panel">
+            <div className="section-toolbar">
+              <div>
+                <span className="eyebrow">{isAdmin ? "Selected period" : "Employee payroll"}</span>
+                <h3>{isAdmin ? "Payroll Records" : "My Payroll Records"}</h3>
+              </div>
+            </div>
+            <DataTable
+              actions={isAdmin ? (record) => (
+                <div className="table-actions compact">
+                  <button className="ghost-button" disabled={isWorking} onClick={() => runPayrollAction(() => approvePayrollRecord(record.id), () => "Payroll record approved.")} type="button">Approve</button>
+                  <button className="primary-button" disabled={isWorking} onClick={() => runPayrollAction(() => payPayrollRecord(record.id), () => "Payroll record marked paid.")} type="button">Mark Paid</button>
+                  <button className="danger-button" disabled={isWorking} onClick={() => runPayrollAction(() => cancelPayrollRecord(record.id), () => "Payroll record cancelled.")} type="button">Cancel</button>
+                </div>
+              ) : null}
+              columns={isAdmin
+                ? ["Employee", "Email", "Regular", "Overtime", "Rate", "Gross", "Status", "Paid At", ""]
+                : ["Period", "Regular", "Overtime", "Rate", "Gross", "Status", "Paid At"]}
+              emptyText={isAdmin ? "No payroll records for this period." : "No payroll records found yet."}
+              rows={records.map((record) => ({
+                key: `payroll-record-${record.id}`,
+                source: record,
+                values: isAdmin ? [
+                  record.employee?.fullName || "-",
+                  record.employee?.email || "-",
+                  numberCell(record.regularHours),
+                  numberCell(record.overtimeHours),
+                  money(record.hourlyRate),
+                  money(record.grossPay),
+                  record.status || "-",
+                  dateTime(record.paidAt)
+                ] : [
+                  `${record.payrollPeriod?.startDate || "-"} to ${record.payrollPeriod?.endDate || "-"}`,
+                  numberCell(record.regularHours),
+                  numberCell(record.overtimeHours),
+                  money(record.hourlyRate),
+                  money(record.grossPay),
+                  record.status || "-",
+                  dateTime(record.paidAt)
+                ]
+              }))}
+            />
+          </section>
+
+          {isAdmin && (
+            <section className="panel audit-log-panel">
+              <div className="section-toolbar">
+                <div>
+                  <span className="eyebrow">Employee eligibility</span>
+                  <h3>Employee Payroll Settings</h3>
+                </div>
+              </div>
+              <DataTable
+                actions={(employee) => (
+                  <button className="primary-button" disabled={isWorking} onClick={() => saveEmployeeSettings(employee.id)} type="button">
+                    Save
+                  </button>
+                )}
+                columns={["Employee", "Email", "Payroll Enabled", "Hourly Rate", "Employment Type", ""]}
+                emptyText="No employees found."
+                rows={employees.map((employee) => {
+                  const draft = employeeDrafts[employee.id] || {};
+                  return {
+                    key: `employee-payroll-${employee.id}`,
+                    source: employee,
+                    values: [
+                      employee.fullName || "-",
+                      employee.email || "-",
+                      {
+                        value: (
+                          <input
+                            checked={Boolean(draft.payrollEnabled)}
+                            onChange={(event) => updateEmployeeDraft(employee.id, "payrollEnabled", event.target.checked)}
+                            type="checkbox"
+                          />
+                        ),
+                        text: draft.payrollEnabled ? "enabled" : "disabled"
+                      },
+                      {
+                        value: (
+                          <input
+                            min="0"
+                            onChange={(event) => updateEmployeeDraft(employee.id, "hourlyRate", event.target.value)}
+                            step="0.01"
+                            type="number"
+                            value={draft.hourlyRate ?? ""}
+                          />
+                        ),
+                        text: draft.hourlyRate
+                      },
+                      {
+                        value: (
+                          <select value={draft.employmentType || ""} onChange={(event) => updateEmployeeDraft(employee.id, "employmentType", event.target.value)}>
+                            <option value="">Not set</option>
+                            <option value="FULL_TIME">Full time</option>
+                            <option value="PART_TIME">Part time</option>
+                            <option value="CONTRACT">Contract</option>
+                            <option value="SEASONAL">Seasonal</option>
+                          </select>
+                        ),
+                        text: draft.employmentType || "not set"
+                      }
+                    ]
+                  };
+                })}
+              />
+            </section>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
+function payrollSummary(records) {
+  return (records || []).reduce((summary, record) => {
+    const status = String(record.status || "PENDING").toUpperCase();
+    summary.totalRecords += 1;
+    summary.grossPay += Number(record.grossPay || 0);
+    if (status === "PENDING") summary.pending += 1;
+    if (status === "APPROVED") summary.approved += 1;
+    if (status === "PAID") summary.paid += 1;
+    if (status === "CANCELLED") summary.cancelled += 1;
+    return summary;
+  }, { totalRecords: 0, pending: 0, approved: 0, paid: 0, cancelled: 0, grossPay: 0 });
+}
+
+function ShiftSlotBoard({ employees, isAdmin, isWorking, onAssign, onCancel, onDelete, onRemoveSignup, onSignup, slots }) {
+  const [selectedEmployees, setSelectedEmployees] = useState({});
+  const groups = groupShiftSlotsByDate(slots);
+
+  function updateSelectedEmployee(slotId, employeeId) {
+    setSelectedEmployees((current) => ({ ...current, [slotId]: employeeId }));
+  }
+
+  if (groups.length === 0) {
+    return (
+      <div className="empty-state payroll-slot-empty">
+        <span className="brand-mark"><CalendarDays size={18} /></span>
+        <strong>No shift slots yet.</strong>
+        <p>{isAdmin ? "Add slots for the selected payroll period." : "No available shifts are posted right now."}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="payroll-slot-calendar">
+      {groups.map(({ date, slots: daySlots }) => (
+        <section className="payroll-slot-day" key={date}>
+          <div className="payroll-slot-day-head">
+            <span>{compactDate(date)}</span>
+            <strong>{daySlots.length} slot{daySlots.length === 1 ? "" : "s"}</strong>
+          </div>
+          <div className="payroll-slot-list">
+            {daySlots.map((slot) => {
+              const isFull = Number(slot.spotsLeft || 0) <= 0;
+              const selectedEmployeeId = selectedEmployees[slot.id] || employees[0]?.id || "";
+
+              return (
+                <article className={`payroll-slot-card ${isFull ? "full" : ""}`} key={slot.id}>
+                  <div className="payroll-slot-card-head">
+                    <strong>{slot.startTime} - {slot.endTime}</strong>
+                    <StatusBadge value={isFull ? "FULL" : "OPEN"} />
+                  </div>
+                  <div className="payroll-slot-capacity">
+                    <span>{slot.filledCount}/{slot.requiredEmployees} filled</span>
+                    <strong>{slot.spotsLeft} open</strong>
+                  </div>
+                  {slot.notes && <p>{slot.notes}</p>}
+                  <div className="payroll-slot-signups">
+                    {(slot.signups || []).length === 0 ? (
+                      <span className="empty-note">No one signed up yet.</span>
+                    ) : (
+                      (slot.signups || []).map((signup) => (
+                        <span className="payroll-signup-pill" key={signup.id}>
+                          {signup.fullName}
+                          {isAdmin && (
+                            <button disabled={isWorking} onClick={() => onRemoveSignup(slot.id, signup.id)} type="button">x</button>
+                          )}
+                        </span>
+                      ))
+                    )}
+                  </div>
+                  {isAdmin ? (
+                    <div className="payroll-slot-actions">
+                      <select value={selectedEmployeeId} onChange={(event) => updateSelectedEmployee(slot.id, event.target.value)}>
+                        {employees.map((employee) => (
+                          <option key={employee.id} value={employee.id}>{employee.fullName}</option>
+                        ))}
+                      </select>
+                      <button className="ghost-button" disabled={isWorking || isFull || !selectedEmployeeId} onClick={() => onAssign(slot.id, selectedEmployeeId)} type="button">
+                        Assign
+                      </button>
+                      <button className="danger-button" disabled={isWorking} onClick={() => onDelete(slot.id)} type="button">
+                        Delete
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="payroll-slot-actions">
+                      {slot.signedUpByCurrentUser ? (
+                        <button className="ghost-button" disabled={isWorking} onClick={() => onCancel(slot.id)} type="button">
+                          Cancel Signup
+                        </button>
+                      ) : (
+                        <button className="primary-button" disabled={isWorking || isFull} onClick={() => onSignup(slot.id)} type="button">
+                          Sign Up
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function groupShiftSlotsByDate(slots) {
+  const groups = (slots || []).reduce((result, slot) => {
+    const date = slot.shiftDate || "Unscheduled";
+    result[date] = [...(result[date] || []), slot];
+    return result;
+  }, {});
+
+  return Object.entries(groups)
+    .sort(([first], [second]) => first.localeCompare(second))
+    .map(([date, daySlots]) => ({
+      date,
+      slots: daySlots.sort((first, second) => String(first.startTime).localeCompare(String(second.startTime)))
+    }));
+}
+
+function makeEmployeeDrafts(employees) {
+  return (employees || []).reduce((drafts, employee) => {
+    drafts[employee.id] = {
+      payrollEnabled: Boolean(employee.payrollEnabled),
+      hourlyRate: employee.hourlyRate ?? "",
+      employmentType: employee.employmentType || ""
+    };
+    return drafts;
+  }, {});
+}
+
+function payrollErrorMessage(err) {
+  const message = err?.message || "Payroll request failed.";
+  if (message.includes("403")) {
+    return "You do not have permission to access this payroll resource.";
+  }
+
+  return message;
+}
+
+function existingPayrollMessage(records) {
+  if ((records || []).length > 0) {
+    return "Payroll records already exist for this period. Select Records to review them.";
+  }
+
+  return "No eligible payroll records were generated. Make sure employees have payroll enabled, hourly rates set, and shifts in this period.";
+}
+
+function isShiftInPeriod(shift, period) {
+  if (!period?.startDate || !period?.endDate) {
+    return true;
+  }
+
+  return shift.shiftDate >= period.startDate && shift.shiftDate <= period.endDate;
+}
+
+function compactTime(value) {
+  if (!value) {
+    return "-";
+  }
+
+  return String(value).split("T")[1]?.slice(0, 5) || value;
+}
+
+function numberCell(value) {
+  return Number(value || 0).toLocaleString(undefined, {
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 0
+  });
 }
 
 function AuditLogsPage({ logs }) {

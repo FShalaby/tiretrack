@@ -3430,6 +3430,204 @@ button:disabled {
   font-weight: 800;
 }
 
+.payroll-page {
+  gap: 18px;
+}
+
+.payroll-period-form {
+  grid-template-columns: repeat(2, minmax(190px, 1fr));
+}
+
+.payroll-period-form .toolbar-actions {
+  grid-column: 1 / -1;
+  justify-content: flex-end;
+}
+
+.payroll-period-picker {
+  min-width: min(320px, 100%);
+}
+
+.payroll-page td input[type="checkbox"] {
+  accent-color: #7c8cff;
+  height: 18px;
+  min-height: 18px;
+  width: 18px;
+}
+
+.payroll-page td input[type="number"],
+.payroll-page td select {
+  min-width: 140px;
+}
+
+.payroll-shifts-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.payroll-schedule-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.payroll-slot-form {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  padding: 0 14px 14px;
+}
+
+.payroll-slot-form label,
+.payroll-slot-form input,
+.payroll-slot-form select {
+  min-width: 0;
+}
+
+.payroll-slot-form label:nth-child(5) {
+  grid-column: span 2;
+}
+
+.payroll-slot-form .primary-button {
+  align-self: end;
+  grid-column: 4;
+  justify-self: stretch;
+  min-width: 0;
+}
+
+.payroll-slot-calendar {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  padding: 0 14px 14px;
+}
+
+.payroll-slot-day {
+  background: #17171d;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 14px;
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+}
+
+.payroll-slot-day-head {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.payroll-slot-day-head span,
+.payroll-slot-day-head strong {
+  color: #ffffff;
+  font-weight: 900;
+}
+
+.payroll-slot-list {
+  display: grid;
+  gap: 10px;
+}
+
+.payroll-slot-card {
+  background: #202028;
+  border: 1px solid rgba(124, 140, 255, 0.2);
+  border-radius: 12px;
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+}
+
+.payroll-slot-card.full {
+  border-color: rgba(148, 163, 184, 0.18);
+  opacity: 0.82;
+}
+
+.payroll-slot-card-head,
+.payroll-slot-capacity {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.payroll-slot-card-head strong {
+  color: #ffffff;
+}
+
+.payroll-slot-capacity span,
+.payroll-slot-card p {
+  color: #8f95a3;
+  font-size: 0.82rem;
+  font-weight: 800;
+  margin: 0;
+}
+
+.payroll-slot-capacity strong {
+  color: #bffcf0;
+}
+
+.payroll-slot-signups,
+.payroll-slot-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.payroll-slot-actions select {
+  flex: 1 1 150px;
+  min-width: 0;
+}
+
+.payroll-signup-pill {
+  align-items: center;
+  background: rgba(24, 211, 178, 0.12);
+  border: 1px solid rgba(24, 211, 178, 0.22);
+  border-radius: 999px;
+  color: #bffcf0;
+  display: inline-flex;
+  font-size: 0.74rem;
+  font-weight: 900;
+  gap: 6px;
+  min-height: 28px;
+  padding: 5px 8px;
+}
+
+.payroll-signup-pill button {
+  background: transparent;
+  border: 0;
+  color: #ffffff;
+  font-weight: 900;
+  min-height: 0;
+  padding: 0 2px;
+}
+
+.payroll-shift-form {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  padding: 0 14px 14px;
+}
+
+.payroll-shift-form label,
+.payroll-shift-form input,
+.payroll-shift-form select {
+  min-width: 0;
+}
+
+.payroll-shift-form label:first-child,
+.payroll-shift-form label:nth-child(6) {
+  grid-column: span 2;
+}
+
+.payroll-shift-form .primary-button {
+  align-self: end;
+  grid-column: 4;
+  justify-self: stretch;
+  min-width: 0;
+}
+
 .invoice-totals div {
   display: flex;
   justify-content: space-between;
@@ -4064,8 +4262,15 @@ tr:last-child td {
   .today-stats,
   .dashboard-filters,
   .settings-form,
-  .form-grid {
+  .form-grid,
+  .payroll-slot-form,
+  .payroll-shift-form {
     grid-template-columns: repeat(2, minmax(160px, 1fr));
+  }
+
+  .payroll-slot-form .primary-button,
+  .payroll-shift-form .primary-button {
+    grid-column: 1 / -1;
   }
 
   .accounting-page {
@@ -4151,9 +4356,19 @@ tr:last-child td {
   .day-view-slots,
   .settings-form,
   .form-grid,
+  .payroll-slot-form,
+  .payroll-shift-form,
   .inventory-filters,
   .invoice-item-row {
     grid-template-columns: 1fr;
+  }
+
+  .payroll-shift-form label:first-child,
+  .payroll-slot-form label:nth-child(5),
+  .payroll-shift-form label:nth-child(6),
+  .payroll-slot-form .primary-button,
+  .payroll-shift-form .primary-button {
+    grid-column: auto;
   }
 
   .public-booking-shell {

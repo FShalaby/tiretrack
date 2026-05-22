@@ -1,11 +1,14 @@
 package com.aem.tiretrack.model;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
+import com.aem.tiretrack.enums.EmploymentType;
 import com.aem.tiretrack.enums.UserRole;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -15,6 +18,8 @@ import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import jakarta.validation.constraints.NotNull;
+
+
 @Entity
 @Table(name = "users")
 public class User 
@@ -41,7 +46,7 @@ public class User
     private String passwordHash;
 
     @NotNull(message = "Role is required")
-    @Enumerated(EnumType.STRING)
+    @Convert(converter = UserRoleConverter.class)
     private UserRole role;
 
     @Column(name = "is_active")
@@ -51,13 +56,14 @@ public class User
     private LocalDateTime createdAt;
 
     @Column(name = "hourly_rate")
-    private Double hourlyRate;
+    private BigDecimal hourlyRate;
 
     @Column(name = "payroll_enabled")
-    private boolean payrollEnabled = false;
+    private Boolean payrollEnabled = false;
 
+    @Convert(converter = EmploymentTypeConverter.class)
     @Column(name = "employment_type")
-    private String employmentType;
+    private EmploymentType employmentType;
 
     @PrePersist
     protected void onCreate() {
@@ -123,5 +129,29 @@ public class User
 
     public void setCreatedAt(LocalDateTime createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public BigDecimal getHourlyRate() {
+        return hourlyRate;
+    }
+
+    public void setHourlyRate(BigDecimal hourlyRate) {
+        this.hourlyRate = hourlyRate;
+    }
+
+    public boolean isPayrollEnabled() {
+        return Boolean.TRUE.equals(payrollEnabled);
+    }
+
+    public void setPayrollEnabled(boolean payrollEnabled) {
+        this.payrollEnabled = payrollEnabled;
+    }
+
+    public EmploymentType getEmploymentType() {
+        return employmentType;
+    }
+
+    public void setEmploymentType(EmploymentType employmentType) {
+        this.employmentType = employmentType;
     }
 }
