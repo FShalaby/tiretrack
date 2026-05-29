@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.aem.tiretrack.dto.customer.CustomerAppointmentRequest;
+import com.aem.tiretrack.dto.customer.CustomerInvoiceSummary;
 import com.aem.tiretrack.dto.customer.CustomerNoticeRequest;
 import com.aem.tiretrack.dto.customer.CustomerProfile;
 import com.aem.tiretrack.dto.customer.CustomerPortalResponse;
@@ -51,8 +52,8 @@ public class CustomerPortalService {
         return new CustomerPortalResponse(
                 new CustomerProfile(customer),
                 vehicleRepository.findByCustomerOrderByCreatedAtDesc(customer),
-                appointmentRepository.findCustomerHistory(customer.getId(), customer.getPhone()),
-                invoiceRepository.findCustomerHistory(customer.getId(), customer.getPhone()),
+                appointmentRepository.findCustomerHistory(customer.getId(), customer.getPhone(), customer.getEmail()),
+                invoiceRepository.findCustomerHistory(customer.getId(), customer.getPhone(), customer.getFullName()),
                 notificationRepository.findByCustomerOrderByCreatedAtDesc(customer)
         );
     }
@@ -79,6 +80,7 @@ public class CustomerPortalService {
         Appointment appointment = new Appointment();
         appointment.setCustomerId(customer.getId());
         appointment.setCustomerName(customer.getFullName());
+        appointment.setEmail(customer.getEmail());
         appointment.setPhone(customer.getPhone());
         appointment.setVehicle(vehicleLabel(vehicle));
         appointment.setTireSize(vehicleTireSize(vehicle));
@@ -101,7 +103,9 @@ public class CustomerPortalService {
         Invoice invoice = invoiceRepository.findById(invoiceId)
                 .orElseThrow(() -> new RuntimeException("Invoice not found"));
 
-        boolean ownsInvoice = customer.getId().equals(invoice.getCustomerId()) || customer.getPhone().equals(invoice.getPhone());
+        boolean ownsInvoice = customer.getId().equals(invoice.getCustomerId())
+                || customer.getPhone().equals(invoice.getPhone())
+                || customer.getFullName().equalsIgnoreCase(invoice.getCustomerName());
         if (!ownsInvoice) {
             throw new RuntimeException("Invoice not found");
         }
@@ -145,14 +149,15 @@ public class CustomerPortalService {
     }
 
     private CustomerSummary summary(User customer) {
-        List<Appointment> appointments = appointmentRepository.findCustomerHistory(customer.getId(), customer.getPhone());
-        List<Invoice> invoices = invoiceRepository.findCustomerHistory(customer.getId(), customer.getPhone());
+        List<Appointment> appointments = appointmentRepository.findCustomerHistory(customer.getId(), customer.getPhone(), customer.getEmail());
+        List<Invoice> invoices = invoiceRepository.findCustomerHistory(customer.getId(), customer.getPhone(), customer.getFullName());
+        List<CustomerVehicle> vehicles = vehicleRepository.findByCustomerOrderByCreatedAtDesc(customer);
         BigDecimal totalSpent = invoices.stream()
                 .filter(invoice -> "PAID".equalsIgnoreCase(invoice.getStatus()))
                 .map(invoice -> invoice.getTotal() == null ? BigDecimal.ZERO : invoice.getTotal())
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         List<Invoice> unpaidInvoices = invoices.stream()
-                .filter(invoice -> !"PAID".equalsIgnoreCase(invoice.getStatus()))
+                .filter(this::isCustomerBalanceInvoice)
                 .toList();
         BigDecimal outstandingBalance = unpaidInvoices.stream()
                 .map(invoice -> invoice.getTotal() == null ? BigDecimal.ZERO : invoice.getTotal())
@@ -186,8 +191,15 @@ public class CustomerPortalService {
                 nextAppointment == null ? null : nextAppointment.getId(),
                 nextAppointment == null ? null : nextAppointment.getAppointmentDate(),
                 nextAppointment == null ? null : nextAppointment.getVehicle(),
-                nextAppointment != null
+                nextAppointment != null,
+                vehicles,
+                unpaidInvoices.stream().map(CustomerInvoiceSummary::new).toList()
         );
+    }
+
+    private boolean isCustomerBalanceInvoice(Invoice invoice) {
+        String status = invoice.getStatus() == null ? "UNPAID" : invoice.getStatus().trim();
+        return !"PAID".equalsIgnoreCase(status) && !"VOID".equalsIgnoreCase(status);
     }
 
     private User currentCustomer() {

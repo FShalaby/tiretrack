@@ -30,6 +30,12 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long>
 
     List<Invoice> findByCustomerIdOrderByCreatedAtDesc(Long customerId);
 
-    @Query("select i from Invoice i where i.customerId = :customerId or i.phone = :phone order by i.createdAt desc")
-    List<Invoice> findCustomerHistory(@Param("customerId") Long customerId, @Param("phone") String phone);
+    @Query("""
+            select i from Invoice i
+            where i.customerId = :customerId
+               or i.phone = :phone
+               or lower(i.customerName) = lower(:customerName)
+            order by i.createdAt desc
+            """)
+    List<Invoice> findCustomerHistory(@Param("customerId") Long customerId, @Param("phone") String phone, @Param("customerName") String customerName);
 }

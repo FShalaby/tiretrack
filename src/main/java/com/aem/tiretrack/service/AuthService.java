@@ -26,20 +26,25 @@ public class AuthService {
     private final RefreshTokenRepository refreshTokenRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final AccountValidationService accountValidationService;
 
     @Value("${refresh.token.expiration:604800000}")
     private long refreshTokenExpiration;
 
-    public AuthService(UserRepository userRepository, RefreshTokenRepository refreshTokenRepository, PasswordEncoder passwordEncoder, JwtService jwtService) {
+    public AuthService(UserRepository userRepository, RefreshTokenRepository refreshTokenRepository, PasswordEncoder passwordEncoder, JwtService jwtService, AccountValidationService accountValidationService) {
         this.userRepository = userRepository;
         this.refreshTokenRepository = refreshTokenRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
+        this.accountValidationService = accountValidationService;
     }
 
     @Transactional
     public LoginResponse register(RegisterRequest request) {
-        if (userRepository.existsByEmail(request.getEmail())) {
+        String normalizedEmail = accountValidationService.normalizeEmail(request.getEmail());
+        accountValidationService.validateNewAccount(normalizedEmail, request.getPassword());
+
+        if (userRepository.existsByEmail(normalizedEmail)) {
             throw new IllegalArgumentException("Email already in use");
         }
         if (userRepository.existsByPhone(request.getPhone())) {
@@ -47,7 +52,7 @@ public class AuthService {
         }
         User user = new User();
         user.setFullName(request.getFullName());
-        user.setEmail(request.getEmail());
+        user.setEmail(normalizedEmail);
         user.setPhone(request.getPhone());
         user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
         user.setRole(UserRole.CUSTOMER);
@@ -61,7 +66,7 @@ public class AuthService {
 
     @Transactional
     public LoginResponse login(LoginRequest request) {
-        User user = userRepository.findByEmail(request.getEmail())
+        User user = userRepository.findByEmail(accountValidationService.normalizeEmail(request.getEmail()))
                 .orElseThrow(() -> new IllegalArgumentException("Invalid email or password"));
         if (!user.isActive()) {
             throw new IllegalArgumentException("Invalid email or password");

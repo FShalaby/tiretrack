@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.0.0",
+    "bwip-js": "^4.11.1",
     "framer-motion": "^12.38.0",
     "lucide-react": "^1.16.0",
     "react": "^19.0.0",

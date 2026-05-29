@@ -3,8 +3,10 @@ package com.aem.tiretrack.dto.customer;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 
 import com.aem.tiretrack.model.User;
+import com.aem.tiretrack.model.CustomerVehicle;
 
 public class CustomerSummary {
     private Long id;
@@ -24,8 +26,10 @@ public class CustomerSummary {
     private LocalDateTime nextAppointmentDate;
     private String nextAppointmentVehicle;
     private boolean hasUpcomingAppointment;
+    private List<CustomerVehicle> vehicles;
+    private List<CustomerInvoiceSummary> unpaidInvoices;
 
-    public CustomerSummary(User user, long vehicleCount, long appointmentCount, long invoiceCount, BigDecimal totalSpent, BigDecimal outstandingBalance, Long nextUnpaidInvoiceId, LocalDate nextPaymentDueDate, boolean hasOverdueBalance, boolean hasBalanceDueSoon, Long nextAppointmentId, LocalDateTime nextAppointmentDate, String nextAppointmentVehicle, boolean hasUpcomingAppointment) {
+    public CustomerSummary(User user, long vehicleCount, long appointmentCount, long invoiceCount, BigDecimal totalSpent, BigDecimal outstandingBalance, Long nextUnpaidInvoiceId, LocalDate nextPaymentDueDate, boolean hasOverdueBalance, boolean hasBalanceDueSoon, Long nextAppointmentId, LocalDateTime nextAppointmentDate, String nextAppointmentVehicle, boolean hasUpcomingAppointment, List<CustomerVehicle> vehicles, List<CustomerInvoiceSummary> unpaidInvoices) {
         this.id = user.getId();
         this.fullName = user.getFullName();
         this.email = user.getEmail();
@@ -43,6 +47,8 @@ public class CustomerSummary {
         this.nextAppointmentDate = nextAppointmentDate;
         this.nextAppointmentVehicle = nextAppointmentVehicle;
         this.hasUpcomingAppointment = hasUpcomingAppointment;
+        this.vehicles = vehicles;
+        this.unpaidInvoices = unpaidInvoices;
     }
 
     public Long getId() { return id; }
@@ -62,4 +68,6 @@ public class CustomerSummary {
     public LocalDateTime getNextAppointmentDate() { return nextAppointmentDate; }
     public String getNextAppointmentVehicle() { return nextAppointmentVehicle; }
     public boolean isHasUpcomingAppointment() { return hasUpcomingAppointment; }
+    public List<CustomerVehicle> getVehicles() { return vehicles; }
+    public List<CustomerInvoiceSummary> getUnpaidInvoices() { return unpaidInvoices; }
 }

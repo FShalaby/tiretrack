@@ -11,7 +11,10 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
+import com.aem.tiretrack.dto.TireImportResponse;
+import com.aem.tiretrack.dto.TireResponse;
 import com.aem.tiretrack.enums.Condition;
 import com.aem.tiretrack.model.Tire;
 import com.aem.tiretrack.service.TireService;
@@ -29,62 +32,72 @@ public class TireController {
     }
 
     @GetMapping
-    public List<Tire> getAllTires() {
-        return tireService.getAllTires();
+    public List<TireResponse> getAllTires() {
+        return tireService.getAllTires().stream().map(TireResponse::new).toList();
+    }
+
+    @GetMapping("/barcode/{barcode}")
+    public TireResponse getTireByBarcode(@PathVariable String barcode) {
+        return new TireResponse(tireService.getTireByBarcode(barcode));
     }
 
     @GetMapping("/{id}")
-    public Tire getTireById(@PathVariable Long id) {
-        return tireService.getTireById(id);
+    public TireResponse getTireById(@PathVariable Long id) {
+        return new TireResponse(tireService.getTireById(id));
     }
 
     @PostMapping
-    public Tire createTire(@Valid@RequestBody Tire tire) {
-        return tireService.saveTire(tire);
+    public TireResponse createTire(@Valid @RequestBody Tire tire) {
+        return new TireResponse(tireService.saveTire(tire));
+    }
+
+    @PostMapping("/import")
+    public TireImportResponse importTiresCsv(@RequestParam("file") MultipartFile file) {
+        return tireService.importTiresCsv(file);
     }
 
     @PutMapping("/{id}")
-    public Tire updateTire(
+    public TireResponse updateTire(
             @PathVariable Long id,
            @Valid @RequestBody Tire updatedTire) {
 
-        return tireService.updateTire(id, updatedTire);
+        return new TireResponse(tireService.updateTire(id, updatedTire));
     }
 
     @GetMapping("/search/brand")
-    public List<Tire> searchByBrand(@RequestParam String brand) {
-        return tireService.searchByBrand(brand);
+    public List<TireResponse> searchByBrand(@RequestParam String brand) {
+        return tireService.searchByBrand(brand).stream().map(TireResponse::new).toList();
     }
 
     @GetMapping("/search/size")
-    public List<Tire> searchBySize(
+    public List<TireResponse> searchBySize(
             @RequestParam int width,
             @RequestParam int aspectRatio,
             @RequestParam int rimSize) {
 
-        return tireService.searchBySize(width, aspectRatio, rimSize);
+        return tireService.searchBySize(width, aspectRatio, rimSize).stream().map(TireResponse::new).toList();
     }
 
     @GetMapping("/search/condition")
-    public List<Tire> searchByCondition(@RequestParam Condition condition) {
-        return tireService.searchByCondition(condition);
+    public List<TireResponse> searchByCondition(@RequestParam Condition condition) {
+        return tireService.searchByCondition(condition).stream().map(TireResponse::new).toList();
     }
 
     @GetMapping("/search/season")
-    public List<Tire> searchBySeason(@RequestParam String season) {
-        return tireService.searchBySeason(season);
+    public List<TireResponse> searchBySeason(@RequestParam String season) {
+        return tireService.searchBySeason(season).stream().map(TireResponse::new).toList();
     }
 
     @GetMapping("/search/location")
-    public List<Tire> searchByLocation(@RequestParam String location) {
-        return tireService.searchByLocation(location);
+    public List<TireResponse> searchByLocation(@RequestParam String location) {
+        return tireService.searchByLocation(location).stream().map(TireResponse::new).toList();
     }
 
     @GetMapping("/low-stock")
-    public List<Tire> getLowStockTires(
+    public List<TireResponse> getLowStockTires(
             @RequestParam(defaultValue = "4") int threshold) {
 
-        return tireService.getLowStockTires(threshold);
+        return tireService.getLowStockTires(threshold).stream().map(TireResponse::new).toList();
     }
 
     @DeleteMapping("/{id}")

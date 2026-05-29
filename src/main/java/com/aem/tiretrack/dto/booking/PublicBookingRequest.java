@@ -7,6 +7,7 @@ import com.aem.tiretrack.enums.ServiceType;
 
 public class PublicBookingRequest {
     private String customerName;
+    private String email;
     private String phone;
     private String vehicle;
     private String tireSize;
@@ -21,6 +22,14 @@ public class PublicBookingRequest {
 
     public void setCustomerName(String customerName) {
         this.customerName = customerName;
+    }
+
+    public String getEmail() {
+        return email;
+    }
+
+    public void setEmail(String email) {
+        this.email = email;
     }
 
     public String getPhone() {

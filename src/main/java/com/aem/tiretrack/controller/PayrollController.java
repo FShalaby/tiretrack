@@ -13,9 +13,9 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.aem.tiretrack.dto.EmployeePayrollSettingsRequest;
 import com.aem.tiretrack.dto.PayrollPeriodRequest;
-import com.aem.tiretrack.model.PayrollPeriod;
-import com.aem.tiretrack.model.PayrollRecord;
-import com.aem.tiretrack.model.User;
+import com.aem.tiretrack.dto.PayrollPeriodResponse;
+import com.aem.tiretrack.dto.PayrollRecordResponse;
+import com.aem.tiretrack.dto.UserResponse;
 import com.aem.tiretrack.service.PayrollService;
 
 import jakarta.validation.Valid;
@@ -31,25 +31,25 @@ public class PayrollController {
     }
 
     @GetMapping("/periods")
-    public List<PayrollPeriod> getPayrollPeriods() {
-        return payrollService.getAllPeriods();
+    public List<PayrollPeriodResponse> getPayrollPeriods() {
+        return payrollService.getAllPeriods().stream().map(PayrollPeriodResponse::new).toList();
     }
 
     @GetMapping("/periods/{id}")
-    public PayrollPeriod getPayrollPeriodById(@PathVariable long id) {
-        return payrollService.getPeriodById(id);
+    public PayrollPeriodResponse getPayrollPeriodById(@PathVariable long id) {
+        return new PayrollPeriodResponse(payrollService.getPeriodById(id));
     }
 
     @PostMapping("/periods")
-    public PayrollPeriod createPayrollPeriod(@Valid @RequestBody PayrollPeriodRequest request) {
-        return payrollService.createPeriod(request);
+    public PayrollPeriodResponse createPayrollPeriod(@Valid @RequestBody PayrollPeriodRequest request) {
+        return new PayrollPeriodResponse(payrollService.createPeriod(request));
     }
 
     @PutMapping("/periods/{id}")
-    public PayrollPeriod updatePayrollPeriod(
+    public PayrollPeriodResponse updatePayrollPeriod(
             @PathVariable long id,
             @Valid @RequestBody PayrollPeriodRequest request) {
-        return payrollService.updatePeriod(id, request);
+        return new PayrollPeriodResponse(payrollService.updatePeriod(id, request));
     }
 
     @DeleteMapping("/periods/{id}")
@@ -58,44 +58,44 @@ public class PayrollController {
     }
 
     @PostMapping("/periods/{id}/generate")
-    public List<PayrollRecord> generatePayroll(@PathVariable long id) {
-        return payrollService.generatePayrollForPeriod(id);
+    public List<PayrollRecordResponse> generatePayroll(@PathVariable long id) {
+        return payrollService.generatePayrollForPeriod(id).stream().map(PayrollRecordResponse::new).toList();
     }
 
     @GetMapping("/periods/{id}/records")
-    public List<PayrollRecord> getPayrollRecordsForPeriod(@PathVariable long id) {
-        return payrollService.getRecordsByPeriodId(id);
+    public List<PayrollRecordResponse> getPayrollRecordsForPeriod(@PathVariable long id) {
+        return payrollService.getRecordsByPeriodId(id).stream().map(PayrollRecordResponse::new).toList();
     }
 
     @GetMapping("/employees/{employeeId}/records")
-    public List<PayrollRecord> getPayrollRecordsForEmployee(@PathVariable long employeeId) {
-        return payrollService.getRecordsByEmployeeId(employeeId);
+    public List<PayrollRecordResponse> getPayrollRecordsForEmployee(@PathVariable long employeeId) {
+        return payrollService.getRecordsByEmployeeId(employeeId).stream().map(PayrollRecordResponse::new).toList();
     }
 
     @GetMapping("/employees")
-    public List<User> getPayrollEmployees() {
-        return payrollService.getPayrollEmployees();
+    public List<UserResponse> getPayrollEmployees() {
+        return payrollService.getPayrollEmployees().stream().map(UserResponse::new).toList();
     }
 
     @PutMapping("/employees/{employeeId}/settings")
-    public User updateEmployeePayrollSettings(
+    public UserResponse updateEmployeePayrollSettings(
             @PathVariable long employeeId,
             @RequestBody EmployeePayrollSettingsRequest request) {
-        return payrollService.updateEmployeePayrollSettings(employeeId, request);
+        return new UserResponse(payrollService.updateEmployeePayrollSettings(employeeId, request));
     }
 
     @PostMapping("/records/{id}/approve")
-    public PayrollRecord approvePayrollRecord(@PathVariable long id) {
-        return payrollService.approveRecord(id);
+    public PayrollRecordResponse approvePayrollRecord(@PathVariable long id) {
+        return new PayrollRecordResponse(payrollService.approveRecord(id));
     }
 
     @PostMapping("/records/{id}/pay")
-    public PayrollRecord payPayrollRecord(@PathVariable long id) {
-        return payrollService.payRecord(id);
+    public PayrollRecordResponse payPayrollRecord(@PathVariable long id) {
+        return new PayrollRecordResponse(payrollService.payRecord(id));
     }
 
     @PostMapping("/records/{id}/cancel")
-    public PayrollRecord cancelPayrollRecord(@PathVariable long id) {
-        return payrollService.cancelRecord(id);
+    public PayrollRecordResponse cancelPayrollRecord(@PathVariable long id) {
+        return new PayrollRecordResponse(payrollService.cancelRecord(id));
     }
 }

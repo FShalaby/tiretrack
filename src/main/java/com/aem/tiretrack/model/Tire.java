@@ -66,6 +66,12 @@ public class Tire {
 
     private String location;
 
+    @Column(name = "barcode", unique = true)
+    private String barcode;
+
+    @Column(name = "batch_code", unique = true)
+    private String batchCode;
+
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 
@@ -177,6 +183,22 @@ public class Tire {
 
     public void setLocation(String location) {
         this.location = location;
+    }
+
+    public String getBarcode() {
+        return barcode;
+    }
+
+    public void setBarcode(String barcode) {
+        this.barcode = barcode;
+    }
+
+    public String getBatchCode() {
+        return batchCode;
+    }
+
+    public void setBatchCode(String batchCode) {
+        this.batchCode = batchCode;
     }
 
     public LocalDateTime getCreatedAt() {

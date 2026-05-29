@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.aem.tiretrack.dto.booking.PublicBookingRequest;
+import com.aem.tiretrack.dto.booking.PublicBookingResponse;
 import com.aem.tiretrack.model.Appointment;
 import com.aem.tiretrack.service.AppointmentService;
 
@@ -27,9 +28,10 @@ public class PublicBookingController {
     }
 
     @PostMapping("/bookings")
-    public Appointment createPublicBooking(@Valid @RequestBody PublicBookingRequest request) {
+    public PublicBookingResponse createPublicBooking(@Valid @RequestBody PublicBookingRequest request) {
         Appointment appointment = new Appointment();
         appointment.setCustomerName(request.getCustomerName());
+        appointment.setEmail(request.getEmail());
         appointment.setPhone(request.getPhone());
         appointment.setVehicle(request.getVehicle());
         appointment.setTireSize(request.getTireSize());
@@ -37,7 +39,7 @@ public class PublicBookingController {
         appointment.setServiceType(request.getServiceType());
         appointment.setNotes(request.getNotes());
 
-        return appointmentService.saveAppointment(appointment);
+        return new PublicBookingResponse(appointmentService.saveAppointment(appointment));
     }
 
     @GetMapping("/available-slots")

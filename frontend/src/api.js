@@ -57,9 +57,10 @@ async function request(path, options = {}, skipAuth = false) {
   let response;
 
   const token = getAuthToken();
+  const isFormData = options.body instanceof FormData;
   const headers = {
     ...options.headers,
-    ...jsonHeaders
+    ...(isFormData ? {} : jsonHeaders)
   };
 
   if (!skipAuth && token) {
@@ -205,6 +206,10 @@ export function getTires() {
   return request("/api/tires");
 }
 
+export function getTireByBarcode(barcode) {
+  return request(`/api/tires/barcode/${encodeURIComponent(barcode)}`);
+}
+
 export function searchTiresByBrand(brand) {
   return request(`/api/tires/search/brand?brand=${encodeURIComponent(brand)}`);
 }
@@ -235,6 +240,16 @@ export function createTire(tire) {
     method: "POST",
     headers: jsonHeaders,
     body: JSON.stringify(tire)
+  });
+}
+
+export function importTiresCsv(file) {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  return request("/api/tires/import", {
+    method: "POST",
+    body: formData
   });
 }
 

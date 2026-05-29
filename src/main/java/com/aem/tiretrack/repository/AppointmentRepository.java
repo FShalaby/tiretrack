@@ -23,7 +23,7 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long>
 
     List<Appointment> findByCustomerIdOrderByAppointmentDateDesc(Long customerId);
 
-    @Query("select a from Appointment a where a.customerId = :customerId or a.phone = :phone order by a.appointmentDate desc")
-    List<Appointment> findCustomerHistory(@Param("customerId") Long customerId, @Param("phone") String phone);
+    @Query("select a from Appointment a where a.customerId = :customerId or a.phone = :phone or a.email = :email order by a.appointmentDate desc")
+    List<Appointment> findCustomerHistory(@Param("customerId") Long customerId, @Param("phone") String phone, @Param("email") String email);
 
 }

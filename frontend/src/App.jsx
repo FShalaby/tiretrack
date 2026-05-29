@@ -17,6 +17,7 @@ import {
   RefreshCw,
   Search,
   Settings as SettingsIcon,
+  Upload,
   UserCircle,
   ShieldCheck
 } from "lucide-react";
@@ -66,6 +67,7 @@ import {
   getLowStockTires,
   getSalesData,
   getSettings,
+  getTireByBarcode,
   getTires,
   getAvailableSlots,
   getCustomerPortal,
@@ -77,6 +79,7 @@ import {
   getPayrollRecordsForPeriod,
   getPayrollShiftSlots,
   getWorkShifts,
+  importTiresCsv,
   login as loginApi,
   logout as logoutApi,
   markCustomerNotificationRead,
@@ -247,7 +250,10 @@ const emptyTireFilters = {
 };
 
 const emptyAppointment = {
+  customerId: "",
+  customerVehicleId: "",
   customerName: "",
+  email: "",
   phone: "",
   vehicle: "",
   tireSetup: "regular",
@@ -369,6 +375,14 @@ function appointmentTimeKey(value) {
 
 function isBookableAppointment(appointment) {
   return appointment.status !== "CANCELLED" && appointment.status !== "COMPLETED";
+}
+
+function customerForAppointment(appointment, customers) {
+  return customers.find((customer) =>
+    (appointment.customerId && Number(customer.id) === Number(appointment.customerId))
+    || (appointment.phone && customer.phone === appointment.phone)
+    || (appointment.email && customer.email === appointment.email)
+  );
 }
 
 function compactDate(value) {
@@ -558,6 +572,7 @@ function App() {
   const [signupForm, setSignupForm] = useState({ fullName: "", email: "", phone: "", password: "" });
   const [signupError, setSignupError] = useState("");
   const [signupSubmitting, setSignupSubmitting] = useState(false);
+  const [barcodeLookupRequest, setBarcodeLookupRequest] = useState(() => new URLSearchParams(window.location.search).get("barcode") || "");
   const [activeTab, setActiveTab] = useState(() => defaultTabForRole(loadStoredAuth()?.role));
   const [activeAccountingTab, setActiveAccountingTab] = useState("Dashboard");
   const [globalQuery, setGlobalQuery] = useState("");
@@ -742,6 +757,19 @@ function App() {
       setActiveTab(defaultTabForRole(auth.role));
     }
   }, [activeTab, auth]);
+
+  useEffect(() => {
+    if (barcodeLookupRequest && auth && auth.role !== "CUSTOMER") {
+      setActiveTab("Tires");
+    }
+  }, [auth, barcodeLookupRequest]);
+
+  function clearBarcodeLookupRequest() {
+    setBarcodeLookupRequest("");
+    const url = new URL(window.location.href);
+    url.searchParams.delete("barcode");
+    window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+  }
 
   useEffect(() => {
     setError("");
@@ -1006,6 +1034,8 @@ function App() {
         tire.season,
         tire.condition,
         tire.location,
+        tire.barcode,
+        tire.batchCode,
         `${tire.width}/${tire.aspectRatio}r${tire.rimSize}`
       ].join(" ").toLowerCase().includes(query))
       .slice(0, 4)
@@ -1017,13 +1047,20 @@ function App() {
         tab: "Tires"
       }));
     const appointmentMatches = appointments
-      .filter((appointment) => [
-        appointment.customerName,
-        appointment.phone,
-        appointment.vehicle,
-        appointment.serviceType,
-        appointment.status
-      ].join(" ").toLowerCase().includes(query))
+      .filter((appointment) => {
+        const linkedCustomer = customerForAppointment(appointment, customers);
+
+        return [
+          appointment.customerName,
+          appointment.email,
+          linkedCustomer?.email,
+          appointment.phone,
+          linkedCustomer?.phone,
+          appointment.vehicle,
+          appointment.serviceType,
+          appointment.status
+        ].join(" ").toLowerCase().includes(query);
+      })
       .slice(0, 4)
       .map((appointment) => ({
         id: `appointment-${appointment.id}`,
@@ -1031,6 +1068,20 @@ function App() {
         label: appointment.customerName,
         meta: `${appointment.serviceType} · ${compactDate(appointment.appointmentDate)}`,
         tab: "Appointments"
+      }));
+    const customerMatches = customers
+      .filter((customer) => [
+        customer.fullName,
+        customer.email,
+        customer.phone
+      ].join(" ").toLowerCase().includes(query))
+      .slice(0, 4)
+      .map((customer) => ({
+        id: `customer-${customer.id}`,
+        entityId: customer.id,
+        label: customer.fullName,
+        meta: [customer.email, customer.phone].filter(Boolean).join(" - "),
+        tab: "Customers"
       }));
     const invoiceMatches = invoices
       .filter((invoice) => [
@@ -1049,8 +1100,8 @@ function App() {
         tab: "Invoices"
       }));
 
-    return [...tireMatches, ...appointmentMatches, ...invoiceMatches].slice(0, 8);
-  }, [appointments, globalQuery, invoices, tires]);
+    return [...customerMatches, ...tireMatches, ...appointmentMatches, ...invoiceMatches].slice(0, 8);
+  }, [appointments, customers, globalQuery, invoices, tires]);
   const visibleTabs = tabs.filter((tab) => canAccessTab(auth?.role, tab));
 
   const ignoredDerivedNotifications = useMemo(() => {
@@ -1117,6 +1168,39 @@ function App() {
     }
   }
 
+  async function uploadTireCsv(file) {
+    setError("");
+    setSuccessMessage("");
+
+    try {
+      const result = await importTiresCsv(file);
+      await loadData();
+      notifySuccess(`CSV imported: ${result.createdCount || 0} created, ${result.updatedCount || 0} refilled, ${result.skippedCount || 0} skipped.`);
+      return result;
+    } catch (err) {
+      setError(err.message);
+      scrollToFeedback();
+      throw err;
+    }
+  }
+
+  async function quickRefillTire(tire, quantityToAdd) {
+    const refillQuantity = Number(quantityToAdd || 0);
+
+    if (!tire?.id || refillQuantity <= 0) {
+      throw new Error("Enter a refill quantity greater than 0.");
+    }
+
+    await updateTire(tire.id, {
+      ...tire,
+      quantity: Number(tire.quantity || 0) + refillQuantity
+    });
+
+    logActivity(`Refilled ${tire.brand}`, "Tires");
+    notifySuccess(`${tire.brand} refilled by ${refillQuantity}.`);
+    await loadData();
+  }
+
   async function applyTireFilters(event) {
     event.preventDefault();
     setError("");
@@ -1159,7 +1243,9 @@ function App() {
     setSuccessMessage("");
 
     const appointment = {
+      customerId: appointmentForm.customerId ? Number(appointmentForm.customerId) : null,
       customerName: appointmentForm.customerName,
+      email: appointmentForm.email,
       phone: appointmentForm.phone,
       vehicle: appointmentForm.vehicle,
       tireSize: buildTireSize(appointmentForm),
@@ -1230,6 +1316,9 @@ function App() {
     setEditingAppointmentId(appointment.id);
     setAppointmentForm({
       customerName: appointment.customerName || "",
+      customerId: appointment.customerId ? String(appointment.customerId) : "",
+      customerVehicleId: "",
+      email: appointment.email || "",
       phone: appointment.phone || "",
       vehicle: appointment.vehicle || "",
       ...tireSetup,
@@ -1326,6 +1415,8 @@ function App() {
   async function cancelAppointment(appointment) {
     await updateAppointment(appointment.id, {
       customerName: appointment.customerName,
+      customerId: appointment.customerId || null,
+      email: appointment.email || "",
       phone: appointment.phone,
       vehicle: appointment.vehicle,
       tireSize: appointment.tireSize || "",
@@ -1390,6 +1481,7 @@ function App() {
       ...nextInvoiceForm,
       appointmentId: String(appointment.id),
       customerName: appointment.customerName || "",
+      email: appointment.email || "",
       phone: appointment.phone || "",
       vehicle: appointment.vehicle || "",
       items: items.length ? items : nextInvoiceForm.items
@@ -1628,13 +1720,17 @@ function App() {
 
         {!loading && activeTab === "Tires" && (
           <Tires
+            barcodeLookupRequest={barcodeLookupRequest}
             filters={tireFilters}
             form={tireForm}
             onClearFilters={clearTireFilters}
             onChange={setTireForm}
+            onBarcodeLookupHandled={clearBarcodeLookupRequest}
             onDelete={removeTire}
             onFilterChange={setTireFilters}
             onFilterSubmit={applyTireFilters}
+            onImportCsv={uploadTireCsv}
+            onQuickRefill={quickRefillTire}
             onRefill={refillTire}
             onSubmit={submitTire}
             highlightedRow={highlightedRow}
@@ -1645,6 +1741,7 @@ function App() {
         {!loading && activeTab === "Appointments" && (
           <Appointments
             appointments={appointments}
+            customers={customers}
             editingId={editingAppointmentId}
             form={appointmentForm}
             onChange={setAppointmentForm}
@@ -2496,6 +2593,364 @@ function tireAvailableQuantity(tire) {
   return Number(tire.availableQuantity ?? tire.quantity ?? 0);
 }
 
+function batchCodeForTire(tire) {
+  if (tire.batchCode) {
+    return tire.batchCode;
+  }
+
+  return tire.id ? `BATCH-${String(tire.id).padStart(6, "0")}` : "-";
+}
+
+function barcodeForTire(tire) {
+  if (tire.barcode) {
+    return tire.barcode;
+  }
+
+  return tire.id ? `TT-BATCH-${String(tire.id).padStart(6, "0")}` : "-";
+}
+
+function scannerBarcodeForTire(tire) {
+  return barcodeForTire(tire).replace(/-/g, "");
+}
+
+function extractBarcodeValue(value) {
+  const text = String(value || "").trim();
+
+  if (!text) {
+    return "";
+  }
+
+  try {
+    const url = new URL(text, window.location.origin);
+    const barcode = url.searchParams.get("barcode");
+
+    if (barcode) {
+      return barcode.trim();
+    }
+  } catch {
+    return normalizeScannedBarcode(text);
+  }
+
+  return normalizeScannedBarcode(text);
+}
+
+function normalizeScannedBarcode(value) {
+  const text = String(value || "").trim();
+  const compactBatchMatch = /^TTBATCH(\d+)$/i.exec(text);
+
+  if (compactBatchMatch) {
+    return `TT-BATCH-${compactBatchMatch[1].padStart(6, "0")}`;
+  }
+
+  return text;
+}
+
+const code128Patterns = [
+  "212222", "222122", "222221", "121223", "121322", "131222", "122213", "122312", "132212", "221213",
+  "221312", "231212", "112232", "122132", "122231", "113222", "123122", "123221", "223211", "221132",
+  "221231", "213212", "223112", "312131", "311222", "321122", "321221", "312212", "322112", "322211",
+  "212123", "212321", "232121", "111323", "131123", "131321", "112313", "132113", "132311", "211313",
+  "231113", "231311", "112133", "112331", "132131", "113123", "113321", "133121", "313121", "211331",
+  "231131", "213113", "213311", "213131", "311123", "311321", "331121", "312113", "312311", "332111",
+  "314111", "221411", "431111", "111224", "111422", "121124", "121421", "141122", "141221", "112214",
+  "112412", "122114", "122411", "142112", "142211", "241211", "221114", "413111", "241112", "134111",
+  "111242", "121142", "121241", "114212", "124112", "124211", "411212", "421112", "421211", "212141",
+  "214121", "412121", "111143", "111341", "131141", "114113", "114311", "411113", "411311", "113141",
+  "114131", "311141", "411131", "211412", "211214", "211232", "2331112"
+];
+
+function escapeHtml(value) {
+  return String(value || "").replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "\"": "&quot;",
+    "'": "&#39;"
+  }[character]));
+}
+
+async function code128Svg(value) {
+  const { code128, drawingSVG } = await import("bwip-js");
+
+  return code128({
+    text: String(value || "").trim(),
+    scale: 4,
+    height: 22,
+    includetext: true,
+    textsize: 10,
+    textxalign: "center",
+    backgroundcolor: "FFFFFF",
+    paddingwidth: 16,
+    paddingheight: 8
+  }, drawingSVG()).replace("<svg ", '<svg class="barcode-svg" ');
+}
+
+const qrAlphanumericCharacters = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:";
+const qrGeneratorDegree7 = [87, 229, 146, 149, 238, 102, 21];
+
+function qrAppendBits(bits, value, length) {
+  for (let index = length - 1; index >= 0; index -= 1) {
+    bits.push((value >> index) & 1);
+  }
+}
+
+function qrGfMultiply(left, right) {
+  let result = 0;
+  let a = left;
+  let b = right;
+
+  while (b > 0) {
+    if (b & 1) {
+      result ^= a;
+    }
+
+    a <<= 1;
+
+    if (a & 0x100) {
+      a ^= 0x11d;
+    }
+
+    b >>= 1;
+  }
+
+  return result;
+}
+
+function qrErrorCorrection(dataCodewords) {
+  const remainder = Array(qrGeneratorDegree7.length).fill(0);
+
+  dataCodewords.forEach((codeword) => {
+    const factor = codeword ^ remainder.shift();
+    remainder.push(0);
+
+    for (let index = 0; index < qrGeneratorDegree7.length; index += 1) {
+      remainder[index] ^= qrGfMultiply(qrGeneratorDegree7[index], factor);
+    }
+  });
+
+  return remainder;
+}
+
+function qrSet(matrix, reserved, row, column, value) {
+  if (row >= 0 && row < matrix.length && column >= 0 && column < matrix.length) {
+    matrix[row][column] = value;
+    reserved[row][column] = true;
+  }
+}
+
+function qrAddFinder(matrix, reserved, startRow, startColumn) {
+  for (let row = -1; row <= 7; row += 1) {
+    for (let column = -1; column <= 7; column += 1) {
+      const targetRow = startRow + row;
+      const targetColumn = startColumn + column;
+      const inFinder = row >= 0 && row <= 6 && column >= 0 && column <= 6;
+      const isRing = inFinder && (row === 0 || row === 6 || column === 0 || column === 6);
+      const isCenter = inFinder && row >= 2 && row <= 4 && column >= 2 && column <= 4;
+
+      qrSet(matrix, reserved, targetRow, targetColumn, isRing || isCenter);
+    }
+  }
+}
+
+function qrAddFormatBits(matrix, reserved) {
+  const size = matrix.length;
+  const formatBits = 0b111011111000100; // ECC level L, mask 0.
+
+  const firstCopy = [
+    [8, 0], [8, 1], [8, 2], [8, 3], [8, 4], [8, 5], [8, 7], [8, 8],
+    [7, 8], [5, 8], [4, 8], [3, 8], [2, 8], [1, 8], [0, 8]
+  ];
+  const secondCopy = [
+    [size - 1, 8], [size - 2, 8], [size - 3, 8], [size - 4, 8], [size - 5, 8], [size - 6, 8], [size - 7, 8], [size - 8, 8],
+    [8, size - 7], [8, size - 6], [8, size - 5], [8, size - 4], [8, size - 3], [8, size - 2], [8, size - 1]
+  ];
+
+  [...firstCopy, ...secondCopy].forEach(([row, column], index) => {
+    qrSet(matrix, reserved, row, column, Boolean((formatBits >> (index % 15)) & 1));
+  });
+
+  qrSet(matrix, reserved, size - 8, 8, true);
+}
+
+async function qrCodeSvg(value) {
+  const { drawingSVG, qrcode } = await import("bwip-js");
+
+  return qrcode({
+    text: String(value || "").trim(),
+    scale: 4,
+    eclevel: "M",
+    backgroundcolor: "FFFFFF",
+    paddingwidth: 4,
+    paddingheight: 4
+  }, drawingSVG()).replace("<svg ", '<svg class="qr-svg" ');
+
+  const text = String(value || "").trim().toUpperCase();
+  const dataBits = [];
+
+  qrAppendBits(dataBits, 0b0010, 4);
+  qrAppendBits(dataBits, text.length, 9);
+
+  for (let index = 0; index < text.length; index += 2) {
+    const first = qrAlphanumericCharacters.indexOf(text[index]);
+
+    if (first === -1) {
+      throw new Error("QR code supports numbers, uppercase letters, and standard barcode symbols.");
+    }
+
+    if (index + 1 < text.length) {
+      const second = qrAlphanumericCharacters.indexOf(text[index + 1]);
+
+      if (second === -1) {
+        throw new Error("QR code supports numbers, uppercase letters, and standard barcode symbols.");
+      }
+
+      qrAppendBits(dataBits, first * 45 + second, 11);
+    } else {
+      qrAppendBits(dataBits, first, 6);
+    }
+  }
+
+  qrAppendBits(dataBits, 0, Math.min(4, 152 - dataBits.length));
+
+  while (dataBits.length % 8 !== 0) {
+    dataBits.push(0);
+  }
+
+  const dataCodewords = [];
+
+  for (let index = 0; index < dataBits.length; index += 8) {
+    dataCodewords.push(Number.parseInt(dataBits.slice(index, index + 8).join(""), 2));
+  }
+
+  while (dataCodewords.length < 19) {
+    dataCodewords.push(dataCodewords.length % 2 === 0 ? 0xec : 0x11);
+  }
+
+  const codewords = [...dataCodewords, ...qrErrorCorrection(dataCodewords)];
+  const bits = codewords.flatMap((codeword) =>
+    Array.from({ length: 8 }, (_, index) => (codeword >> (7 - index)) & 1)
+  );
+  const size = 21;
+  const matrix = Array.from({ length: size }, () => Array(size).fill(null));
+  const reserved = Array.from({ length: size }, () => Array(size).fill(false));
+
+  qrAddFinder(matrix, reserved, 0, 0);
+  qrAddFinder(matrix, reserved, 0, size - 7);
+  qrAddFinder(matrix, reserved, size - 7, 0);
+
+  for (let index = 8; index < size - 8; index += 1) {
+    qrSet(matrix, reserved, 6, index, index % 2 === 0);
+    qrSet(matrix, reserved, index, 6, index % 2 === 0);
+  }
+
+  qrAddFormatBits(matrix, reserved);
+
+  let bitIndex = 0;
+  let upward = true;
+
+  for (let column = size - 1; column > 0; column -= 2) {
+    if (column === 6) {
+      column -= 1;
+    }
+
+    for (let step = 0; step < size; step += 1) {
+      const row = upward ? size - 1 - step : step;
+
+      for (let offset = 0; offset < 2; offset += 1) {
+        const targetColumn = column - offset;
+
+        if (!reserved[row][targetColumn]) {
+          const bit = bitIndex < bits.length ? bits[bitIndex] : 0;
+          const maskedBit = Boolean(bit) !== ((row + targetColumn) % 2 === 0);
+          matrix[row][targetColumn] = maskedBit;
+          bitIndex += 1;
+        }
+      }
+    }
+
+    upward = !upward;
+  }
+
+  const quietZone = 4;
+  const moduleSize = 5;
+  const svgSize = (size + quietZone * 2) * moduleSize;
+  const modules = [`<rect width="${svgSize}" height="${svgSize}" fill="#fff" />`];
+
+  matrix.forEach((row, rowIndex) => {
+    row.forEach((enabled, columnIndex) => {
+      if (enabled) {
+        modules.push(`<rect x="${(columnIndex + quietZone) * moduleSize}" y="${(rowIndex + quietZone) * moduleSize}" width="${moduleSize}" height="${moduleSize}" />`);
+      }
+    });
+  });
+
+  return `<svg class="qr-svg" width="${svgSize}" height="${svgSize}" viewBox="0 0 ${svgSize} ${svgSize}" xmlns="http://www.w3.org/2000/svg">${modules.join("")}</svg>`;
+}
+
+async function printBarcodeLabel(tire) {
+  const barcode = barcodeForTire(tire);
+  const scannerBarcode = scannerBarcodeForTire(tire);
+  const batchCode = batchCodeForTire(tire);
+  const qrPayload = `${window.location.origin}/?barcode=${encodeURIComponent(barcode)}`;
+  const labelWindow = window.open("", "_blank");
+  const [linearBarcodeSvg, phoneQrSvg] = await Promise.all([
+    code128Svg(scannerBarcode),
+    qrCodeSvg(qrPayload)
+  ]);
+  const labelHtml = `
+    <!doctype html>
+    <html>
+      <head>
+        <title>${escapeHtml(barcode)}</title>
+        <style>
+          @page { margin: 10mm; }
+          body { font-family: Arial, sans-serif; margin: 0; color: #111; }
+          .label { border: 1px solid #111; display: inline-grid; gap: 8px; padding: 12px; width: 4in; }
+          h1 { font-size: 14px; margin: 0; }
+          p { font-size: 11px; margin: 0; }
+          .barcode-wrap { background: #fff; padding: 8px 10px; }
+          .barcode-svg { display: block; height: auto; width: 100%; }
+          .phone-row { align-items: center; display: grid; gap: 10px; grid-template-columns: auto 1fr; }
+          .qr-wrap { display: grid; gap: 3px; justify-items: center; }
+          .qr-svg { background: #fff; display: block; height: 120px; width: 120px; }
+          .code { font-family: "Courier New", monospace; font-size: 15px; font-weight: 700; letter-spacing: 1px; margin-top: 4px; text-align: center; }
+          .hint { font-size: 10px; line-height: 1.3; }
+        </style>
+      </head>
+      <body>
+        <section class="label">
+          <h1>${escapeHtml(tire.brand)} ${escapeHtml(tire.model || "")} ${escapeHtml(tireSizeValue(tire))}</h1>
+          <p>${escapeHtml(tire.condition || "-")} - Qty ${escapeHtml(tire.quantity)} - ${escapeHtml(tire.location || "No location")}</p>
+          <div class="barcode-wrap">
+            ${linearBarcodeSvg}
+          </div>
+          <div class="phone-row">
+            <div class="qr-wrap">
+              ${phoneQrSvg}
+              <p>Phone QR</p>
+            </div>
+            <div>
+              <div class="code">${escapeHtml(barcode)}</div>
+              <p>Scanner code: ${escapeHtml(scannerBarcode)}</p>
+              <p>${escapeHtml(batchCode)}</p>
+              <p class="hint">Scan the barcode with a scanner. Scan the QR with a phone to open TireTrack lookup. TireTrack accepts both code formats.</p>
+            </div>
+          </div>
+        </section>
+        <script>window.onload = () => window.print()</script>
+      </body>
+    </html>
+  `;
+
+  if (!labelWindow) {
+    downloadTextFile(`${barcode}.html`, labelHtml, "text/html");
+    return;
+  }
+
+  labelWindow.document.write(labelHtml);
+  labelWindow.document.close();
+}
+
 function filterTiresForAppointment(tires, query, conditionFilter) {
   const normalizedQuery = query.trim().toLowerCase();
   const queryDigits = normalizedQuery.replace(/\D/g, "");
@@ -2534,21 +2989,46 @@ function makeInvoiceItem() {
 }
 
 function Tires({
+  barcodeLookupRequest,
   filters,
   form,
   highlightedRow,
+  onBarcodeLookupHandled,
   onChange,
   onClearFilters,
   onDelete,
   onFilterChange,
   onFilterSubmit,
+  onImportCsv,
+  onQuickRefill,
   onRefill,
   onSubmit,
   tires
 }) {
+  const [barcodeQuery, setBarcodeQuery] = useState("");
+  const [barcodeResult, setBarcodeResult] = useState(null);
+  const [barcodeStatus, setBarcodeStatus] = useState("idle");
+  const [barcodeMessage, setBarcodeMessage] = useState("");
+  const [importStatus, setImportStatus] = useState("idle");
+  const [importMessage, setImportMessage] = useState("");
+  const [importErrors, setImportErrors] = useState([]);
+  const [quickRefillQuantity, setQuickRefillQuantity] = useState("4");
+  const [quickRefillStatus, setQuickRefillStatus] = useState("idle");
+  const [quickRefillMessage, setQuickRefillMessage] = useState("");
+  const importFileInputRef = useRef(null);
+
+  useEffect(() => {
+    if (!barcodeLookupRequest) {
+      return;
+    }
+
+    setBarcodeQuery(barcodeLookupRequest);
+    lookupBarcode(barcodeLookupRequest).finally(() => onBarcodeLookupHandled?.());
+  }, [barcodeLookupRequest, onBarcodeLookupHandled]);
+
   function exportInventory() {
     const csv = toCsv(
-      ["Brand", "Model", "Size", "Season", "Condition", "Quantity", "Reserved", "Available", "Price", "Location"],
+      ["Brand", "Model", "Size", "Season", "Condition", "Quantity", "Reserved", "Available", "Price", "Location", "Barcode", "Batch Code"],
       tires.map((tire) => [
         tire.brand,
         tire.model || "",
@@ -2559,11 +3039,99 @@ function Tires({
         tire.reservedQuantity || 0,
         tire.availableQuantity ?? tire.quantity,
         tire.price,
-        tire.location || ""
+        tire.location || "",
+        barcodeForTire(tire),
+        batchCodeForTire(tire)
       ])
     );
 
     downloadTextFile("tiretrack-inventory.csv", csv, "text/csv");
+  }
+
+  async function submitBarcodeLookup(event) {
+    event.preventDefault();
+    await lookupBarcode(barcodeQuery);
+  }
+
+  function openCsvImport() {
+    importFileInputRef.current?.click();
+  }
+
+  async function handleCsvFileChange(event) {
+    const file = event.target.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    setImportStatus("loading");
+    setImportMessage("Importing CSV...");
+    setImportErrors([]);
+
+    try {
+      const result = await onImportCsv(file);
+      setImportStatus(result.skippedCount > 0 ? "error" : "found");
+      setImportMessage(`${result.createdCount || 0} created, ${result.updatedCount || 0} refilled, ${result.skippedCount || 0} skipped.`);
+      setImportErrors(result.errors || []);
+    } catch (err) {
+      setImportStatus("error");
+      setImportMessage(err.message || "CSV import failed.");
+      setImportErrors([]);
+    } finally {
+      event.target.value = "";
+    }
+  }
+
+  async function lookupBarcode(value) {
+    const normalizedBarcode = extractBarcodeValue(value);
+
+    if (!normalizedBarcode) {
+      setBarcodeStatus("error");
+      setBarcodeMessage("Enter a barcode to search.");
+      setBarcodeResult(null);
+      return;
+    }
+
+    setBarcodeStatus("loading");
+    setBarcodeMessage("Loading...");
+    setBarcodeResult(null);
+
+    try {
+      const tire = await getTireByBarcode(normalizedBarcode);
+      setBarcodeResult(tire);
+      setBarcodeStatus("found");
+      setBarcodeMessage("Inventory batch found.");
+      setQuickRefillQuantity("4");
+      setQuickRefillStatus("idle");
+      setQuickRefillMessage("");
+    } catch (err) {
+      setBarcodeResult(null);
+      setBarcodeStatus("error");
+      setBarcodeMessage(err.message || "Barcode not found.");
+    }
+  }
+
+  async function submitQuickRefill(event) {
+    event.preventDefault();
+
+    if (!barcodeResult) {
+      return;
+    }
+
+    setQuickRefillStatus("loading");
+    setQuickRefillMessage("Refilling inventory...");
+
+    try {
+      await onQuickRefill(barcodeResult, quickRefillQuantity);
+      const updatedTire = await getTireByBarcode(barcodeForTire(barcodeResult));
+      setBarcodeResult(updatedTire);
+      setQuickRefillStatus("found");
+      setQuickRefillMessage(`Added ${quickRefillQuantity} tire${Number(quickRefillQuantity) === 1 ? "" : "s"} to this batch.`);
+      setQuickRefillQuantity("4");
+    } catch (err) {
+      setQuickRefillStatus("error");
+      setQuickRefillMessage(err.message || "Could not refill this batch.");
+    }
   }
 
   return (
@@ -2573,11 +3141,38 @@ function Tires({
           <span className="eyebrow">Inventory</span>
           <h3>Tire Stock</h3>
         </div>
-        <button className="ghost-button with-icon" onClick={exportInventory} type="button">
-          <Download size={16} />
-          Export CSV
-        </button>
+        <div className="toolbar-actions">
+          <button className="primary-button with-icon" disabled={importStatus === "loading"} onClick={openCsvImport} type="button">
+            <Upload size={16} />
+            Import CSV
+          </button>
+          <button className="ghost-button with-icon" onClick={exportInventory} type="button">
+            <Download size={16} />
+            Export CSV
+          </button>
+          <input
+            ref={importFileInputRef}
+            accept=".csv,text/csv"
+            className="hidden-file-input"
+            onChange={handleCsvFileChange}
+            type="file"
+          />
+        </div>
       </div>
+      {importMessage && (
+        <div className="tire-import-feedback">
+          <p className={`barcode-status ${importStatus}`}>
+            {importMessage}
+          </p>
+          {importErrors.length > 0 && (
+            <ul className="tire-import-errors">
+              {importErrors.slice(0, 8).map((message) => (
+                <li key={message}>{message}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
       <form className="panel form-grid" onSubmit={onSubmit}>
         <Input label="Brand" required value={form.brand} onChange={(brand) => onChange({ ...form, brand })} />
         <Input label="Model" value={form.model} onChange={(model) => onChange({ ...form, model })} />
@@ -2591,6 +3186,100 @@ function Tires({
         <Input label="Location" value={form.location} onChange={(location) => onChange({ ...form, location })} />
         <button className="primary-button" type="submit">Add / Refill Tire</button>
       </form>
+
+      <section className="panel barcode-lookup-panel">
+        <form className="barcode-lookup-form" onSubmit={submitBarcodeLookup}>
+          <Input
+            label="Scan or Enter Barcode"
+            placeholder="TT-BATCH-000123"
+            value={barcodeQuery}
+            onChange={setBarcodeQuery}
+          />
+          <button className="primary-button" disabled={barcodeStatus === "loading"} type="submit">
+            Lookup Batch
+          </button>
+        </form>
+        {barcodeMessage && (
+          <p className={`barcode-status ${barcodeStatus}`}>
+            {barcodeMessage}
+          </p>
+        )}
+        {barcodeResult && (
+          <div className="barcode-result">
+            <div>
+              <span>Brand</span>
+              <strong>{barcodeResult.brand}</strong>
+            </div>
+            <div>
+              <span>Model</span>
+              <strong>{barcodeResult.model || "-"}</strong>
+            </div>
+            <div>
+              <span>Size</span>
+              <strong>{tireSizeValue(barcodeResult)}</strong>
+            </div>
+            <div>
+              <span>Quantity</span>
+              <strong>{barcodeResult.quantity}</strong>
+            </div>
+            <div>
+              <span>Available</span>
+              <strong>{barcodeResult.availableQuantity ?? barcodeResult.quantity}</strong>
+            </div>
+            <div>
+              <span>Reserved</span>
+              <strong>{barcodeResult.reservedQuantity ?? 0}</strong>
+            </div>
+            <div>
+              <span>Condition</span>
+              <strong>{barcodeResult.condition || "-"}</strong>
+            </div>
+            <div>
+              <span>Season</span>
+              <strong>{barcodeResult.season || "-"}</strong>
+            </div>
+            <div>
+              <span>Price</span>
+              <strong>{money(barcodeResult.price)}</strong>
+            </div>
+            <div>
+              <span>Location</span>
+              <strong>{barcodeResult.location || "-"}</strong>
+            </div>
+            <div>
+              <span>Barcode</span>
+              <strong>{barcodeForTire(barcodeResult)}</strong>
+            </div>
+            <div>
+              <span>Batch code</span>
+              <strong>{batchCodeForTire(barcodeResult)}</strong>
+            </div>
+            <button className="ghost-button" onClick={() => printBarcodeLabel(barcodeResult)} type="button">
+              Print Barcode
+            </button>
+            <button className="primary-button" onClick={() => onRefill(barcodeResult)} type="button">
+              Refill Tires
+            </button>
+            <form className="barcode-refill-form" onSubmit={submitQuickRefill}>
+              <Input
+                label="Refill quantity"
+                min="1"
+                type="number"
+                value={quickRefillQuantity}
+                onChange={setQuickRefillQuantity}
+              />
+              <button className="primary-button" disabled={quickRefillStatus === "loading"} type="submit">
+                Add Quantity
+              </button>
+            </form>
+            {quickRefillMessage && (
+              <p className={`barcode-status ${quickRefillStatus}`}>
+                {quickRefillMessage}
+              </p>
+            )}
+          </div>
+        )}
+      </section>
 
       <form className="panel inventory-filters" onSubmit={onFilterSubmit}>
         <Select
@@ -2660,6 +3349,7 @@ function filterLabel(value) {
 
 function Appointments({
   appointments,
+  customers,
   editingId,
   form,
   highlightedRow,
@@ -2670,6 +3360,65 @@ function Appointments({
   onSubmit,
   tires
 }) {
+  const customerNeedles = [form.customerName, form.email, form.phone]
+    .map((value) => String(value || "").trim().toLowerCase())
+    .filter(Boolean);
+  const matchingCustomers = customerNeedles.length > 0 && !form.customerId
+    ? customers
+      .filter((customer) => {
+        const haystack = [
+          customer.fullName,
+          customer.email,
+          customer.phone
+        ].join(" ").toLowerCase();
+
+        return customerNeedles.some((needle) => haystack.includes(needle));
+      })
+      .slice(0, 5)
+    : [];
+  const selectedCustomer = customers.find((customer) => Number(customer.id) === Number(form.customerId));
+  const selectedCustomerVehicles = selectedCustomer?.vehicles || [];
+
+  function selectCustomer(customer) {
+    onChange({
+      ...form,
+      customerId: String(customer.id),
+      customerName: customer.fullName || "",
+      email: customer.email || "",
+      phone: customer.phone || ""
+    });
+  }
+
+  function selectCustomerVehicle(vehicleId) {
+    const vehicle = selectedCustomerVehicles.find((entry) => String(entry.id) === String(vehicleId));
+
+    if (!vehicle) {
+      onChange({ ...form, customerVehicleId: "", vehicle: "" });
+      return;
+    }
+
+    const tireSetup = vehicle.tireSetup === "staggered"
+      ? {
+        tireSetup: "staggered",
+        tireSize: "",
+        frontTireSize: vehicle.frontTireSize || "",
+        rearTireSize: vehicle.rearTireSize || ""
+      }
+      : {
+        tireSetup: "regular",
+        tireSize: vehicle.tireSize || "",
+        frontTireSize: "",
+        rearTireSize: ""
+      };
+
+    onChange({
+      ...form,
+      customerVehicleId: String(vehicle.id),
+      vehicle: vehicleName(vehicle),
+      ...tireSetup
+    });
+  }
+
   return (
     <section className="work-area">
       <form className="panel form-grid" onSubmit={onSubmit}>
@@ -2681,8 +3430,32 @@ function Appointments({
             </button>
           </div>
         )}
-        <Input label="Customer" required value={form.customerName} onChange={(customerName) => onChange({ ...form, customerName })} />
-        <Input label="Phone" required type="tel" value={form.phone} onChange={(phone) => onChange({ ...form, phone })} />
+        <Input label="Customer" required value={form.customerName} onChange={(customerName) => onChange({ ...form, customerName, customerId: "" })} />
+        <Input label="Email" type="email" value={form.email} onChange={(email) => onChange({ ...form, email, customerId: "" })} />
+        <Input label="Phone" required type="tel" value={form.phone} onChange={(phone) => onChange({ ...form, phone, customerId: "" })} />
+        {matchingCustomers.length > 0 && (
+          <div className="customer-match-panel">
+            <span>Matching customers</span>
+            {matchingCustomers.map((customer) => (
+              <button key={customer.id} onClick={() => selectCustomer(customer)} type="button">
+                <strong>{customer.fullName}</strong>
+                <small>{[customer.email, customer.phone].filter(Boolean).join(" - ")}</small>
+              </button>
+            ))}
+          </div>
+        )}
+        {selectedCustomerVehicles.length > 0 && (
+          <Select
+            label="Customer vehicle"
+            value={form.customerVehicleId || ""}
+            onChange={selectCustomerVehicle}
+            options={["", ...selectedCustomerVehicles.map((vehicle) => String(vehicle.id))]}
+            optionLabel={(value) => {
+              const vehicle = selectedCustomerVehicles.find((entry) => String(entry.id) === String(value));
+              return value ? `${vehicleName(vehicle)} - ${vehicleTireSize(vehicle)}` : "Select saved vehicle";
+            }}
+          />
+        )}
         <Input
           label="Vehicle"
           placeholder="Example: 2020 Toyota Camry"
@@ -2725,23 +3498,30 @@ function Appointments({
             </button>
           </div>
         )}
-        columns={["Customer", "Phone", "Vehicle", "Tire setup", "Date", "Service", "Reminder", "Confirm", "Status", ""]}
+        columns={["Customer", "Email", "Phone", "Vehicle", "Tire setup", "Date", "Service", "Reminder", "Confirm", "Status", ""]}
         emptyText="No appointments yet."
-        rows={appointments.map((appointment) => ({
-          key: `appointment-${appointment.id}`,
-          values: [
-            appointment.customerName,
-            appointment.phone,
-            appointment.vehicle || "-",
-            appointment.tireSize || "-",
-            dateTime(appointment.appointmentDate),
-            appointment.serviceType,
-            appointment.reminderStatus || "NOT_SET",
-            appointment.confirmationStatus || "PENDING",
-            appointment.status || "-"
-          ],
-          source: appointment
-        }))}
+        rows={appointments.map((appointment) => {
+          const linkedCustomer = customerForAppointment(appointment, customers);
+          const email = appointment.email || linkedCustomer?.email || "-";
+
+          return {
+            key: `appointment-${appointment.id}`,
+            searchText: [appointment.customerName, email, appointment.phone, linkedCustomer?.phone].filter(Boolean).join(" "),
+            values: [
+              appointment.customerName,
+              email,
+              appointment.phone,
+              appointment.vehicle || "-",
+              appointment.tireSize || "-",
+              dateTime(appointment.appointmentDate),
+              appointment.serviceType,
+              appointment.reminderStatus || "NOT_SET",
+              appointment.confirmationStatus || "PENDING",
+              appointment.status || "-"
+            ],
+            source: appointment
+          };
+        })}
       />
     </section>
   );
@@ -2751,6 +3531,10 @@ function TireSetupFields({ disabled, form, onChange, tires }) {
   const isStaggered = form.tireSetup === "staggered";
   const [searchQuery, setSearchQuery] = useState("");
   const [conditionFilter, setConditionFilter] = useState("ALL");
+  const [batchQuery, setBatchQuery] = useState("");
+  const [batchLookupStatus, setBatchLookupStatus] = useState("idle");
+  const [batchLookupMessage, setBatchLookupMessage] = useState("");
+  const [batchLookupResult, setBatchLookupResult] = useState(null);
   const matchingTires = filterTiresForAppointment(tires, searchQuery, conditionFilter);
 
   function selectTire(tire, position = "front") {
@@ -2803,6 +3587,36 @@ function TireSetupFields({ disabled, form, onChange, tires }) {
     selectTire(tire, position);
   }
 
+  async function submitBatchLookup() {
+    const barcode = extractBarcodeValue(batchQuery);
+
+    if (!barcode) {
+      setBatchLookupStatus("error");
+      setBatchLookupMessage("Enter or scan a batch barcode.");
+      setBatchLookupResult(null);
+      return;
+    }
+
+    setBatchLookupStatus("loading");
+    setBatchLookupMessage("Loading batch...");
+    setBatchLookupResult(null);
+
+    try {
+      const tire = await getTireByBarcode(barcode);
+      setBatchLookupResult(tire);
+      setBatchLookupStatus("found");
+      setBatchLookupMessage("Inventory batch found.");
+
+      if (!isStaggered) {
+        selectTire(tire);
+      }
+    } catch (err) {
+      setBatchLookupResult(null);
+      setBatchLookupStatus("error");
+      setBatchLookupMessage(err.message || "Barcode not found.");
+    }
+  }
+
   return (
     <fieldset className={`tire-setup-fields ${disabled ? "disabled" : ""}`}>
       <legend>
@@ -2824,6 +3638,43 @@ function TireSetupFields({ disabled, form, onChange, tires }) {
       />
       {!disabled && (
         <div className="tire-search-panel">
+          <div className="appointment-batch-lookup">
+            <Input
+              label="Scan or Enter Batch Barcode"
+              value={batchQuery}
+              onChange={setBatchQuery}
+              placeholder="TT-BATCH-000123 or QR lookup link"
+            />
+            <button className="primary-button" disabled={batchLookupStatus === "loading"} onClick={submitBatchLookup} type="button">
+              Lookup Batch
+            </button>
+          </div>
+          {batchLookupMessage && (
+            <p className={`barcode-status ${batchLookupStatus}`}>
+              {batchLookupMessage}
+            </p>
+          )}
+          {batchLookupResult && (
+            <div className="appointment-batch-result">
+              <div>
+                <strong>{batchLookupResult.brand} {batchLookupResult.model || ""} {tireSizeValue(batchLookupResult)}</strong>
+                <small>
+                  {batchLookupResult.condition || "-"} - {tireAvailableQuantity(batchLookupResult)} available - {batchLookupResult.location || "No location"}
+                </small>
+                <small>{barcodeForTire(batchLookupResult)} - {batchCodeForTire(batchLookupResult)}</small>
+              </div>
+              <div className="result-actions">
+                <button onClick={() => selectTire(batchLookupResult, "front")} type="button">
+                  {isStaggered ? "Use front" : "Use tire"}
+                </button>
+                {isStaggered && (
+                  <button onClick={() => selectTire(batchLookupResult, "rear")} type="button">
+                    Use rear
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
           <Input
             label="Search inventory tires"
             value={searchQuery}
@@ -3469,15 +4320,19 @@ function InventoryTable({ highlightedRow, onDelete, onRefill, tires }) {
             <button className="ghost-button" onClick={() => onRefill(tire)} type="button">
               Refill
             </button>
+            <button className="ghost-button" onClick={() => printBarcodeLabel(tire)} type="button">
+              Print
+            </button>
             <button className="danger-button" onClick={() => onDelete(tire.id)} type="button">
               Delete
             </button>
           </div>
         )}
-        columns={["Brand", "Model", "Size", "Season", "Condition", "Warnings", "Qty", "Reserved", "Available", "Price", "Location", ""]}
+        columns={["Brand", "Model", "Size", "Season", "Condition", "Warnings", "Qty", "Reserved", "Available", "Price", "Location", "Barcode", "Batch", ""]}
         emptyText="No tires yet."
         rows={tires.map((tire) => ({
           key: `tire-${tire.id}`,
+          searchText: [tire.barcode, tire.batchCode].filter(Boolean).join(" "),
           values: [
             tire.brand,
             tire.model || "-",
@@ -3489,7 +4344,9 @@ function InventoryTable({ highlightedRow, onDelete, onRefill, tires }) {
             tire.reservedQuantity || 0,
             urgentStockValue(tire, tire.availableQuantity ?? tire.quantity),
             money(tire.price),
-            tire.location || "-"
+            tire.location || "-",
+            barcodeForTire(tire),
+            batchCodeForTire(tire)
           ],
           source: tire
         }))}
@@ -3534,8 +4391,13 @@ function TireDrawer({ onClose, onRefill, tire }) {
           <span>Season</span><strong>{tire.season || "-"}</strong>
           <span>Location</span><strong>{tire.location || "-"}</strong>
           <span>Unit price</span><strong>{money(tire.price)}</strong>
+          <span>Barcode</span><strong>{barcodeForTire(tire)}</strong>
+          <span>Batch code</span><strong>{batchCodeForTire(tire)}</strong>
         </div>
-        <button className="primary-button" onClick={onRefill} type="button">Refill Tire</button>
+        <div className="drawer-actions">
+          <button className="ghost-button" onClick={() => printBarcodeLabel(tire)} type="button">Print Barcode</button>
+          <button className="primary-button" onClick={onRefill} type="button">Refill Tire</button>
+        </div>
       </aside>
     </div>
   );
@@ -3805,6 +4667,7 @@ function vehicleTireSize(vehicle) {
 function PublicBookingPage() {
   const [form, setForm] = useState({
     customerName: "",
+    email: "",
     phone: "",
     vehicle: "",
     tireSize: "",
@@ -3873,6 +4736,7 @@ function PublicBookingPage() {
       setMessage("Booking request confirmed. We will see you at the selected time.");
       setForm({
         customerName: "",
+        email: "",
         phone: "",
         vehicle: "",
         tireSize: "",
@@ -3906,6 +4770,7 @@ function PublicBookingPage() {
 
         <form className="public-booking-form" onSubmit={submit}>
           <Input label="Name" required value={form.customerName} onChange={(customerName) => update("customerName", customerName)} />
+          <Input label="Email" type="email" value={form.email} onChange={(email) => update("email", email)} />
           <Input label="Phone" required value={form.phone} onChange={(phone) => update("phone", phone)} />
           <Input label="Vehicle" required value={form.vehicle} onChange={(vehicle) => update("vehicle", vehicle)} />
           <Input label="Tire size" value={form.tireSize} onChange={(tireSize) => update("tireSize", tireSize)} placeholder="225/45R17" />
@@ -4034,7 +4899,14 @@ function CustomerSignupScreen({ error, form, isSubmitting, onSubmit, setForm }) 
           </label>
           <label>
             Email
-            <input required type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
+            <input
+              pattern="^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,63}$"
+              required
+              title="Enter a valid email address"
+              type="email"
+              value={form.email}
+              onChange={(event) => setForm({ ...form, email: event.target.value })}
+            />
           </label>
           <label>
             Phone
@@ -4042,7 +4914,15 @@ function CustomerSignupScreen({ error, form, isSubmitting, onSubmit, setForm }) 
           </label>
           <label>
             Password
-            <input required type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} />
+            <input
+              minLength="8"
+              pattern="^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$"
+              required
+              title="Use at least 8 characters with uppercase, lowercase, number, and symbol"
+              type="password"
+              value={form.password}
+              onChange={(event) => setForm({ ...form, password: event.target.value })}
+            />
           </label>
           <button className="primary-button with-icon" disabled={isSubmitting} type="submit">
             <LogIn size={18} />
@@ -5263,7 +6143,7 @@ function PayrollPage({ auth, mode }) {
                     key: `work-shift-${shift.id}`,
                     source: shift,
                     values: [
-                      shift.employee?.fullName || "-",
+                      shift.employeeName || shift.employee?.fullName || "-",
                       shift.shiftDate || "-",
                       compactTime(shift.clockIn),
                       compactTime(shift.clockOut),
@@ -5320,8 +6200,8 @@ function PayrollPage({ auth, mode }) {
                 key: `payroll-record-${record.id}`,
                 source: record,
                 values: isAdmin ? [
-                  record.employee?.fullName || "-",
-                  record.employee?.email || "-",
+                  record.employeeName || record.employee?.fullName || "-",
+                  record.employeeEmail || record.employee?.email || "-",
                   numberCell(record.regularHours),
                   numberCell(record.overtimeHours),
                   money(record.hourlyRate),
@@ -5329,7 +6209,7 @@ function PayrollPage({ auth, mode }) {
                   record.status || "-",
                   dateTime(record.paidAt)
                 ] : [
-                  `${record.payrollPeriod?.startDate || "-"} to ${record.payrollPeriod?.endDate || "-"}`,
+                  `${record.periodStartDate || record.payrollPeriod?.startDate || "-"} to ${record.periodEndDate || record.payrollPeriod?.endDate || "-"}`,
                   numberCell(record.regularHours),
                   numberCell(record.overtimeHours),
                   money(record.hourlyRate),
@@ -5685,10 +6565,19 @@ function CustomersPage({ customers, onSendNotice }) {
   }
 
   function suggestPaymentNotice(customer) {
+    const nextInvoice = customer.unpaidInvoices?.[0];
     const dueText = customer.nextPaymentDueDate ? ` by ${customer.nextPaymentDueDate}` : "";
     updateDraft(customer.id, "title", customer.hasOverdueBalance ? "Payment overdue" : "Payment due soon");
     updateDraft(customer.id, "type", "PAYMENT_DUE");
-    updateDraft(customer.id, "message", `Invoice #${customer.nextUnpaidInvoiceId || ""} has an outstanding balance of ${money(customer.outstandingBalance)}${dueText}. Please pay it through your TireTrack account.`);
+    updateDraft(customer.id, "message", `Invoice #${customer.nextUnpaidInvoiceId || ""} has an outstanding balance of ${money(nextInvoice?.total ?? customer.outstandingBalance)}${dueText}. Please pay it through your TireTrack account.`);
+  }
+
+  function suggestInvoiceNotice(customer, invoice) {
+    const status = String(invoice.status || "UNPAID").toUpperCase();
+    const dueText = invoice.dueDate ? ` due by ${invoice.dueDate}` : "";
+    updateDraft(customer.id, "title", status === "PARTIAL" ? "Partial payment balance" : "Invoice payment due");
+    updateDraft(customer.id, "type", "PAYMENT_DUE");
+    updateDraft(customer.id, "message", `Invoice #${invoice.id} is ${status.toLowerCase()} with ${money(invoice.total)} outstanding${dueText}. Please pay it through your TireTrack account.`);
   }
 
   function suggestAppointmentNotice(customer) {
@@ -5726,6 +6615,7 @@ function CustomersPage({ customers, onSendNotice }) {
             emptyText="No customer accounts yet."
             rows={customers.map((customer) => ({
               key: `customer-${customer.id}`,
+              searchText: customer.email,
               values: [
                 { value: <CustomerAlertPill customer={customer} />, text: customerAlertLabel(customer) },
                 customer.fullName,
@@ -5755,6 +6645,7 @@ function CustomersPage({ customers, onSendNotice }) {
               noticeMessage={noticeMessage}
               onSendNotice={sendNotice}
               onSuggestAppointment={suggestAppointmentNotice}
+              onSuggestInvoice={suggestInvoiceNotice}
               onSuggestPayment={suggestPaymentNotice}
               onUpdateDraft={updateDraft}
             />
@@ -5767,8 +6658,18 @@ function CustomersPage({ customers, onSendNotice }) {
   );
 }
 
-function CustomerDetail({ customer, noticeDrafts, noticeMessage, onSendNotice, onSuggestAppointment, onSuggestPayment, onUpdateDraft }) {
+function CustomerDetail({ customer, noticeDrafts, noticeMessage, onSendNotice, onSuggestAppointment, onSuggestInvoice, onSuggestPayment, onUpdateDraft }) {
   const draft = noticeDrafts[customer.id] || { title: "Account notice", type: "NOTICE", message: "" };
+  const unpaidInvoices = [...(customer.unpaidInvoices || [])].sort((first, second) => {
+    const firstPartial = String(first.status || "").toUpperCase() === "PARTIAL";
+    const secondPartial = String(second.status || "").toUpperCase() === "PARTIAL";
+
+    if (firstPartial !== secondPartial) {
+      return firstPartial ? -1 : 1;
+    }
+
+    return String(first.dueDate || "9999-12-31").localeCompare(String(second.dueDate || "9999-12-31"));
+  });
 
   return (
     <>
@@ -5786,6 +6687,29 @@ function CustomerDetail({ customer, noticeDrafts, noticeMessage, onSendNotice, o
         <div><span>Next booking</span><strong>{customer.nextAppointmentDate ? dateTime(customer.nextAppointmentDate) : "-"}</strong></div>
         <div><span>Total paid</span><strong>{money(customer.totalSpent)}</strong></div>
       </div>
+      {unpaidInvoices.length > 0 && (
+        <div className="customer-unpaid-invoices">
+          <div className="section-toolbar compact">
+            <div>
+              <span className="eyebrow">Payment follow-up</span>
+              <h3>Unpaid Invoices</h3>
+            </div>
+            <span className="audit-count">{unpaidInvoices.length} open</span>
+          </div>
+          {unpaidInvoices.map((invoice) => (
+            <div className="customer-unpaid-invoice" key={invoice.id}>
+              <div>
+                <strong>Invoice #{invoice.id}</strong>
+                <small>{String(invoice.status || "UNPAID").toUpperCase()} - {money(invoice.total)} - Due {invoice.dueDate || "-"}</small>
+                <small>{invoice.vehicle || "No vehicle"}</small>
+              </div>
+              <button className={String(invoice.status || "").toUpperCase() === "PARTIAL" ? "primary-button" : "ghost-button"} onClick={() => onSuggestInvoice(customer, invoice)} type="button">
+                Notice
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="customer-notice-composer">
         <input value={draft.title} onChange={(event) => onUpdateDraft(customer.id, "title", event.target.value)} placeholder="Notice title" />
         <select value={draft.type} onChange={(event) => onUpdateDraft(customer.id, "type", event.target.value)}>
@@ -5820,6 +6744,10 @@ function customerAlertLabel(customer) {
     return "Due";
   }
 
+  if ((customer.unpaidInvoices || []).some((invoice) => String(invoice.status || "").toUpperCase() === "PARTIAL")) {
+    return "Partial";
+  }
+
   if (Number(customer.outstandingBalance || 0) > 0) {
     return customer.hasBalanceDueSoon ? "Due Soon" : "Outstanding";
   }
@@ -5851,6 +6779,8 @@ function CustomerAlertPill({ customer }) {
   const label = customerAlertLabel(customer);
   const tone = customer.hasOverdueBalance
     ? "red"
+    : label === "Partial"
+      ? "yellow"
     : Number(customer.outstandingBalance || 0) > 0
       ? "yellow"
       : customer.hasUpcomingAppointment
@@ -5997,7 +6927,10 @@ function DataTable({ actions, columns, emptyText, highlightedRow, rows }) {
     Array.isArray(row) ? { key: index, values: row, source: row } : row
   );
   const searchableRows = normalizedRows.filter((row) => {
-    const haystack = row.values.map((value) => value?.text ?? value?.value ?? value).join(" ").toLowerCase();
+    const haystack = [
+      row.searchText,
+      ...row.values.map((value) => value?.text ?? value?.value ?? value)
+    ].join(" ").toLowerCase();
 
     return haystack.includes(query.trim().toLowerCase());
   });

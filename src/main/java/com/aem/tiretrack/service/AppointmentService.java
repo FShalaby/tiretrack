@@ -80,7 +80,7 @@ public class AppointmentService {
     @Transactional
     public Appointment saveAppointment(Appointment appointment) {
         validateAppointmentTime(appointment, null);
-        linkCustomerByPhone(appointment);
+        linkCustomer(appointment);
         reserveAppointmentTires(appointment);
         Appointment savedAppointment = appointmentRepository.save(appointment);
         auditLogService.record("BOOKED", "Appointment", savedAppointment.getId(), "Booked appointment for " + savedAppointment.getCustomerName());
@@ -96,6 +96,7 @@ public class AppointmentService {
 
         existingAppointment.setCustomerName(updatedAppointment.getCustomerName());
         existingAppointment.setPhone(updatedAppointment.getPhone());
+        existingAppointment.setEmail(updatedAppointment.getEmail());
         existingAppointment.setVehicle(updatedAppointment.getVehicle());
         existingAppointment.setTireSize(updatedAppointment.getTireSize());
         existingAppointment.setFrontTireId(updatedAppointment.getFrontTireId());
@@ -114,7 +115,7 @@ public class AppointmentService {
         existingAppointment.setStatus(updatedAppointment.getStatus());
         }
 
-        linkCustomerByPhone(existingAppointment);
+        linkCustomer(existingAppointment);
         reserveAppointmentTires(existingAppointment);
         Appointment savedAppointment = appointmentRepository.save(existingAppointment);
         auditLogService.record("UPDATED", "Appointment", savedAppointment.getId(), "Updated appointment for " + savedAppointment.getCustomerName());
@@ -202,9 +203,25 @@ public class AppointmentService {
         tire.setReservedQuantity(nextReservedQuantity);
     }
 
-    private void linkCustomerByPhone(Appointment appointment) {
+    private void linkCustomer(Appointment appointment) {
+        if (appointment.getCustomerId() != null) {
+            return;
+        }
+
+        if (appointment.getEmail() != null && !appointment.getEmail().isBlank()) {
+            userRepository.findByEmail(appointment.getEmail()).ifPresent(user -> {
+                appointment.setCustomerId(user.getId());
+                appointment.setCustomerName(user.getFullName());
+                appointment.setPhone(user.getPhone());
+            });
+        }
+
         if (appointment.getCustomerId() == null && appointment.getPhone() != null) {
-            userRepository.findByPhone(appointment.getPhone()).ifPresent(user -> appointment.setCustomerId(user.getId()));
+            userRepository.findByPhone(appointment.getPhone()).ifPresent(user -> {
+                appointment.setCustomerId(user.getId());
+                appointment.setCustomerName(user.getFullName());
+                appointment.setEmail(user.getEmail());
+            });
         }
     }
 

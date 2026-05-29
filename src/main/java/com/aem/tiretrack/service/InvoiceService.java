@@ -78,9 +78,10 @@ public class InvoiceService {
     @Transactional
     public Invoice updateInvoiceStatus(Long id, String status) {
         Invoice invoice = getInvoiceById(id);
-        invoice.setStatus(status);
+        String nextStatus = status == null ? "UNPAID" : status.trim().toUpperCase();
+        invoice.setStatus(nextStatus);
 
-        if ("PAID".equalsIgnoreCase(status) && invoice.getAppointmentId() != null) {
+        if ("PAID".equalsIgnoreCase(nextStatus) && invoice.getAppointmentId() != null) {
             invoice.setPaidAt(LocalDateTime.now());
             Appointment appointment = appointmentRepository.findById(invoice.getAppointmentId())
                     .orElseThrow(() -> new RuntimeException("Appointment not found"));
@@ -89,16 +90,21 @@ public class InvoiceService {
             appointment.setStatus(AppointmentStatus.COMPLETED);
         }
 
-        if ("PAID".equalsIgnoreCase(status)) {
+        if ("PAID".equalsIgnoreCase(nextStatus)) {
             invoice.setPaidAt(LocalDateTime.now());
             invoice.setPaymentMethod(invoice.getPaymentMethod() == null ? "Manual" : invoice.getPaymentMethod());
+        } else {
+            invoice.setPaidAt(null);
+            if (!"VOID".equalsIgnoreCase(nextStatus) && invoice.getDueDate() == null) {
+                invoice.setDueDate(LocalDate.now().plusDays(14));
+            }
         }
 
         Invoice savedInvoice = invoiceRepository.save(invoice);
-        if ("PAID".equalsIgnoreCase(status)) {
+        if ("PAID".equalsIgnoreCase(nextStatus)) {
             accountingService.recordInvoicePayment(savedInvoice);
         }
-        auditLogService.record("STATUS_CHANGED", "Invoice", savedInvoice.getId(), "Invoice #" + savedInvoice.getId() + " marked " + status, getCurrentUsername());
+        auditLogService.record("STATUS_CHANGED", "Invoice", savedInvoice.getId(), "Invoice #" + savedInvoice.getId() + " marked " + nextStatus, getCurrentUsername());
         return savedInvoice;
     }
 

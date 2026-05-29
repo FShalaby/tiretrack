@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.aem.tiretrack.dto.WorkShiftRequest;
-import com.aem.tiretrack.model.WorkShift;
+import com.aem.tiretrack.dto.WorkShiftResponse;
 import com.aem.tiretrack.service.WorkShiftService;
 
 import jakarta.validation.Valid;
@@ -29,23 +29,23 @@ public class WorkShiftController {
     }
 
     @GetMapping
-    public List<WorkShift> getAllShifts() {
-        return workShiftService.getAllShifts();
+    public List<WorkShiftResponse> getAllShifts() {
+        return workShiftService.getAllShifts().stream().map(WorkShiftResponse::new).toList();
     }
 
     @GetMapping("/{id}")
-    public WorkShift getShiftById(@PathVariable long id) {
-        return workShiftService.getShiftById(id);
+    public WorkShiftResponse getShiftById(@PathVariable long id) {
+        return new WorkShiftResponse(workShiftService.getShiftById(id));
     }
 
     @PostMapping
-    public WorkShift createShift(@Valid @RequestBody WorkShiftRequest request) {
-        return workShiftService.createShift(request);
+    public WorkShiftResponse createShift(@Valid @RequestBody WorkShiftRequest request) {
+        return new WorkShiftResponse(workShiftService.createShift(request));
     }
 
     @PutMapping("/{id}")
-    public WorkShift updateShift(@PathVariable long id, @Valid @RequestBody WorkShiftRequest request) {
-        return workShiftService.updateShift(id, request);
+    public WorkShiftResponse updateShift(@PathVariable long id, @Valid @RequestBody WorkShiftRequest request) {
+        return new WorkShiftResponse(workShiftService.updateShift(id, request));
     }
 
     @DeleteMapping("/{id}")
@@ -55,16 +55,18 @@ public class WorkShiftController {
     }
 
     @GetMapping("/employee/{employeeId}")
-    public List<WorkShift> getShiftsByEmployeeId(@PathVariable long employeeId) {
-        return workShiftService.getShiftsByEmployeeId(employeeId);
+    public List<WorkShiftResponse> getShiftsByEmployeeId(@PathVariable long employeeId) {
+        return workShiftService.getShiftsByEmployeeId(employeeId).stream().map(WorkShiftResponse::new).toList();
     }
 
     @GetMapping("/employee/{employeeId}/range")
-    public List<WorkShift> getShiftsByEmployeeIdAndDateRange(
+    public List<WorkShiftResponse> getShiftsByEmployeeIdAndDateRange(
             @PathVariable long employeeId,
             @RequestParam @Valid String start,
             @RequestParam @Valid String end) {
-        return workShiftService.getShiftsByEmployeeIdAndDateRange(employeeId, start, end);
+        return workShiftService.getShiftsByEmployeeIdAndDateRange(employeeId, start, end).stream()
+                .map(WorkShiftResponse::new)
+                .toList();
     }
 
    

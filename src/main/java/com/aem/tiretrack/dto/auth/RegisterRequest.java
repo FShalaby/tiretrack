@@ -4,6 +4,7 @@ import com.aem.tiretrack.enums.UserRole;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 public class RegisterRequest {
@@ -13,6 +14,10 @@ public class RegisterRequest {
 
     @Email(message = "Enter a valid email")
     @NotBlank(message = "Email is required")
+    @Pattern(
+            regexp = "^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,63}$",
+            message = "Enter a valid email"
+    )
     private String email;
 
     @NotBlank(message = "Phone is required")
@@ -20,6 +25,10 @@ public class RegisterRequest {
 
     @NotBlank(message = "Password is required")
     @Size(min = 8, message = "Password must be at least 8 characters")
+    @Pattern(
+            regexp = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[^A-Za-z0-9]).{8,}$",
+            message = "Password must include uppercase, lowercase, number, and symbol"
+    )
     private String password;
 
     private UserRole role;
