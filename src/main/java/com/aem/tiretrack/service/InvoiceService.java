@@ -9,16 +9,20 @@ import java.util.List;
 import java.util.Map;
 
 import org.springframework.security.core.Authentication;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.aem.tiretrack.dto.InvoiceStatusUpdateRequest;
 import com.aem.tiretrack.enums.AppointmentStatus;
 import com.aem.tiretrack.enums.InvoiceItemType;
 import com.aem.tiretrack.model.Appointment;
 import com.aem.tiretrack.model.Invoice;
 import com.aem.tiretrack.model.InvoiceItem;
+import com.aem.tiretrack.model.Shop;
 import com.aem.tiretrack.model.Tire;
+import com.aem.tiretrack.model.User;
 import com.aem.tiretrack.repository.AppointmentRepository;
 import com.aem.tiretrack.repository.InvoiceRepository;
 import com.aem.tiretrack.repository.TireRepository;
@@ -32,35 +36,42 @@ public class InvoiceService {
     private final UserRepository userRepository;
     private final AuditLogService auditLogService;
     private final AccountingService accountingService;
+    private final ShopContextService shopContextService;
 
-    public InvoiceService(InvoiceRepository invoiceRepository, TireRepository tireRepository, AppointmentRepository appointmentRepository, UserRepository userRepository, AuditLogService auditLogService, AccountingService accountingService) {
+    public InvoiceService(InvoiceRepository invoiceRepository, TireRepository tireRepository, AppointmentRepository appointmentRepository, UserRepository userRepository, AuditLogService auditLogService, AccountingService accountingService, ShopContextService shopContextService) {
         this.invoiceRepository = invoiceRepository;
         this.tireRepository = tireRepository;
         this.appointmentRepository = appointmentRepository;
         this.userRepository = userRepository;
         this.auditLogService = auditLogService;
         this.accountingService = accountingService;
+        this.shopContextService = shopContextService;
     }
 
     public List<Invoice> getAllInvoices() {
-        return invoiceRepository.findAll();
+        return invoiceRepository.findAll().stream()
+                .filter(this::canAccessInvoice)
+                .toList();
     }
 
     public Invoice getInvoiceById(Long id) {
-        return invoiceRepository.findById(id)
+        Invoice invoice = invoiceRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Invoice not found"));
+        ensureInvoiceAccess(invoice);
+        return invoice;
     }
 
     @Transactional
     public Invoice saveInvoice(Invoice invoice) {
         try {
+            assignCurrentTenantContextIfMissing(invoice);
             prepareInvoice(invoice);
             linkCustomerByPhone(invoice);
             prepareInvoiceLifecycle(invoice);
             Invoice savedInvoice = invoiceRepository.saveAndFlush(invoice);
             accountingService.recordInvoiceIssued(savedInvoice);
-            if ("PAID".equalsIgnoreCase(savedInvoice.getStatus())) {
-                accountingService.recordInvoicePayment(savedInvoice);
+            if (amount(savedInvoice.getAmountPaid()).compareTo(BigDecimal.ZERO) > 0) {
+                accountingService.recordInvoicePayment(savedInvoice, savedInvoice.getAmountPaid());
             }
             auditLogService.record("CREATED", "Invoice", savedInvoice.getId(), "Created invoice for " + savedInvoice.getCustomerName(), getCurrentUsername());
             return savedInvoice;
@@ -76,35 +87,37 @@ public class InvoiceService {
     }
 
     @Transactional
-    public Invoice updateInvoiceStatus(Long id, String status) {
+    public Invoice updateInvoiceStatus(Long id, InvoiceStatusUpdateRequest request) {
         Invoice invoice = getInvoiceById(id);
-        String nextStatus = status == null ? "UNPAID" : status.trim().toUpperCase();
-        invoice.setStatus(nextStatus);
+        BigDecimal previouslyPaid = amount(invoice.getAmountPaid());
+        String nextStatus = normalizeInvoiceStatus(request == null ? null : request.getStatus());
+        BigDecimal requestedAmountPaid = request == null ? null : request.getAmountPaid();
 
-        if ("PAID".equalsIgnoreCase(nextStatus) && invoice.getAppointmentId() != null) {
-            invoice.setPaidAt(LocalDateTime.now());
+        if (request != null && request.getDueDate() != null) {
+            invoice.setDueDate(request.getDueDate());
+        }
+
+        if (request != null && request.getPaymentMethod() != null && !request.getPaymentMethod().isBlank()) {
+            invoice.setPaymentMethod(request.getPaymentMethod().trim());
+        }
+
+        applyPaymentLifecycle(invoice, nextStatus, requestedAmountPaid);
+
+        if ("PAID".equalsIgnoreCase(invoice.getStatus()) && invoice.getAppointmentId() != null) {
             Appointment appointment = appointmentRepository.findById(invoice.getAppointmentId())
                     .orElseThrow(() -> new RuntimeException("Appointment not found"));
+            ensureAppointmentAccess(appointment);
 
             releaseRemainingAppointmentReservations(appointment, new HashMap<>());
             appointment.setStatus(AppointmentStatus.COMPLETED);
         }
 
-        if ("PAID".equalsIgnoreCase(nextStatus)) {
-            invoice.setPaidAt(LocalDateTime.now());
-            invoice.setPaymentMethod(invoice.getPaymentMethod() == null ? "Manual" : invoice.getPaymentMethod());
-        } else {
-            invoice.setPaidAt(null);
-            if (!"VOID".equalsIgnoreCase(nextStatus) && invoice.getDueDate() == null) {
-                invoice.setDueDate(LocalDate.now().plusDays(14));
-            }
-        }
-
         Invoice savedInvoice = invoiceRepository.save(invoice);
-        if ("PAID".equalsIgnoreCase(nextStatus)) {
-            accountingService.recordInvoicePayment(savedInvoice);
+        BigDecimal paymentDelta = amount(savedInvoice.getAmountPaid()).subtract(previouslyPaid);
+        if (paymentDelta.compareTo(BigDecimal.ZERO) > 0) {
+            accountingService.recordInvoicePayment(savedInvoice, paymentDelta);
         }
-        auditLogService.record("STATUS_CHANGED", "Invoice", savedInvoice.getId(), "Invoice #" + savedInvoice.getId() + " marked " + nextStatus, getCurrentUsername());
+        auditLogService.record("STATUS_CHANGED", "Invoice", savedInvoice.getId(), "Invoice #" + savedInvoice.getId() + " marked " + savedInvoice.getStatus(), getCurrentUsername());
         return savedInvoice;
     }
 
@@ -115,6 +128,15 @@ public class InvoiceService {
                 ? null
                 : appointmentRepository.findById(invoice.getAppointmentId())
                         .orElseThrow(() -> new RuntimeException("Appointment not found"));
+        if (appointment != null) {
+            ensureAppointmentAccess(appointment);
+            if (invoice.getShop() == null && appointment.getShop() != null) {
+                invoice.setShop(appointment.getShop());
+            }
+            if (invoice.getShopLocation() == null && appointment.getShopLocation() != null) {
+                invoice.setShopLocation(appointment.getShopLocation());
+            }
+        }
 
         for (InvoiceItem item : invoice.getItems()) {
             item.setInvoice(invoice);
@@ -156,19 +178,85 @@ public class InvoiceService {
     }
 
     private void prepareInvoiceLifecycle(Invoice invoice) {
-        if ("PAID".equalsIgnoreCase(invoice.getStatus())) {
+        applyPaymentLifecycle(invoice, normalizeInvoiceStatus(invoice.getStatus()), invoice.getAmountPaid());
+    }
+
+    private void applyPaymentLifecycle(Invoice invoice, String nextStatus, BigDecimal requestedAmountPaid) {
+        BigDecimal total = amount(invoice.getTotal());
+        BigDecimal paid = amount(requestedAmountPaid == null ? invoice.getAmountPaid() : requestedAmountPaid);
+
+        if ("PAID".equalsIgnoreCase(nextStatus)) {
+            invoice.setStatus("PAID");
+            invoice.setAmountPaid(total);
+            invoice.setBalanceDue(BigDecimal.ZERO);
             invoice.setPaidAt(LocalDateTime.now());
+            invoice.setPaymentMethod(invoice.getPaymentMethod() == null ? "Manual" : invoice.getPaymentMethod());
             return;
         }
 
-        if (invoice.getDueDate() == null) {
-            invoice.setDueDate(LocalDate.now().plusDays(14));
+        if ("PARTIALLY_PAID".equalsIgnoreCase(nextStatus)) {
+            if (paid.compareTo(BigDecimal.ZERO) <= 0) {
+                throw new IllegalArgumentException("Partial payments require an amount paid greater than zero.");
+            }
+
+            if (paid.compareTo(total) >= 0) {
+                invoice.setStatus("PAID");
+                invoice.setAmountPaid(total);
+                invoice.setBalanceDue(BigDecimal.ZERO);
+                invoice.setPaidAt(LocalDateTime.now());
+                invoice.setPaymentMethod(invoice.getPaymentMethod() == null ? "Manual" : invoice.getPaymentMethod());
+                return;
+            }
+
+            invoice.setStatus("PARTIALLY_PAID");
+            invoice.setAmountPaid(paid);
+            invoice.setBalanceDue(total.subtract(paid).setScale(2, RoundingMode.HALF_UP));
+            invoice.setPaidAt(null);
+            invoice.setPaymentMethod(invoice.getPaymentMethod() == null ? "Manual" : invoice.getPaymentMethod());
+            if (invoice.getDueDate() == null) {
+                invoice.setDueDate(LocalDate.now().plusDays(14));
+            }
+            return;
         }
+
+        invoice.setStatus(nextStatus);
+        if ("VOID".equalsIgnoreCase(nextStatus)) {
+            invoice.setBalanceDue(BigDecimal.ZERO);
+        } else {
+            invoice.setBalanceDue(total.subtract(paid).max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP));
+            if (invoice.getDueDate() == null) {
+                invoice.setDueDate(LocalDate.now().plusDays(14));
+            }
+        }
+        invoice.setAmountPaid(paid.min(total).max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP));
+        invoice.setPaidAt(null);
+    }
+
+    private String normalizeInvoiceStatus(String status) {
+        if (status == null || status.isBlank()) {
+            return "UNPAID";
+        }
+
+        String normalized = status.trim().toUpperCase();
+        if ("PARTIAL".equals(normalized)) {
+            return "PARTIALLY_PAID";
+        }
+
+        return normalized;
+    }
+
+    private BigDecimal amount(BigDecimal value) {
+        return (value == null ? BigDecimal.ZERO : value).setScale(2, RoundingMode.HALF_UP);
     }
 
     private void linkCustomerByPhone(Invoice invoice) {
         if (invoice.getCustomerId() == null && invoice.getPhone() != null) {
-            userRepository.findByPhone(invoice.getPhone()).ifPresent(user -> invoice.setCustomerId(user.getId()));
+            userRepository.findByPhone(invoice.getPhone()).ifPresent(user -> {
+                invoice.setCustomerId(user.getId());
+                assignCustomerShopIfMissing(user, invoice.getShop());
+            });
+        } else if (invoice.getCustomerId() != null) {
+            userRepository.findById(invoice.getCustomerId()).ifPresent(user -> assignCustomerShopIfMissing(user, invoice.getShop()));
         }
     }
 
@@ -179,6 +267,7 @@ public class InvoiceService {
 
         Tire tire = tireRepository.findById(item.getTireId())
                 .orElseThrow(() -> new RuntimeException("Tire not found"));
+        ensureTireAccess(tire);
 
         int reservedForAppointment = getReservedForAppointment(appointment, item.getTireId());
         int alreadyConsumedForAppointment = consumedAppointmentReservations.getOrDefault(item.getTireId(), 0);
@@ -252,6 +341,7 @@ public class InvoiceService {
 
         Tire tire = tireRepository.findById(tireId)
                 .orElseThrow(() -> new RuntimeException("Tire not found"));
+        ensureTireAccess(tire);
 
         tire.setReservedQuantity(Math.max(0, tire.getReservedQuantity() - remainingToRelease));
         consumedAppointmentReservations.merge(tireId, remainingToRelease, Integer::sum);
@@ -262,6 +352,56 @@ public class InvoiceService {
         return authentication != null && authentication.isAuthenticated() && authentication.getName() != null
                 ? authentication.getName()
                 : "system";
+    }
+
+    private void assignCurrentTenantContextIfMissing(Invoice invoice) {
+        if (invoice.getShop() == null) {
+            shopContextService.getCurrentTenantShop().ifPresent(invoice::setShop);
+        }
+        if (invoice.getShopLocation() == null) {
+            shopContextService.getCurrentTenantLocation()
+                    .filter(location -> invoice.getShop() == null
+                            || (location.getShop() != null && location.getShop().getId().equals(invoice.getShop().getId())))
+                    .ifPresent(invoice::setShopLocation);
+        }
+    }
+
+    private void assignCustomerShopIfMissing(User user, Shop shop) {
+        if (shop == null) {
+            return;
+        }
+
+        if (user.getShop() == null) {
+            user.setShop(shop);
+            userRepository.save(user);
+            return;
+        }
+
+        if (!shop.getId().equals(user.getShop().getId())) {
+            throw new RuntimeException("Customer belongs to another shop");
+        }
+    }
+
+    private void ensureInvoiceAccess(Invoice invoice) {
+        if (!canAccessInvoice(invoice)) {
+            throw new AccessDeniedException("You do not have permission to access this resource.");
+        }
+    }
+
+    private void ensureAppointmentAccess(Appointment appointment) {
+        if (!shopContextService.canAccessTenantResource(appointment.getShop(), appointment.getShopLocation())) {
+            throw new AccessDeniedException("You do not have permission to access this resource.");
+        }
+    }
+
+    private void ensureTireAccess(Tire tire) {
+        if (!shopContextService.canAccessTenantResource(tire.getShop(), tire.getShopLocation())) {
+            throw new AccessDeniedException("You do not have permission to access this resource.");
+        }
+    }
+
+    private boolean canAccessInvoice(Invoice invoice) {
+        return shopContextService.canAccessTenantResource(invoice.getShop(), invoice.getShopLocation());
     }
 
     private String rootMessage(Throwable throwable) {

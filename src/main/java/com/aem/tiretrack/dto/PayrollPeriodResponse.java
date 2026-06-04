@@ -13,6 +13,10 @@ public class PayrollPeriodResponse {
     private PayrollStatus status;
     private LocalDateTime paidAt;
     private String notes;
+    private Long shopId;
+    private String shopName;
+    private Long locationId;
+    private String locationName;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -23,6 +27,10 @@ public class PayrollPeriodResponse {
         this.status = period.getStatus();
         this.paidAt = period.getPaidAt();
         this.notes = period.getNotes();
+        this.shopId = period.getShopId();
+        this.shopName = period.getShopName();
+        this.locationId = period.getLocationId();
+        this.locationName = period.getLocationName();
         this.createdAt = period.getCreatedAt();
         this.updatedAt = period.getUpdatedAt();
     }
@@ -33,6 +41,10 @@ public class PayrollPeriodResponse {
     public PayrollStatus getStatus() { return status; }
     public LocalDateTime getPaidAt() { return paidAt; }
     public String getNotes() { return notes; }
+    public Long getShopId() { return shopId; }
+    public String getShopName() { return shopName; }
+    public Long getLocationId() { return locationId; }
+    public String getLocationName() { return locationName; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }
 }

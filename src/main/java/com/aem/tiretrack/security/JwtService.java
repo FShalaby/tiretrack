@@ -35,6 +35,7 @@ public class JwtService {
     public String generateToken(String email) {
         long now = System.currentTimeMillis();
 
+        // TODO SaaS Phase 2: add shop claims after tenant assignment becomes mandatory.
         return Jwts.builder()
                 .setSubject(email)
                 .setIssuer(issuer)

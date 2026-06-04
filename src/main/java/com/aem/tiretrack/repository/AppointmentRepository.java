@@ -19,11 +19,36 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long>
 
     List<Appointment> findByAppointmentDate(LocalDateTime appointmentDate);
 
+    List<Appointment> findByShop_Id(Long shopId);
+
+    List<Appointment> findByShop_IdAndAppointmentDate(Long shopId, LocalDateTime appointmentDate);
+
     List<Appointment> findByAppointmentDateBetween(LocalDateTime start, LocalDateTime end);
+
+    List<Appointment> findByShop_IdAndAppointmentDateBetween(Long shopId, LocalDateTime start, LocalDateTime end);
 
     List<Appointment> findByCustomerIdOrderByAppointmentDateDesc(Long customerId);
 
     @Query("select a from Appointment a where a.customerId = :customerId or a.phone = :phone or a.email = :email order by a.appointmentDate desc")
     List<Appointment> findCustomerHistory(@Param("customerId") Long customerId, @Param("phone") String phone, @Param("email") String email);
+
+    @Query("""
+            select a from Appointment a
+            where a.shop.id = :shopId
+              and (a.customerId = :customerId or a.phone = :phone or a.email = :email)
+            order by a.appointmentDate desc
+            """)
+    List<Appointment> findCustomerHistoryByShop(
+            @Param("shopId") Long shopId,
+            @Param("customerId") Long customerId,
+            @Param("phone") String phone,
+            @Param("email") String email);
+
+    @Query("SELECT COUNT(a) FROM Appointment a WHERE a.shop.id = :shopId AND a.appointmentDate BETWEEN :start AND :end AND a.status = com.aem.tiretrack.enums.AppointmentStatus.BOOKED")
+    long countTodayAppointmentsByShop(
+            @Param("shopId") Long shopId,
+            @Param("start") LocalDateTime start,
+            @Param("end") LocalDateTime end
+    );
 
 }

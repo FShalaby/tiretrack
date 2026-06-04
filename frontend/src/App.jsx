@@ -7,6 +7,7 @@ import {
   CalendarDays,
   CheckCircle2,
   CircleDollarSign,
+  Clock3,
   ClipboardList,
   Download,
   Disc3,
@@ -39,8 +40,12 @@ import {
   createCustomerVehicle,
   createExpense,
   createInvoice,
+  createPlatformShop,
+  createPlatformUser,
+  createShopLocation,
   createPayrollPeriod,
   createPayrollShiftSlot,
+  createEmployeeLoan,
   createNotification,
   createPublicBooking,
   createTire,
@@ -53,41 +58,71 @@ import {
   deletePayrollShiftSlot,
   deleteTire,
   deleteWorkShift,
+  approveCustomerEstimate,
   approvePayrollRecord,
+  addPayrollAdjustment,
+  approveEstimate,
+  assignAdminToLocation,
+  assignAdminToShop,
+  assignLegacyDataToShop,
+  assignPlatformRecord,
+  cancelEstimate,
   cancelPayrollRecord,
+  cancelEmployeeLoan,
+  cancelWorkOrder,
+  clockIn,
+  clockOut,
+  completeWorkOrder,
+  convertEstimateToInvoice,
+  convertWorkOrderToInvoice,
   generatePayroll,
   getAppointments,
   getAccountingAccounts,
   getAccountingReport,
   getAuditLogs,
+  getAttendanceByDate,
+  getAttendanceEmployees,
   getDashboard,
+  getEstimates,
+  getEmployeeAttendanceRange,
   getInvoice,
   getInvoices,
   getNotifications,
   getLowStockTires,
+  getMyAttendanceRange,
+  getMyTodayAttendance,
+  getPlatformLinks,
+  getPlatformShops,
+  getPlatformUsers,
+  getUnresolvedAbsences,
   getSalesData,
   getSettings,
-  getTireByBarcode,
+  getActiveShopLocations,
   getTires,
   getAvailableSlots,
+  getCurrentUser,
   getCustomerPortal,
   getCustomers,
   getVendors,
   getPayrollEmployees,
+  getPayrollLoans,
   getPayrollPeriods,
   getPayrollRecordsForEmployee,
   getPayrollRecordsForPeriod,
   getPayrollShiftSlots,
+  getWorkOrders,
   getWorkShifts,
   importTiresCsv,
   login as loginApi,
   logout as logoutApi,
+  markEmployeeAbsent,
   markCustomerNotificationRead,
   markAllNotificationsRead,
   markNotificationRead,
   payExpense as payExpenseApi,
   payCustomerInvoice,
   payPayrollRecord,
+  previewWorkOrderInvoice,
   register as registerApi,
   refreshToken as refreshTokenApi,
   searchTiresByBrand,
@@ -96,27 +131,49 @@ import {
   searchTiresBySeason,
   searchTiresBySize,
   sendCustomerNotice,
+  sendEstimate,
+  createEstimate,
+  createWorkOrder,
+  createWorkOrderFromAppointment,
+  declineEstimate,
+  resolveAbsence,
+  activatePlatformShop,
+  activatePlatformUser,
+  deactivatePlatformShop,
+  deactivatePlatformUser,
   updateAppointment,
   updateInvoiceStatus,
+  updateEstimate,
   updateEmployeePayrollSettings,
+  updatePayrollRecordNotes,
   updatePayrollPeriod,
+  updatePlatformShop,
   updateSettings,
   updateTire,
+  updateWorkOrder,
+  markWorkOrderVehicleReady,
+  startWorkOrder,
   signupForPayrollShiftSlot,
   cancelPayrollShiftSignup,
+  deletePayrollAdjustment,
   assignEmployeeToPayrollShiftSlot,
   removePayrollShiftSignup
 } from "./api";
 
-const tabs = ["Dashboard", "Tires", "Appointments", "Invoices", "Customers", "Accounting", "Payroll", "My Payroll", "Audit Logs", "Settings"];
+const tabs = ["Platform", "Employee Portal", "Dashboard", "Tires", "Appointments", "Work Orders", "Estimates", "Invoices", "Customers", "Accounting", "Attendance", "Payroll", "My Payroll", "Audit Logs", "Settings"];
 const employeeHiddenTabs = ["Dashboard", "Customers", "Accounting", "Audit Logs", "Settings"];
 const tabIcons = {
   Dashboard: Gauge,
+  Platform: ShieldCheck,
+  "Employee Portal": Clock3,
   Tires: Disc3,
   Appointments: CalendarDays,
+  "Work Orders": ClipboardList,
+  Estimates: FileText,
   Invoices: FileText,
   Customers: UserCircle,
   Accounting: CircleDollarSign,
+  Attendance: Clock3,
   Payroll: BriefcaseBusiness,
   "My Payroll": CircleDollarSign,
   "Audit Logs": ClipboardList,
@@ -127,7 +184,14 @@ const metricIcons = {
   "Low stock": AlertTriangle,
   Invoices: FileText,
   Revenue: CircleDollarSign,
+  Collected: CircleDollarSign,
+  Invoiced: FileText,
+  Outstanding: AlertTriangle,
   "Today appointments": CalendarDays,
+  "Pending jobs": ClipboardList,
+  "In progress": RefreshCw,
+  "Vehicle ready": CheckCircle2,
+  "Completed today": CheckCircle2,
   "Customer alerts": UserCircle
 };
 const statusClassMap = {
@@ -137,16 +201,27 @@ const statusClassMap = {
   PAID: "green",
   UNPAID: "yellow",
   PARTIAL: "yellow",
+  PARTIALLY_PAID: "yellow",
   OVERDUE: "red",
   PENDING: "yellow",
+  IN_PROGRESS: "blue",
+  VEHICLE_READY: "green",
   APPROVED: "blue",
+  DRAFT: "gray",
+  SENT: "blue",
+  DECLINED: "red",
+  CONVERTED: "green",
+  EXPIRED: "red",
+  VOID: "gray",
   DUE_SOON: "yellow",
   REMINDER: "blue",
   NEW: "green",
-  USED: "yellow"
+  USED: "yellow",
+  ACTIVE: "green",
+  PAID_OFF: "blue"
 };
 const chartColors = ["#18d3b2", "#7c8cff", "#ef4444", "#f59e0b"];
-const appointmentTimes = ["08:00", "09:00", "10:00", "11:00", "13:00", "14:00", "15:00", "16:00"];
+const appointmentTimes = buildAppointmentTimes();
 const accountingTabs = ["Dashboard", "Expenses", "Vendors", "Accounts", "Reports", "Ledger"];
 const accountingTabMeta = {
   Dashboard: {
@@ -236,7 +311,9 @@ const emptyTire = {
   condition: "NEW",
   quantity: 4,
   price: "0.00",
-  location: ""
+  location: "",
+  shopId: "",
+  locationId: ""
 };
 
 const emptyTireFilters = {
@@ -317,8 +394,34 @@ const emptyInvoice = {
   phone: "",
   vehicle: "",
   paymentMethod: "Cash",
-  status: "PAID",
+  status: "UNPAID",
+  amountPaid: "",
+  dueDate: "",
   appointmentId: "",
+  items: [makeInvoiceItem()]
+};
+
+const emptyWorkOrder = {
+  appointmentId: "",
+  customerId: "",
+  customerName: "",
+  email: "",
+  phone: "",
+  vehicle: "",
+  assignedEmployeeId: "",
+  serviceType: "INSTALLATION",
+  notes: ""
+};
+
+const emptyEstimate = {
+  customerId: "",
+  customerName: "",
+  email: "",
+  phone: "",
+  vehicle: "",
+  taxRate: "13",
+  notes: "",
+  validUntil: "",
   items: [makeInvoiceItem()]
 };
 
@@ -336,6 +439,35 @@ function money(value) {
     style: "currency",
     currency: "CAD"
   });
+}
+
+function invoiceStatusKey(status) {
+  const normalized = String(status || "UNPAID").toUpperCase();
+  return normalized === "PARTIAL" ? "PARTIALLY_PAID" : normalized;
+}
+
+function invoiceCollectedAmount(invoice) {
+  const amountPaid = Number(invoice?.amountPaid || 0);
+
+  if (amountPaid > 0) {
+    return amountPaid;
+  }
+
+  return invoiceStatusKey(invoice?.status) === "PAID" ? Number(invoice?.total || 0) : 0;
+}
+
+function invoiceBalanceAmount(invoice) {
+  const explicitBalance = Number(invoice?.balanceDue || 0);
+
+  if (explicitBalance > 0) {
+    return explicitBalance;
+  }
+
+  if (["PAID", "VOID"].includes(invoiceStatusKey(invoice?.status))) {
+    return 0;
+  }
+
+  return Math.max(Number(invoice?.total || 0) - invoiceCollectedAmount(invoice), 0);
 }
 
 function dateTime(value) {
@@ -361,6 +493,16 @@ function joinAppointmentDate(date, time) {
   return `${date}T${time}`;
 }
 
+function buildAppointmentTimes() {
+  const slots = [];
+  for (let minutes = 9 * 60; minutes <= (16 * 60) + 30; minutes += 30) {
+    const hour = String(Math.floor(minutes / 60)).padStart(2, "0");
+    const minute = String(minutes % 60).padStart(2, "0");
+    slots.push(`${hour}:${minute}`);
+  }
+  return slots;
+}
+
 function todayDateKey() {
   return toDateKey(new Date());
 }
@@ -383,6 +525,28 @@ function customerForAppointment(appointment, customers) {
     || (appointment.phone && customer.phone === appointment.phone)
     || (appointment.email && customer.email === appointment.email)
   );
+}
+
+function matchingCustomersForForm(customers, form, limit = 5) {
+  const needles = [form.customerName, form.email, form.phone]
+    .map((value) => String(value || "").trim().toLowerCase())
+    .filter(Boolean);
+
+  if (!needles.length || form.customerId) {
+    return [];
+  }
+
+  return customers
+    .filter((customer) => {
+      const haystack = [
+        customer.fullName,
+        customer.email,
+        customer.phone
+      ].filter(Boolean).join(" ").toLowerCase();
+
+      return needles.some((needle) => haystack.includes(needle));
+    })
+    .slice(0, limit);
 }
 
 function compactDate(value) {
@@ -432,16 +596,36 @@ function scrollPageToTop() {
 }
 
 function defaultTabForRole(role) {
+  if (role === "SUPER_ADMIN") {
+    return "Platform";
+  }
+
   if (role === "CUSTOMER") {
     return "Portal";
   }
 
-  return role === "EMPLOYEE" ? "Tires" : "Dashboard";
+  return role === "EMPLOYEE" ? "Employee Portal" : "Dashboard";
 }
 
 function canAccessTab(role, tab) {
+  if (role === "SUPER_ADMIN") {
+    return tab === "Platform";
+  }
+
+  if (tab === "Platform") {
+    return false;
+  }
+
+  if (tab === "Employee Portal") {
+    return role === "EMPLOYEE";
+  }
+
   if (role === "CUSTOMER") {
     return tab === "Portal";
+  }
+
+  if (tab === "Attendance") {
+    return role === "ADMIN";
   }
 
   if (tab === "Payroll") {
@@ -453,6 +637,10 @@ function canAccessTab(role, tab) {
   }
 
   return role !== "EMPLOYEE" || !employeeHiddenTabs.includes(tab);
+}
+
+function requiresShopAssignment(role) {
+  return role === "ADMIN" || role === "EMPLOYEE";
 }
 
 function downloadTextFile(filename, content, type = "text/plain") {
@@ -572,7 +760,6 @@ function App() {
   const [signupForm, setSignupForm] = useState({ fullName: "", email: "", phone: "", password: "" });
   const [signupError, setSignupError] = useState("");
   const [signupSubmitting, setSignupSubmitting] = useState(false);
-  const [barcodeLookupRequest, setBarcodeLookupRequest] = useState(() => new URLSearchParams(window.location.search).get("barcode") || "");
   const [activeTab, setActiveTab] = useState(() => defaultTabForRole(loadStoredAuth()?.role));
   const [activeAccountingTab, setActiveAccountingTab] = useState("Dashboard");
   const [globalQuery, setGlobalQuery] = useState("");
@@ -591,6 +778,8 @@ function App() {
   const [tires, setTires] = useState([]);
   const [inventoryTires, setInventoryTires] = useState([]);
   const [appointments, setAppointments] = useState([]);
+  const [workOrders, setWorkOrders] = useState([]);
+  const [estimates, setEstimates] = useState([]);
   const [invoices, setInvoices] = useState([]);
   const [salesData, setSalesData] = useState([]);
   const [customers, setCustomers] = useState([]);
@@ -598,6 +787,11 @@ function App() {
   const [accountingReport, setAccountingReport] = useState(null);
   const [accountingAccounts, setAccountingAccounts] = useState([]);
   const [vendors, setVendors] = useState([]);
+  const [platformShops, setPlatformShops] = useState([]);
+  const [platformUsers, setPlatformUsers] = useState([]);
+  const [platformLinkRecords, setPlatformLinkRecords] = useState([]);
+  const [platformLinkLocations, setPlatformLinkLocations] = useState([]);
+  const [shopLocations, setShopLocations] = useState([]);
   const [expenseForm, setExpenseForm] = useState(emptyExpense);
   const [accountForm, setAccountForm] = useState(emptyAccount);
   const [vendorForm, setVendorForm] = useState(emptyVendor);
@@ -628,18 +822,94 @@ function App() {
     setError("");
 
     try {
-      if (currentAuth?.role === "CUSTOMER") {
+      let workingAuth = currentAuth;
+
+      if (currentAuth?.token) {
+        const currentProfile = await getCurrentUser().catch(() => null);
+
+        if (currentProfile) {
+          workingAuth = {
+            ...currentAuth,
+            id: currentProfile.id,
+            fullName: currentProfile.fullName,
+            email: currentProfile.email,
+            role: currentProfile.role,
+            shopId: currentProfile.shopId,
+            shopName: currentProfile.shopName,
+            locationId: currentProfile.locationId,
+            locationName: currentProfile.locationName,
+            accessibleLocationIds: currentProfile.accessibleLocationIds || currentAuth.accessibleLocationIds || [],
+            permissions: currentProfile.permissions || currentAuth.permissions || []
+          };
+          setAuth(workingAuth);
+          persistStoredAuth(workingAuth);
+        }
+      }
+
+      if (workingAuth?.role === "CUSTOMER") {
         const portal = await getCustomerPortal();
         setCustomerPortal(portal);
         setLoading(false);
         return;
       }
 
-      if (currentAuth?.role === "ADMIN") {
-        const [summary, tireList, appointmentList, invoiceList, salesList, savedSettings, auditLogs, customerList, accounting, accounts, vendorList, notifications] = await Promise.all([
+      if (requiresShopAssignment(workingAuth?.role) && !workingAuth?.shopId) {
+        setDashboard(null);
+        setTires([]);
+        setInventoryTires([]);
+        setAppointments([]);
+        setWorkOrders([]);
+        setEstimates([]);
+        setInvoices([]);
+        setSalesData([]);
+        setCustomers([]);
+        setAccountingReport(null);
+        setAccountingAccounts([]);
+        setVendors([]);
+        setShopLocations([]);
+        setAppNotifications([]);
+        setActivityLog([]);
+        setError("No shop assigned to this user. Contact Monarch Solutions.");
+        setLoading(false);
+        return;
+      }
+
+      if (workingAuth?.role === "SUPER_ADMIN") {
+        const [shops, users, linkOverview] = await Promise.all([
+          getPlatformShops(),
+          getPlatformUsers(),
+          getPlatformLinks()
+        ]);
+        setPlatformShops(shops || []);
+        setPlatformUsers(users || []);
+        setPlatformLinkRecords(linkOverview?.records || []);
+        setPlatformLinkLocations(linkOverview?.locations || []);
+        setDashboard(null);
+        setTires([]);
+        setInventoryTires([]);
+        setAppointments([]);
+        setWorkOrders([]);
+        setEstimates([]);
+        setInvoices([]);
+        setSalesData([]);
+        setCustomers([]);
+        setAccountingReport(null);
+        setAccountingAccounts([]);
+        setVendors([]);
+        setShopLocations([]);
+        setAppNotifications([]);
+        setActivityLog([]);
+        setCompanySettings(loadCompanySettings());
+        return;
+      }
+
+      if (workingAuth?.role === "ADMIN") {
+        const [summary, tireList, appointmentList, workOrderList, estimateList, invoiceList, salesList, savedSettings, auditLogs, customerList, accounting, accounts, vendorList, notifications, locations] = await Promise.all([
           getDashboard(),
           getTires(),
           getAppointments(),
+          getWorkOrders().catch(() => []),
+          getEstimates().catch(() => []),
           getInvoices(),
           getSalesData(),
           getSettings().catch(() => loadCompanySettings()),
@@ -648,7 +918,8 @@ function App() {
           getAccountingReport().catch(() => null),
           getAccountingAccounts().catch(() => []),
           getVendors().catch(() => []),
-          getNotifications().catch(() => [])
+          getNotifications().catch(() => []),
+          workingAuth?.shopId ? getActiveShopLocations(workingAuth.shopId).catch(() => []) : Promise.resolve([])
         ]);
 
         const mergedSettings = { ...defaultCompanySettings, ...(savedSettings || {}) };
@@ -656,12 +927,15 @@ function App() {
         setTires(tireList || []);
         setInventoryTires(tireList || []);
         setAppointments(appointmentList || []);
+        setWorkOrders(workOrderList || []);
+        setEstimates(estimateList || []);
         setInvoices(invoiceList || []);
         setSalesData(salesList || []);
         setCustomers(customerList || []);
         setAccountingReport(accounting);
         setAccountingAccounts(accounts || []);
         setVendors(vendorList || []);
+        setShopLocations(locations || []);
         setAppNotifications(notifications || []);
         setActivityLog((auditLogs || []).map((log) => ({
           id: log.id,
@@ -676,9 +950,11 @@ function App() {
         setCompanySettings(mergedSettings);
         localStorage.setItem("tiretrack-company-settings", JSON.stringify(mergedSettings));
       } else {
-        const [tireList, appointmentList, invoiceList] = await Promise.all([
+        const [tireList, appointmentList, workOrderList, estimateList, invoiceList] = await Promise.all([
           getTires(),
           getAppointments(),
+          getWorkOrders().catch(() => []),
+          getEstimates().catch(() => []),
           getInvoices()
         ]);
 
@@ -686,12 +962,15 @@ function App() {
         setTires(tireList || []);
         setInventoryTires(tireList || []);
         setAppointments(appointmentList || []);
+        setWorkOrders(workOrderList || []);
+        setEstimates(estimateList || []);
         setInvoices(invoiceList || []);
         setSalesData([]);
         setCustomers([]);
         setAccountingReport(null);
         setAccountingAccounts([]);
         setVendors([]);
+        setShopLocations([]);
         setAppNotifications([]);
         setCompanySettings(loadCompanySettings());
       }
@@ -757,19 +1036,6 @@ function App() {
       setActiveTab(defaultTabForRole(auth.role));
     }
   }, [activeTab, auth]);
-
-  useEffect(() => {
-    if (barcodeLookupRequest && auth && auth.role !== "CUSTOMER") {
-      setActiveTab("Tires");
-    }
-  }, [auth, barcodeLookupRequest]);
-
-  function clearBarcodeLookupRequest() {
-    setBarcodeLookupRequest("");
-    const url = new URL(window.location.href);
-    url.searchParams.delete("barcode");
-    window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
-  }
 
   useEffect(() => {
     setError("");
@@ -856,6 +1122,13 @@ function App() {
     await payCustomerInvoice(id);
     scrollToFeedback();
     await refreshCustomerPortal();
+  }
+
+  async function approveEstimateFromPortal(id) {
+    await approveCustomerEstimate(id);
+    scrollToFeedback();
+    await refreshCustomerPortal();
+    await loadData(auth);
   }
 
   async function markPortalNoticeRead(id) {
@@ -1008,7 +1281,7 @@ function App() {
     () => {
       const paidAppointmentIds = new Set(
         invoices
-          .filter((invoice) => invoice.status === "PAID" && invoice.appointmentId)
+          .filter((invoice) => invoiceStatusKey(invoice.status) === "PAID" && invoice.appointmentId)
           .map((invoice) => Number(invoice.appointmentId))
       );
 
@@ -1033,9 +1306,8 @@ function App() {
         tire.model,
         tire.season,
         tire.condition,
+        tire.locationName,
         tire.location,
-        tire.barcode,
-        tire.batchCode,
         `${tire.width}/${tire.aspectRatio}r${tire.rimSize}`
       ].join(" ").toLowerCase().includes(query))
       .slice(0, 4)
@@ -1069,6 +1341,42 @@ function App() {
         meta: `${appointment.serviceType} · ${compactDate(appointment.appointmentDate)}`,
         tab: "Appointments"
       }));
+    const workOrderMatches = workOrders
+      .filter((workOrder) => [
+        workOrder.customerName,
+        workOrder.phone,
+        workOrder.email,
+        workOrder.vehicle,
+        workOrder.serviceType,
+        workOrder.status,
+        workOrder.assignedEmployeeName,
+        workOrder.invoiceId
+      ].join(" ").toLowerCase().includes(query))
+      .slice(0, 4)
+      .map((workOrder) => ({
+        id: `work-order-${workOrder.id}`,
+        entityId: workOrder.id,
+        label: workOrder.customerName,
+        meta: `${workOrder.serviceType || "Service"} Â· ${workOrder.status || "PENDING"}`,
+        tab: "Work Orders"
+      }));
+    const estimateMatches = estimates
+      .filter((estimate) => [
+        estimate.estimateNumber,
+        estimate.customerName,
+        estimate.phone,
+        estimate.email,
+        estimate.vehicle,
+        estimate.status
+      ].join(" ").toLowerCase().includes(query))
+      .slice(0, 4)
+      .map((estimate) => ({
+        id: `estimate-${estimate.id}`,
+        entityId: estimate.id,
+        label: estimate.estimateNumber || `Estimate #${estimate.id}`,
+        meta: `${estimate.customerName} Â· ${money(estimate.total)}`,
+        tab: "Estimates"
+      }));
     const customerMatches = customers
       .filter((customer) => [
         customer.fullName,
@@ -1100,8 +1408,8 @@ function App() {
         tab: "Invoices"
       }));
 
-    return [...customerMatches, ...tireMatches, ...appointmentMatches, ...invoiceMatches].slice(0, 8);
-  }, [appointments, customers, globalQuery, invoices, tires]);
+    return [...customerMatches, ...tireMatches, ...appointmentMatches, ...workOrderMatches, ...estimateMatches, ...invoiceMatches].slice(0, 8);
+  }, [appointments, customers, estimates, globalQuery, invoices, tires, workOrders]);
   const visibleTabs = tabs.filter((tab) => canAccessTab(auth?.role, tab));
 
   const ignoredDerivedNotifications = useMemo(() => {
@@ -1137,7 +1445,9 @@ function App() {
       aspectRatio: Number(tireForm.aspectRatio),
       rimSize: Number(tireForm.rimSize),
       quantity: Number(tireForm.quantity),
-      price: Number(tireForm.price)
+      price: Number(tireForm.price),
+      shopId: tireForm.shopId ? Number(tireForm.shopId) : null,
+      locationId: tireForm.locationId ? Number(tireForm.locationId) : null
     };
     const matchingTire = tires.find((tire) =>
       tire.brand.trim().toLowerCase() === tirePayload.brand.trim().toLowerCase()
@@ -1184,21 +1494,132 @@ function App() {
     }
   }
 
-  async function quickRefillTire(tire, quantityToAdd) {
-    const refillQuantity = Number(quantityToAdd || 0);
-
-    if (!tire?.id || refillQuantity <= 0) {
-      throw new Error("Enter a refill quantity greater than 0.");
+  async function createInventoryLocation(location) {
+    if (!auth?.shopId) {
+      throw new Error("Your account is not assigned to a shop yet.");
     }
 
-    await updateTire(tire.id, {
-      ...tire,
-      quantity: Number(tire.quantity || 0) + refillQuantity
+    await createShopLocation({
+      ...location,
+      shopId: auth.shopId,
+      active: true
     });
 
-    logActivity(`Refilled ${tire.brand}`, "Tires");
-    notifySuccess(`${tire.brand} refilled by ${refillQuantity}.`);
+    notifySuccess(`${location.name} location created.`);
     await loadData();
+  }
+
+  async function assignPlatformLink(record, assignment) {
+    setError("");
+    setSuccessMessage("");
+
+    const updatedRecord = await assignPlatformRecord(record.type, record.id, assignment);
+    setPlatformLinkRecords((current) => current.map((entry) =>
+      entry.type === updatedRecord.type && Number(entry.id) === Number(updatedRecord.id) ? updatedRecord : entry
+    ));
+    notifySuccess(`${record.label} linked to ${updatedRecord.shopName || "Unassigned"}.`);
+    return updatedRecord;
+  }
+
+  async function assignLegacyShopData(shopId) {
+    setError("");
+    setSuccessMessage("");
+
+    const result = await assignLegacyDataToShop(shopId);
+    await loadData(auth);
+    notifySuccess(result?.message || "Legacy data linked to shop.");
+    return result;
+  }
+
+  async function assignPlatformAdminShop(userId, shopId) {
+    setError("");
+    setSuccessMessage("");
+
+    if (!shopId) {
+      throw new Error("Choose a shop before assigning an admin.");
+    }
+
+    const updatedAdmin = await assignAdminToShop(userId, shopId);
+    const updatedRecord = {
+      type: "USER",
+      id: updatedAdmin.id,
+      label: updatedAdmin.fullName,
+      detail: [updatedAdmin.email, updatedAdmin.phone].filter(Boolean).join(" / "),
+      status: updatedAdmin.role,
+      shopId: updatedAdmin.shopId,
+      shopName: updatedAdmin.shopName,
+      locationId: null,
+      locationName: null
+    };
+
+    setPlatformLinkRecords((current) => current.map((entry) =>
+      entry.type === "USER" && Number(entry.id) === Number(updatedAdmin.id) ? updatedRecord : entry
+    ));
+    await loadData(auth);
+    notifySuccess(`${updatedAdmin.fullName} assigned to ${updatedAdmin.shopName}.`);
+    return updatedAdmin;
+  }
+
+  async function assignPlatformAdminLocation(userId, locationId) {
+    setError("");
+    setSuccessMessage("");
+
+    if (!locationId) {
+      throw new Error("Choose a location before assigning a location admin.");
+    }
+
+    const updatedAdmin = await assignAdminToLocation(userId, locationId);
+    const updatedRecord = {
+      type: "USER",
+      id: updatedAdmin.id,
+      label: updatedAdmin.fullName,
+      detail: [updatedAdmin.email, updatedAdmin.phone].filter(Boolean).join(" / "),
+      status: updatedAdmin.role,
+      shopId: updatedAdmin.shopId,
+      shopName: updatedAdmin.shopName,
+      locationId: updatedAdmin.locationId,
+      locationName: updatedAdmin.locationName
+    };
+
+    setPlatformLinkRecords((current) => current.map((entry) =>
+      entry.type === "USER" && Number(entry.id) === Number(updatedAdmin.id) ? updatedRecord : entry
+    ));
+    await loadData(auth);
+    notifySuccess(`${updatedAdmin.fullName} assigned to ${updatedAdmin.locationName}.`);
+    return updatedAdmin;
+  }
+
+  async function createPlatformLocation(location) {
+    await createShopLocation({
+      ...location,
+      active: true
+    });
+
+    notifySuccess(`${location.name} location created.`);
+    await loadData(auth);
+  }
+
+  async function createOwnerPlatformUser(user) {
+    setError("");
+    setSuccessMessage("");
+
+    const createdUser = await createPlatformUser(user);
+    notifySuccess(`${createdUser.fullName} created.`);
+    await loadData(auth);
+    return createdUser;
+  }
+
+  async function setPlatformUserActive(user, active) {
+    setError("");
+    setSuccessMessage("");
+
+    const updatedUser = active
+      ? await activatePlatformUser(user.id)
+      : await deactivatePlatformUser(user.id);
+
+    notifySuccess(`${updatedUser.fullName} ${active ? "activated" : "deactivated"}.`);
+    await loadData(auth);
+    return updatedUser;
   }
 
   async function applyTireFilters(event) {
@@ -1274,6 +1695,12 @@ function App() {
 
     if (!selectedDate || selectedDate < todayDateKey()) {
       setError("Choose today or a future date for this appointment.");
+      scrollToFeedback();
+      return;
+    }
+
+    if (!selectedTime) {
+      setError("Choose an appointment time.");
       scrollToFeedback();
       return;
     }
@@ -1363,10 +1790,12 @@ function App() {
     }
 
     try {
-    const savedInvoice = await createInvoice({
+      const savedInvoice = await createInvoice({
         ...invoiceForm,
         companyName: undefined,
         taxRate: Number(companySettings.taxRate || 13),
+        amountPaid: invoiceForm.amountPaid === "" ? null : Number(invoiceForm.amountPaid || 0),
+        dueDate: invoiceForm.dueDate || null,
         appointmentId: invoiceForm.appointmentId ? Number(invoiceForm.appointmentId) : null,
         items
       });
@@ -1401,7 +1830,9 @@ function App() {
       condition: tire.condition || "NEW",
       quantity: 4,
       price: tire.price ?? "0.00",
-      location: tire.location || ""
+      location: tire.location || "",
+      shopId: tire.shopId ? String(tire.shopId) : auth?.shopId ? String(auth.shopId) : "",
+      locationId: tire.locationId ? String(tire.locationId) : ""
     });
     notifySuccess("Refill details loaded. Review quantity and save.");
   }
@@ -1440,7 +1871,10 @@ function App() {
   }
 
   async function markInvoicePaid(invoice) {
-    await updateInvoiceStatus(invoice.id, "PAID");
+    await updateInvoiceStatus(invoice.id, {
+      status: "PAID",
+      paymentMethod: invoice.paymentMethod || "Manual"
+    });
     logActivity(`Marked invoice #${invoice.id} paid`, "Invoices");
     notifySuccess(`Invoice #${invoice.id} marked paid.`);
     await loadData();
@@ -1451,8 +1885,34 @@ function App() {
     setGeneratedInvoice(printableInvoice);
   }
 
+  async function openGeneratedInvoice(invoice) {
+    const printableInvoice = invoice?.id ? await getInvoice(invoice.id) : invoice;
+    setGeneratedInvoice(printableInvoice);
+    setActiveTab("Invoices");
+  }
+
   async function updateInvoiceLifecycleStatus(invoice, status) {
-    await updateInvoiceStatus(invoice.id, status);
+    const payload = { status };
+
+    if (invoiceStatusKey(status) === "PARTIALLY_PAID") {
+      const defaultPaid = invoice.amountPaid || "";
+      const paidInput = window.prompt("Amount paid so far", defaultPaid);
+
+      if (paidInput === null) {
+        return;
+      }
+
+      payload.amountPaid = Number(paidInput || 0);
+
+      const dueInput = window.prompt("Remaining balance due date (YYYY-MM-DD)", invoice.dueDate || todayDateKey());
+      if (dueInput !== null && dueInput.trim()) {
+        payload.dueDate = dueInput.trim();
+      }
+
+      payload.paymentMethod = invoice.paymentMethod || "Manual";
+    }
+
+    await updateInvoiceStatus(invoice.id, payload);
     logActivity(`Marked invoice #${invoice.id} ${status}`, "Invoices");
     notifySuccess(`Invoice #${invoice.id} marked ${status}.`);
     await loadData();
@@ -1487,6 +1947,11 @@ function App() {
       items: items.length ? items : nextInvoiceForm.items
     });
     setActiveTab("Invoices");
+  }
+
+  if (isPublicBooking && loadStoredAuth()?.role === "SUPER_ADMIN") {
+    window.location.href = "/";
+    return null;
   }
 
   if (isPublicBooking) {
@@ -1552,6 +2017,7 @@ function App() {
         onDeleteVehicle={removeCustomerVehicle}
         onLogout={handleLogout}
         onMarkNoticeRead={markPortalNoticeRead}
+        onApproveEstimate={approveEstimateFromPortal}
         onPayInvoice={payInvoiceFromPortal}
         onRefresh={refreshCustomerPortal}
         onSaveVehicle={saveCustomerVehicle}
@@ -1559,6 +2025,8 @@ function App() {
       />
     );
   }
+
+  const tenantBlocked = requiresShopAssignment(auth?.role) && !auth?.shopId;
 
   return (
     <div className="app-shell">
@@ -1605,10 +2073,16 @@ function App() {
           })}
         </nav>
 
-        <button className="sidebar-booking-link with-icon" onClick={() => { window.location.href = "/booking"; }} type="button">
-          <CalendarDays size={17} />
-          Public Booking
-        </button>
+        {auth?.role !== "SUPER_ADMIN" && (
+          <button className="sidebar-booking-link with-icon" onClick={() => { window.location.href = "/booking"; }} type="button">
+            <CalendarDays size={17} />
+            Public Booking
+          </button>
+        )}
+        <div className="monarch-footer">
+          <strong>Powered by Monarch Solutions</strong>
+          <a href="mailto:support@monarchsolutions.ca">support@monarchsolutions.ca</a>
+        </div>
       </aside>
 
       <main className="content">
@@ -1685,13 +2159,18 @@ function App() {
               <RefreshCw size={16} />
               Refresh
             </button>
-            <button className="ghost-button with-icon" onClick={() => { window.location.href = "/booking"; }} type="button">
-              <CalendarDays size={16} />
-              Public Booking
-            </button>
-            <button className="ghost-button with-icon" onClick={handleLogout} type="button" title="Log out">
+            {auth?.role !== "SUPER_ADMIN" && (
+              <button className="ghost-button with-icon" onClick={() => { window.location.href = "/booking"; }} type="button">
+                <CalendarDays size={16} />
+                Public Booking
+              </button>
+            )}
+            <button className="profile-chip with-icon" onClick={handleLogout} type="button" title="Log out">
               <UserCircle size={19} />
-              {auth?.fullName || "Log out"}
+              <span className="profile-chip-text">
+                <strong>{auth?.fullName || "Log out"}</strong>
+                {auth?.role !== "CUSTOMER" && <small>{[auth?.shopName, auth?.locationName].filter(Boolean).join(" / ") || auth?.role || "Unassigned"}</small>}
+              </span>
             </button>
           </div>
         </header>
@@ -1700,12 +2179,37 @@ function App() {
         {error && <div className="alert">{error}</div>}
         {loading ? <DashboardSkeleton /> : null}
 
-        {!loading && activeTab === "Dashboard" && (
+        {!loading && tenantBlocked && <TenantAssignmentWarning auth={auth} />}
+
+        {!tenantBlocked && !loading && activeTab === "Platform" && auth?.role === "SUPER_ADMIN" && (
+          <PlatformPage
+            linkLocations={platformLinkLocations}
+            linkRecords={platformLinkRecords}
+            onAssignAdmin={assignPlatformAdminShop}
+            onAssignLegacyData={assignLegacyShopData}
+            onAssignLocation={assignPlatformAdminLocation}
+            onAssignRecord={assignPlatformLink}
+            onCreateLocation={createPlatformLocation}
+            onCreateUser={createOwnerPlatformUser}
+            onRefresh={() => loadData(auth)}
+            onSetUserActive={setPlatformUserActive}
+            setError={setError}
+            shops={platformShops}
+            users={platformUsers}
+          />
+        )}
+
+        {!tenantBlocked && !loading && activeTab === "Employee Portal" && auth?.role === "EMPLOYEE" && (
+          <EmployeePortal auth={auth} onOpenPayroll={() => setActiveTab("My Payroll")} />
+        )}
+
+        {!tenantBlocked && !loading && activeTab === "Dashboard" && (
           <Dashboard
             appointments={activeAppointments}
             customers={customers}
             dashboard={dashboard}
             invoices={invoices}
+            workOrders={workOrders}
             tires={tires}
             lowStockTires={lowStockTires}
             onCancelAppointment={cancelAppointment}
@@ -1718,27 +2222,27 @@ function App() {
           />
         )}
 
-        {!loading && activeTab === "Tires" && (
+        {!tenantBlocked && !loading && activeTab === "Tires" && (
           <Tires
-            barcodeLookupRequest={barcodeLookupRequest}
+            auth={auth}
             filters={tireFilters}
             form={tireForm}
             onClearFilters={clearTireFilters}
             onChange={setTireForm}
-            onBarcodeLookupHandled={clearBarcodeLookupRequest}
             onDelete={removeTire}
             onFilterChange={setTireFilters}
             onFilterSubmit={applyTireFilters}
             onImportCsv={uploadTireCsv}
-            onQuickRefill={quickRefillTire}
+            onCreateLocation={createInventoryLocation}
             onRefill={refillTire}
             onSubmit={submitTire}
             highlightedRow={highlightedRow}
+            shopLocations={shopLocations}
             tires={inventoryTires}
           />
         )}
 
-        {!loading && activeTab === "Appointments" && (
+        {!tenantBlocked && !loading && activeTab === "Appointments" && (
           <Appointments
             appointments={appointments}
             customers={customers}
@@ -1754,7 +2258,32 @@ function App() {
           />
         )}
 
-        {!loading && activeTab === "Invoices" && (
+        {!tenantBlocked && !loading && activeTab === "Work Orders" && (
+          <WorkOrdersPage
+            appointments={activeAppointments}
+            customers={customers}
+            onInvoiceCreated={openGeneratedInvoice}
+            onNotify={notifySuccess}
+            onRefresh={() => loadData(auth)}
+            setError={setError}
+            workOrders={workOrders}
+          />
+        )}
+
+        {!tenantBlocked && !loading && activeTab === "Estimates" && (
+          <EstimatesPage
+            customers={customers}
+            estimates={estimates}
+            onInvoiceCreated={openGeneratedInvoice}
+            onNotify={notifySuccess}
+            onRefresh={() => loadData(auth)}
+            settings={companySettings}
+            setError={setError}
+            tires={tires}
+          />
+        )}
+
+        {!tenantBlocked && !loading && activeTab === "Invoices" && (
           <Invoices
             form={invoiceForm}
             generatedInvoice={generatedInvoice}
@@ -1772,11 +2301,11 @@ function App() {
           />
         )}
 
-        {!loading && activeTab === "Customers" && (
+        {!tenantBlocked && !loading && activeTab === "Customers" && (
           <CustomersPage customers={customers} onSendNotice={sendNoticeToCustomer} />
         )}
 
-        {!loading && activeTab === "Accounting" && (
+        {!tenantBlocked && !loading && activeTab === "Accounting" && (
           <AccountingPage
             accountForm={accountForm}
             accounts={accountingAccounts}
@@ -1797,23 +2326,45 @@ function App() {
           />
         )}
 
-        {!loading && activeTab === "Payroll" && auth?.role === "ADMIN" && (
+        {!tenantBlocked && !loading && activeTab === "Attendance" && auth?.role === "ADMIN" && (
+          <AttendancePage auth={auth} />
+        )}
+
+        {!tenantBlocked && !loading && activeTab === "Payroll" && auth?.role === "ADMIN" && (
           <PayrollPage auth={auth} mode="admin" />
         )}
 
-        {!loading && activeTab === "My Payroll" && auth?.role === "EMPLOYEE" && (
+        {!tenantBlocked && !loading && activeTab === "My Payroll" && auth?.role === "EMPLOYEE" && (
           <PayrollPage auth={auth} mode="employee" />
         )}
 
-        {!loading && activeTab === "Audit Logs" && (
+        {!tenantBlocked && !loading && activeTab === "Audit Logs" && (
           <AuditLogsPage logs={activityLog} />
         )}
 
-        {!loading && activeTab === "Settings" && (
+        {!tenantBlocked && !loading && activeTab === "Settings" && (
           <SettingsPage settings={companySettings} onSave={saveCompanySettings} />
         )}
       </main>
     </div>
+  );
+}
+
+function TenantAssignmentWarning({ auth }) {
+  return (
+    <section className="panel tenant-warning">
+      <div className="metric-icon">
+        <ShieldCheck size={22} />
+      </div>
+      <div>
+        <span className="eyebrow">Shop assignment required</span>
+        <h3>No shop assigned</h3>
+        <p>
+          {auth?.fullName || "This user"} is signed in as {auth?.role || "a shop user"}, but the account is not linked to a shop yet.
+          Contact Monarch Solutions or a SUPER_ADMIN to assign this user before using TireTrack operations.
+        </p>
+      </div>
+    </section>
   );
 }
 
@@ -1822,6 +2373,7 @@ function Dashboard({
   customers,
   dashboard,
   invoices,
+  workOrders = [],
   lowStockTires,
   onCancelAppointment,
   onDeleteAppointment,
@@ -1850,8 +2402,8 @@ function Dashboard({
   const today = todayDateKey();
   const todayAppointments = appointments.filter((appointment) => appointmentDateKey(appointment.appointmentDate) === today);
   const todayInvoices = invoices.filter((invoice) => appointmentDateKey(invoice.createdAt || invoice.invoiceDate) === today);
-  const rangeRevenue = filteredInvoices.reduce((total, invoice) => total + Number(invoice.total || 0), 0);
-  const todayRevenue = todayInvoices.reduce((total, invoice) => total + Number(invoice.total || 0), 0);
+  const rangeRevenue = filteredInvoices.reduce((total, invoice) => total + invoiceCollectedAmount(invoice), 0);
+  const todayRevenue = todayInvoices.reduce((total, invoice) => total + invoiceCollectedAmount(invoice), 0);
   const urgentRestock = lowStockTires.filter((tire) => Number(tire.availableQuantity ?? tire.quantity ?? 0) < 3);
   const outstandingCustomerBalance = customers.reduce((total, customer) => total + Number(customer.outstandingBalance || 0), 0);
   const paymentAlertCustomers = customers.filter((customer) => Number(customer.outstandingBalance || 0) > 0);
@@ -1888,8 +2440,14 @@ function Dashboard({
     ["Tires in stock", dashboard?.totalTiresInStock ?? 0],
     ["Low stock", dashboard?.lowStockCount ?? 0],
     ["Invoices", dashboard?.totalInvoices ?? 0],
-    ["Revenue", money(dashboard?.totalRevenue)],
-    ["Today appointments", dashboard?.todayAppointments ?? 0]
+    ["Collected", money(dashboard?.totalCollected ?? dashboard?.totalRevenue)],
+    ["Invoiced", money(dashboard?.totalInvoiced)],
+    ["Outstanding", money(dashboard?.outstandingBalance)],
+    ["Today appointments", dashboard?.todayAppointments ?? 0],
+    ["Pending jobs", dashboard?.pendingWorkOrders ?? workOrders.filter((workOrder) => workOrder.status === "PENDING").length],
+    ["In progress", dashboard?.inProgressWorkOrders ?? workOrders.filter((workOrder) => workOrder.status === "IN_PROGRESS").length],
+    ["Vehicle ready", dashboard?.vehicleReadyWorkOrders ?? workOrders.filter((workOrder) => workOrder.status === "VEHICLE_READY").length],
+    ["Completed today", dashboard?.completedWorkOrdersToday ?? workOrders.filter((workOrder) => workOrder.status === "COMPLETED" && appointmentDateKey(workOrder.completedAt) === today).length]
   ];
 
   return (
@@ -1948,7 +2506,7 @@ function Dashboard({
         <div className="today-stats">
           <div><span>Appointments</span><strong>{todayAppointments.length}</strong></div>
           <div><span>Invoices</span><strong>{todayInvoices.length}</strong></div>
-          <div><span>Revenue</span><strong>{money(todayRevenue)}</strong></div>
+          <div><span>Collected</span><strong>{money(todayRevenue)}</strong></div>
           <div><span>Low stock actions</span><strong>{urgentRestock.length}</strong></div>
         </div>
         <div className="today-actions">
@@ -2075,7 +2633,7 @@ function Dashboard({
               urgentStockValue(tire, tire.brand),
               `${tire.width}/${tire.aspectRatio}R${tire.rimSize}`,
               urgentStockValue(tire, tire.quantity),
-              tire.location || "-"
+              displayTireLocation(tire)
             ])}
           />
         </div>
@@ -2593,362 +3151,8 @@ function tireAvailableQuantity(tire) {
   return Number(tire.availableQuantity ?? tire.quantity ?? 0);
 }
 
-function batchCodeForTire(tire) {
-  if (tire.batchCode) {
-    return tire.batchCode;
-  }
-
-  return tire.id ? `BATCH-${String(tire.id).padStart(6, "0")}` : "-";
-}
-
-function barcodeForTire(tire) {
-  if (tire.barcode) {
-    return tire.barcode;
-  }
-
-  return tire.id ? `TT-BATCH-${String(tire.id).padStart(6, "0")}` : "-";
-}
-
-function scannerBarcodeForTire(tire) {
-  return barcodeForTire(tire).replace(/-/g, "");
-}
-
-function extractBarcodeValue(value) {
-  const text = String(value || "").trim();
-
-  if (!text) {
-    return "";
-  }
-
-  try {
-    const url = new URL(text, window.location.origin);
-    const barcode = url.searchParams.get("barcode");
-
-    if (barcode) {
-      return barcode.trim();
-    }
-  } catch {
-    return normalizeScannedBarcode(text);
-  }
-
-  return normalizeScannedBarcode(text);
-}
-
-function normalizeScannedBarcode(value) {
-  const text = String(value || "").trim();
-  const compactBatchMatch = /^TTBATCH(\d+)$/i.exec(text);
-
-  if (compactBatchMatch) {
-    return `TT-BATCH-${compactBatchMatch[1].padStart(6, "0")}`;
-  }
-
-  return text;
-}
-
-const code128Patterns = [
-  "212222", "222122", "222221", "121223", "121322", "131222", "122213", "122312", "132212", "221213",
-  "221312", "231212", "112232", "122132", "122231", "113222", "123122", "123221", "223211", "221132",
-  "221231", "213212", "223112", "312131", "311222", "321122", "321221", "312212", "322112", "322211",
-  "212123", "212321", "232121", "111323", "131123", "131321", "112313", "132113", "132311", "211313",
-  "231113", "231311", "112133", "112331", "132131", "113123", "113321", "133121", "313121", "211331",
-  "231131", "213113", "213311", "213131", "311123", "311321", "331121", "312113", "312311", "332111",
-  "314111", "221411", "431111", "111224", "111422", "121124", "121421", "141122", "141221", "112214",
-  "112412", "122114", "122411", "142112", "142211", "241211", "221114", "413111", "241112", "134111",
-  "111242", "121142", "121241", "114212", "124112", "124211", "411212", "421112", "421211", "212141",
-  "214121", "412121", "111143", "111341", "131141", "114113", "114311", "411113", "411311", "113141",
-  "114131", "311141", "411131", "211412", "211214", "211232", "2331112"
-];
-
-function escapeHtml(value) {
-  return String(value || "").replace(/[&<>"']/g, (character) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    "\"": "&quot;",
-    "'": "&#39;"
-  }[character]));
-}
-
-async function code128Svg(value) {
-  const { code128, drawingSVG } = await import("bwip-js");
-
-  return code128({
-    text: String(value || "").trim(),
-    scale: 4,
-    height: 22,
-    includetext: true,
-    textsize: 10,
-    textxalign: "center",
-    backgroundcolor: "FFFFFF",
-    paddingwidth: 16,
-    paddingheight: 8
-  }, drawingSVG()).replace("<svg ", '<svg class="barcode-svg" ');
-}
-
-const qrAlphanumericCharacters = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:";
-const qrGeneratorDegree7 = [87, 229, 146, 149, 238, 102, 21];
-
-function qrAppendBits(bits, value, length) {
-  for (let index = length - 1; index >= 0; index -= 1) {
-    bits.push((value >> index) & 1);
-  }
-}
-
-function qrGfMultiply(left, right) {
-  let result = 0;
-  let a = left;
-  let b = right;
-
-  while (b > 0) {
-    if (b & 1) {
-      result ^= a;
-    }
-
-    a <<= 1;
-
-    if (a & 0x100) {
-      a ^= 0x11d;
-    }
-
-    b >>= 1;
-  }
-
-  return result;
-}
-
-function qrErrorCorrection(dataCodewords) {
-  const remainder = Array(qrGeneratorDegree7.length).fill(0);
-
-  dataCodewords.forEach((codeword) => {
-    const factor = codeword ^ remainder.shift();
-    remainder.push(0);
-
-    for (let index = 0; index < qrGeneratorDegree7.length; index += 1) {
-      remainder[index] ^= qrGfMultiply(qrGeneratorDegree7[index], factor);
-    }
-  });
-
-  return remainder;
-}
-
-function qrSet(matrix, reserved, row, column, value) {
-  if (row >= 0 && row < matrix.length && column >= 0 && column < matrix.length) {
-    matrix[row][column] = value;
-    reserved[row][column] = true;
-  }
-}
-
-function qrAddFinder(matrix, reserved, startRow, startColumn) {
-  for (let row = -1; row <= 7; row += 1) {
-    for (let column = -1; column <= 7; column += 1) {
-      const targetRow = startRow + row;
-      const targetColumn = startColumn + column;
-      const inFinder = row >= 0 && row <= 6 && column >= 0 && column <= 6;
-      const isRing = inFinder && (row === 0 || row === 6 || column === 0 || column === 6);
-      const isCenter = inFinder && row >= 2 && row <= 4 && column >= 2 && column <= 4;
-
-      qrSet(matrix, reserved, targetRow, targetColumn, isRing || isCenter);
-    }
-  }
-}
-
-function qrAddFormatBits(matrix, reserved) {
-  const size = matrix.length;
-  const formatBits = 0b111011111000100; // ECC level L, mask 0.
-
-  const firstCopy = [
-    [8, 0], [8, 1], [8, 2], [8, 3], [8, 4], [8, 5], [8, 7], [8, 8],
-    [7, 8], [5, 8], [4, 8], [3, 8], [2, 8], [1, 8], [0, 8]
-  ];
-  const secondCopy = [
-    [size - 1, 8], [size - 2, 8], [size - 3, 8], [size - 4, 8], [size - 5, 8], [size - 6, 8], [size - 7, 8], [size - 8, 8],
-    [8, size - 7], [8, size - 6], [8, size - 5], [8, size - 4], [8, size - 3], [8, size - 2], [8, size - 1]
-  ];
-
-  [...firstCopy, ...secondCopy].forEach(([row, column], index) => {
-    qrSet(matrix, reserved, row, column, Boolean((formatBits >> (index % 15)) & 1));
-  });
-
-  qrSet(matrix, reserved, size - 8, 8, true);
-}
-
-async function qrCodeSvg(value) {
-  const { drawingSVG, qrcode } = await import("bwip-js");
-
-  return qrcode({
-    text: String(value || "").trim(),
-    scale: 4,
-    eclevel: "M",
-    backgroundcolor: "FFFFFF",
-    paddingwidth: 4,
-    paddingheight: 4
-  }, drawingSVG()).replace("<svg ", '<svg class="qr-svg" ');
-
-  const text = String(value || "").trim().toUpperCase();
-  const dataBits = [];
-
-  qrAppendBits(dataBits, 0b0010, 4);
-  qrAppendBits(dataBits, text.length, 9);
-
-  for (let index = 0; index < text.length; index += 2) {
-    const first = qrAlphanumericCharacters.indexOf(text[index]);
-
-    if (first === -1) {
-      throw new Error("QR code supports numbers, uppercase letters, and standard barcode symbols.");
-    }
-
-    if (index + 1 < text.length) {
-      const second = qrAlphanumericCharacters.indexOf(text[index + 1]);
-
-      if (second === -1) {
-        throw new Error("QR code supports numbers, uppercase letters, and standard barcode symbols.");
-      }
-
-      qrAppendBits(dataBits, first * 45 + second, 11);
-    } else {
-      qrAppendBits(dataBits, first, 6);
-    }
-  }
-
-  qrAppendBits(dataBits, 0, Math.min(4, 152 - dataBits.length));
-
-  while (dataBits.length % 8 !== 0) {
-    dataBits.push(0);
-  }
-
-  const dataCodewords = [];
-
-  for (let index = 0; index < dataBits.length; index += 8) {
-    dataCodewords.push(Number.parseInt(dataBits.slice(index, index + 8).join(""), 2));
-  }
-
-  while (dataCodewords.length < 19) {
-    dataCodewords.push(dataCodewords.length % 2 === 0 ? 0xec : 0x11);
-  }
-
-  const codewords = [...dataCodewords, ...qrErrorCorrection(dataCodewords)];
-  const bits = codewords.flatMap((codeword) =>
-    Array.from({ length: 8 }, (_, index) => (codeword >> (7 - index)) & 1)
-  );
-  const size = 21;
-  const matrix = Array.from({ length: size }, () => Array(size).fill(null));
-  const reserved = Array.from({ length: size }, () => Array(size).fill(false));
-
-  qrAddFinder(matrix, reserved, 0, 0);
-  qrAddFinder(matrix, reserved, 0, size - 7);
-  qrAddFinder(matrix, reserved, size - 7, 0);
-
-  for (let index = 8; index < size - 8; index += 1) {
-    qrSet(matrix, reserved, 6, index, index % 2 === 0);
-    qrSet(matrix, reserved, index, 6, index % 2 === 0);
-  }
-
-  qrAddFormatBits(matrix, reserved);
-
-  let bitIndex = 0;
-  let upward = true;
-
-  for (let column = size - 1; column > 0; column -= 2) {
-    if (column === 6) {
-      column -= 1;
-    }
-
-    for (let step = 0; step < size; step += 1) {
-      const row = upward ? size - 1 - step : step;
-
-      for (let offset = 0; offset < 2; offset += 1) {
-        const targetColumn = column - offset;
-
-        if (!reserved[row][targetColumn]) {
-          const bit = bitIndex < bits.length ? bits[bitIndex] : 0;
-          const maskedBit = Boolean(bit) !== ((row + targetColumn) % 2 === 0);
-          matrix[row][targetColumn] = maskedBit;
-          bitIndex += 1;
-        }
-      }
-    }
-
-    upward = !upward;
-  }
-
-  const quietZone = 4;
-  const moduleSize = 5;
-  const svgSize = (size + quietZone * 2) * moduleSize;
-  const modules = [`<rect width="${svgSize}" height="${svgSize}" fill="#fff" />`];
-
-  matrix.forEach((row, rowIndex) => {
-    row.forEach((enabled, columnIndex) => {
-      if (enabled) {
-        modules.push(`<rect x="${(columnIndex + quietZone) * moduleSize}" y="${(rowIndex + quietZone) * moduleSize}" width="${moduleSize}" height="${moduleSize}" />`);
-      }
-    });
-  });
-
-  return `<svg class="qr-svg" width="${svgSize}" height="${svgSize}" viewBox="0 0 ${svgSize} ${svgSize}" xmlns="http://www.w3.org/2000/svg">${modules.join("")}</svg>`;
-}
-
-async function printBarcodeLabel(tire) {
-  const barcode = barcodeForTire(tire);
-  const scannerBarcode = scannerBarcodeForTire(tire);
-  const batchCode = batchCodeForTire(tire);
-  const qrPayload = `${window.location.origin}/?barcode=${encodeURIComponent(barcode)}`;
-  const labelWindow = window.open("", "_blank");
-  const [linearBarcodeSvg, phoneQrSvg] = await Promise.all([
-    code128Svg(scannerBarcode),
-    qrCodeSvg(qrPayload)
-  ]);
-  const labelHtml = `
-    <!doctype html>
-    <html>
-      <head>
-        <title>${escapeHtml(barcode)}</title>
-        <style>
-          @page { margin: 10mm; }
-          body { font-family: Arial, sans-serif; margin: 0; color: #111; }
-          .label { border: 1px solid #111; display: inline-grid; gap: 8px; padding: 12px; width: 4in; }
-          h1 { font-size: 14px; margin: 0; }
-          p { font-size: 11px; margin: 0; }
-          .barcode-wrap { background: #fff; padding: 8px 10px; }
-          .barcode-svg { display: block; height: auto; width: 100%; }
-          .phone-row { align-items: center; display: grid; gap: 10px; grid-template-columns: auto 1fr; }
-          .qr-wrap { display: grid; gap: 3px; justify-items: center; }
-          .qr-svg { background: #fff; display: block; height: 120px; width: 120px; }
-          .code { font-family: "Courier New", monospace; font-size: 15px; font-weight: 700; letter-spacing: 1px; margin-top: 4px; text-align: center; }
-          .hint { font-size: 10px; line-height: 1.3; }
-        </style>
-      </head>
-      <body>
-        <section class="label">
-          <h1>${escapeHtml(tire.brand)} ${escapeHtml(tire.model || "")} ${escapeHtml(tireSizeValue(tire))}</h1>
-          <p>${escapeHtml(tire.condition || "-")} - Qty ${escapeHtml(tire.quantity)} - ${escapeHtml(tire.location || "No location")}</p>
-          <div class="barcode-wrap">
-            ${linearBarcodeSvg}
-          </div>
-          <div class="phone-row">
-            <div class="qr-wrap">
-              ${phoneQrSvg}
-              <p>Phone QR</p>
-            </div>
-            <div>
-              <div class="code">${escapeHtml(barcode)}</div>
-              <p>Scanner code: ${escapeHtml(scannerBarcode)}</p>
-              <p>${escapeHtml(batchCode)}</p>
-              <p class="hint">Scan the barcode with a scanner. Scan the QR with a phone to open TireTrack lookup. TireTrack accepts both code formats.</p>
-            </div>
-          </div>
-        </section>
-        <script>window.onload = () => window.print()</script>
-      </body>
-    </html>
-  `;
-
-  if (!labelWindow) {
-    downloadTextFile(`${barcode}.html`, labelHtml, "text/html");
-    return;
-  }
-
-  labelWindow.document.write(labelHtml);
-  labelWindow.document.close();
+function displayTireLocation(tire) {
+  return tire?.locationName || tire?.location || "Unassigned";
 }
 
 function filterTiresForAppointment(tires, query, conditionFilter) {
@@ -2969,6 +3173,7 @@ function filterTiresForAppointment(tires, query, conditionFilter) {
       tire.brand,
       tire.model,
       tire.season,
+      tire.locationName,
       tire.location,
       size,
       size.replace("r", "/")
@@ -2988,47 +3193,713 @@ function makeInvoiceItem() {
   };
 }
 
+const emptyShopForm = {
+  name: "",
+  legalName: "",
+  phone: "",
+  email: "",
+  address: "",
+  subscriptionPlan: "BASIC",
+  active: true
+};
+
+const platformRecordTypes = [
+  "ALL",
+  "USER",
+  "TIRE",
+  "APPOINTMENT",
+  "INVOICE",
+  "ESTIMATE",
+  "WORK_ORDER",
+  "PAYROLL_PERIOD",
+  "PAYROLL_RECORD",
+  "VENDOR",
+  "EXPENSE",
+  "ACCOUNTING_ACCOUNT",
+  "JOURNAL_ENTRY",
+  "APP_NOTIFICATION",
+  "AUDIT_LOG",
+  "EMPLOYEE_ATTENDANCE",
+  "EMPLOYEE_LOAN"
+];
+
+const emptyPlatformLocationForm = {
+  shopId: "",
+  name: "",
+  type: "STORE",
+  address: ""
+};
+
+const emptyPlatformUserForm = {
+  fullName: "",
+  email: "",
+  phone: "",
+  password: "",
+  role: "ADMIN",
+  shopId: "",
+  locationId: "",
+  active: true,
+  hourlyRate: "",
+  payrollEnabled: false,
+  employmentType: ""
+};
+
+function platformTypeLabel(type) {
+  return String(type || "")
+    .toLowerCase()
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function PlatformPage({
+  linkLocations = [],
+  linkRecords = [],
+  onAssignAdmin,
+  onAssignLegacyData,
+  onAssignLocation,
+  onAssignRecord,
+  onCreateLocation,
+  onCreateUser,
+  onRefresh,
+  onSetUserActive,
+  setError,
+  shops = [],
+  users = []
+}) {
+  const [shopForm, setShopForm] = useState(emptyShopForm);
+  const [locationForm, setLocationForm] = useState(emptyPlatformLocationForm);
+  const [userForm, setUserForm] = useState(emptyPlatformUserForm);
+  const [editingShopId, setEditingShopId] = useState(null);
+  const [recordTypeFilter, setRecordTypeFilter] = useState("ALL");
+  const [selectedShopId, setSelectedShopId] = useState("");
+  const [selectedLocationId, setSelectedLocationId] = useState("");
+  const [showOnlyUnassigned, setShowOnlyUnassigned] = useState(true);
+  const [linkMessage, setLinkMessage] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const activeShops = shops.filter((shop) => shop.active);
+  const managedUsers = users.filter((user) => user.role !== "SUPER_ADMIN");
+  const selectedShop = shops.find((shop) => String(shop.id) === String(selectedShopId));
+  const selectedShopLocations = linkLocations.filter((location) => String(location.shopId) === String(selectedShopId) && location.active);
+  const userFormLocations = linkLocations.filter((location) => String(location.shopId) === String(userForm.shopId) && location.active);
+  const selectedShopAtLocationLimit = Boolean(selectedShop)
+    && !selectedShop.multiLocationAllowed
+    && Number(selectedShop.activeLocationCount || selectedShopLocations.length || 0) >= Number(selectedShop.locationLimit || 1);
+  const filteredRecords = linkRecords.filter((record) => {
+    const typeMatches = recordTypeFilter === "ALL" || record.type === recordTypeFilter;
+    const assignmentMatches = !showOnlyUnassigned || !record.shopId;
+
+    return typeMatches && assignmentMatches;
+  });
+  const linkedCount = linkRecords.filter((record) => record.shopId).length;
+  const unlinkedCount = linkRecords.length - linkedCount;
+
+  useEffect(() => {
+    setSelectedLocationId("");
+    setLocationForm((current) => ({ ...current, shopId: selectedShopId }));
+  }, [selectedShopId]);
+
+  useEffect(() => {
+    setUserForm((current) => ({ ...current, locationId: "" }));
+  }, [userForm.shopId]);
+
+  async function submitShop(event) {
+    event.preventDefault();
+    setIsSaving(true);
+    setError("");
+
+    try {
+      if (editingShopId) {
+        await updatePlatformShop(editingShopId, shopForm);
+      } else {
+        await createPlatformShop(shopForm);
+      }
+
+      setShopForm(emptyShopForm);
+      setEditingShopId(null);
+      await onRefresh();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  function editShop(shop) {
+    setEditingShopId(shop.id);
+    setShopForm({
+      name: shop.name || "",
+      legalName: shop.legalName || "",
+      phone: shop.phone || "",
+      email: shop.email || "",
+      address: shop.address || "",
+      subscriptionPlan: shop.subscriptionPlan || "BASIC",
+      active: Boolean(shop.active)
+    });
+  }
+
+  async function setShopActive(shop) {
+    setIsSaving(true);
+    setError("");
+
+    try {
+      if (shop.active) {
+        await deactivatePlatformShop(shop.id);
+      } else {
+        await activatePlatformShop(shop.id);
+      }
+
+      await onRefresh();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function submitUser(event) {
+    event.preventDefault();
+    setIsSaving(true);
+    setLinkMessage("");
+    setError("");
+
+    try {
+      await onCreateUser({
+        ...userForm,
+        shopId: userForm.shopId ? Number(userForm.shopId) : null,
+        locationId: userForm.locationId ? Number(userForm.locationId) : null,
+        hourlyRate: userForm.hourlyRate === "" ? null : Number(userForm.hourlyRate),
+        payrollEnabled: Boolean(userForm.payrollEnabled),
+        employmentType: userForm.employmentType || null
+      });
+      setUserForm(emptyPlatformUserForm);
+      setLinkMessage("User account created.");
+    } catch (err) {
+      setLinkMessage(err.message || "Could not create this user.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function setUserActive(user) {
+    setIsSaving(true);
+    setLinkMessage("");
+    setError("");
+
+    try {
+      const updatedUser = await onSetUserActive(user, !user.active);
+      setLinkMessage(`${updatedUser.fullName} ${updatedUser.active ? "activated" : "deactivated"}.`);
+    } catch (err) {
+      setLinkMessage(err.message || "Could not update this account.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function submitLocation(event) {
+    event.preventDefault();
+    setIsSaving(true);
+    setLinkMessage("");
+    setError("");
+
+    if (!locationForm.shopId) {
+      setLinkMessage("Choose a shop before creating a location.");
+      setIsSaving(false);
+      return;
+    }
+
+    if (selectedShopAtLocationLimit && String(locationForm.shopId) === String(selectedShopId)) {
+      setLinkMessage("Multi-location support requires a Premium plan.");
+      setIsSaving(false);
+      return;
+    }
+
+    try {
+      await onCreateLocation({
+        ...locationForm,
+        shopId: Number(locationForm.shopId)
+      });
+      setLocationForm({ ...emptyPlatformLocationForm, shopId: selectedShopId });
+      setLinkMessage("Location created.");
+    } catch (err) {
+      setLinkMessage(err.message || "Could not create location.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function linkRecord(record) {
+    setIsSaving(true);
+    setLinkMessage("");
+    setError("");
+
+    if (!selectedShopId && !selectedLocationId) {
+      setLinkMessage("Choose a shop before linking records.");
+      setIsSaving(false);
+      return;
+    }
+
+    try {
+      const locationAwareTypes = ["USER", "TIRE", "APPOINTMENT", "INVOICE", "ESTIMATE", "WORK_ORDER", "PAYROLL_PERIOD", "PAYROLL_RECORD", "EMPLOYEE_ATTENDANCE"];
+      await onAssignRecord(record, {
+        shopId: selectedShopId ? Number(selectedShopId) : null,
+        locationId: locationAwareTypes.includes(record.type) && selectedLocationId ? Number(selectedLocationId) : null
+      });
+      setLinkMessage(`${record.label} linked to ${selectedShop?.name || "selected shop"}.`);
+    } catch (err) {
+      setLinkMessage(err.message || "Could not link this record.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function assignAdmin(record) {
+    setIsSaving(true);
+    setLinkMessage("");
+    setError("");
+
+    if (!selectedShopId) {
+      setLinkMessage("Choose a shop before assigning an admin.");
+      setIsSaving(false);
+      return;
+    }
+
+    try {
+      const updatedAdmin = await onAssignAdmin(record.id, Number(selectedShopId));
+      setLinkMessage(`${updatedAdmin.fullName} is now admin for ${updatedAdmin.shopName}.`);
+    } catch (err) {
+      setLinkMessage(err.message || "Could not assign this admin.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function assignLocationAdmin(record) {
+    setIsSaving(true);
+    setLinkMessage("");
+    setError("");
+
+    if (!selectedLocationId) {
+      setLinkMessage("Choose a location before assigning a location admin.");
+      setIsSaving(false);
+      return;
+    }
+
+    try {
+      const updatedAdmin = await onAssignLocation(record.id, Number(selectedLocationId));
+      setLinkMessage(`${updatedAdmin.fullName} is now admin for ${updatedAdmin.locationName}.`);
+    } catch (err) {
+      setLinkMessage(err.message || "Could not assign this location admin.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function unlinkRecord(record) {
+    setIsSaving(true);
+    setLinkMessage("");
+    setError("");
+
+    try {
+      await onAssignRecord(record, { shopId: null, locationId: null });
+      setLinkMessage(`${record.label} moved back to Unassigned.`);
+    } catch (err) {
+      setLinkMessage(err.message || "Could not unlink this record.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function assignLegacyData() {
+    setIsSaving(true);
+    setLinkMessage("");
+    setError("");
+
+    if (!selectedShopId) {
+      setLinkMessage("Choose a shop before assigning legacy data.");
+      setIsSaving(false);
+      return;
+    }
+
+    try {
+      const result = await onAssignLegacyData(Number(selectedShopId));
+      setShowOnlyUnassigned(true);
+      setLinkMessage(result?.message || `Legacy data linked to ${selectedShop?.name || "selected shop"}.`);
+    } catch (err) {
+      setLinkMessage(err.message || "Could not assign legacy data.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <section className="work-area">
+      <div className="section-toolbar">
+        <div>
+          <span className="eyebrow">Monarch Solutions</span>
+          <h3>Platform Shops</h3>
+        </div>
+      </div>
+      <form className="panel form-grid" onSubmit={submitShop}>
+        {editingShopId && (
+          <div className="form-banner">
+            <span>Editing shop</span>
+            <button className="ghost-button" onClick={() => { setEditingShopId(null); setShopForm(emptyShopForm); }} type="button">
+              Cancel
+            </button>
+          </div>
+        )}
+        <Input label="Shop name" required value={shopForm.name} onChange={(name) => setShopForm({ ...shopForm, name })} />
+        <Input label="Legal name" value={shopForm.legalName} onChange={(legalName) => setShopForm({ ...shopForm, legalName })} />
+        <Input label="Phone" value={shopForm.phone} onChange={(phone) => setShopForm({ ...shopForm, phone })} />
+        <Input label="Email" type="email" value={shopForm.email} onChange={(email) => setShopForm({ ...shopForm, email })} />
+        <Input label="Address" value={shopForm.address} onChange={(address) => setShopForm({ ...shopForm, address })} />
+        <Select
+          label="Subscription"
+          value={shopForm.subscriptionPlan}
+          onChange={(subscriptionPlan) => setShopForm({ ...shopForm, subscriptionPlan })}
+          options={["BASIC", "PREMIUM", "ENTERPRISE"]}
+        />
+        <label className="checkbox-line">
+          <input
+            checked={shopForm.active}
+            onChange={(event) => setShopForm({ ...shopForm, active: event.target.checked })}
+            type="checkbox"
+          />
+          <span>Active</span>
+        </label>
+        <button className="primary-button" disabled={isSaving} type="submit">
+          {editingShopId ? "Update Shop" : "Create Shop"}
+        </button>
+      </form>
+      <DataTable
+        actions={(shop) => (
+          <div className="table-actions">
+            <button className="ghost-button" disabled={isSaving} onClick={() => editShop(shop)} type="button">
+              Edit
+            </button>
+            <button className="ghost-button" disabled={isSaving} onClick={() => setShopActive(shop)} type="button">
+              {shop.active ? "Deactivate" : "Activate"}
+            </button>
+          </div>
+        )}
+        columns={["Shop", "Owner admin", "Plan", "Locations", "Status", "Phone", "Email", "Address", ""]}
+        emptyText="No shops created yet."
+        rows={shops.map((shop) => {
+          const locationLimitLabel = Number(shop.locationLimit || 1) > 1000000 ? "Unlimited" : shop.locationLimit || 1;
+          return {
+            key: `shop-${shop.id}`,
+            source: shop,
+            values: [
+              shop.name,
+              shop.ownerAdminName || "Unassigned",
+              shop.subscriptionPlan || "BASIC",
+              `${shop.activeLocationCount || 0}/${locationLimitLabel}${shop.overLocationLimit ? " over limit" : ""}`,
+              shop.active ? "Active" : "Inactive",
+              shop.phone || "-",
+              shop.email || "-",
+              shop.address || "-"
+            ]
+          };
+        })}
+      />
+
+      <section className="panel platform-link-panel">
+        <div className="section-toolbar compact">
+          <div>
+            <span className="eyebrow">Accounts</span>
+            <h3>Create Users</h3>
+          </div>
+          <span className="audit-count">{managedUsers.length} managed</span>
+        </div>
+        <form className="platform-user-form" onSubmit={submitUser}>
+          <Input label="Full name" required value={userForm.fullName} onChange={(fullName) => setUserForm({ ...userForm, fullName })} />
+          <Input label="Email" required type="email" value={userForm.email} onChange={(email) => setUserForm({ ...userForm, email })} />
+          <Input label="Phone" required type="tel" value={userForm.phone} onChange={(phone) => setUserForm({ ...userForm, phone })} />
+          <Input label="Password" required type="password" value={userForm.password} onChange={(password) => setUserForm({ ...userForm, password })} />
+          <Select
+            label="Role"
+            value={userForm.role}
+            onChange={(role) => setUserForm({ ...userForm, role })}
+            options={["ADMIN", "EMPLOYEE", "CUSTOMER"]}
+          />
+          <Select
+            label="Shop"
+            value={userForm.shopId}
+            onChange={(shopId) => setUserForm({ ...userForm, shopId })}
+            options={["", ...activeShops.map((shop) => String(shop.id))]}
+            optionLabel={(value) => {
+              const shop = shops.find((entry) => String(entry.id) === String(value));
+              return shop ? shop.name : "Unassigned";
+            }}
+          />
+          <Select
+            label="Location"
+            value={userForm.locationId}
+            onChange={(locationId) => setUserForm({ ...userForm, locationId })}
+            options={["", ...userFormLocations.map((location) => String(location.id))]}
+            optionLabel={(value) => {
+              const location = linkLocations.find((entry) => String(entry.id) === String(value));
+              return location ? location.name : "All locations";
+            }}
+          />
+          {userForm.role === "EMPLOYEE" && (
+            <>
+              <Input label="Hourly rate" min="0" step="0.01" type="number" value={userForm.hourlyRate} onChange={(hourlyRate) => setUserForm({ ...userForm, hourlyRate })} />
+              <Select
+                label="Employment"
+                value={userForm.employmentType}
+                onChange={(employmentType) => setUserForm({ ...userForm, employmentType })}
+                options={["", "FULL_TIME", "PART_TIME", "CONTRACT", "SEASONAL"]}
+                optionLabel={(value) => value || "Not set"}
+              />
+              <label className="checkbox-line">
+                <input
+                  checked={userForm.payrollEnabled}
+                  onChange={(event) => setUserForm({ ...userForm, payrollEnabled: event.target.checked })}
+                  type="checkbox"
+                />
+                <span>Payroll</span>
+              </label>
+            </>
+          )}
+          <label className="checkbox-line">
+            <input
+              checked={userForm.active}
+              onChange={(event) => setUserForm({ ...userForm, active: event.target.checked })}
+              type="checkbox"
+            />
+            <span>Active</span>
+          </label>
+          <button className="primary-button" disabled={isSaving} type="submit">
+            Create User
+          </button>
+        </form>
+        <div className="platform-link-controls">
+          <Select
+            label="Assignment shop"
+            value={selectedShopId}
+            onChange={setSelectedShopId}
+            options={["", ...activeShops.map((shop) => String(shop.id))]}
+            optionLabel={(value) => {
+              const shop = shops.find((entry) => String(entry.id) === String(value));
+              return shop ? shop.name : "Choose shop";
+            }}
+          />
+          <Select
+            label="Assignment location"
+            value={selectedLocationId}
+            onChange={setSelectedLocationId}
+            options={["", ...selectedShopLocations.map((location) => String(location.id))]}
+            optionLabel={(value) => {
+              const location = linkLocations.find((entry) => String(entry.id) === String(value));
+              return location ? location.name : "Choose location";
+            }}
+          />
+        </div>
+        <DataTable
+          actions={(user) => (
+            <div className="table-actions">
+              {user.role === "ADMIN" && (
+                <>
+                  <button className="primary-button" disabled={isSaving || !selectedShopId} onClick={() => assignAdmin(user)} type="button">
+                    Owner
+                  </button>
+                  <button className="ghost-button" disabled={isSaving || !selectedLocationId} onClick={() => assignLocationAdmin(user)} type="button">
+                    Location
+                  </button>
+                </>
+              )}
+              <button className={user.active ? "danger-button" : "ghost-button"} disabled={isSaving} onClick={() => setUserActive(user)} type="button">
+                {user.active ? "Deactivate" : "Activate"}
+              </button>
+            </div>
+          )}
+          columns={["User", "Role", "Shop", "Location", "Status", "Contact", ""]}
+          emptyText="No platform-created users yet."
+          rows={managedUsers.map((user) => ({
+            key: `platform-user-${user.id}`,
+            searchText: `${user.fullName} ${user.email} ${user.phone} ${user.role} ${user.shopName || ""}`,
+            source: user,
+            values: [
+              user.fullName || "-",
+              user.role || "-",
+              user.shopName || "Unassigned",
+              user.locationName || (user.role === "ADMIN" ? "All locations" : "-"),
+              user.active ? "Active" : "Inactive",
+              [user.email, user.phone].filter(Boolean).join(" / ") || "-"
+            ]
+          }))}
+        />
+      </section>
+
+      <section className="metric-grid">
+        <div className="metric-card"><span>Linkable records</span><strong>{linkRecords.length}</strong></div>
+        <div className="metric-card"><span>Linked</span><strong>{linkedCount}</strong></div>
+        <div className="metric-card"><span>Unassigned</span><strong>{unlinkedCount}</strong></div>
+        <div className="metric-card"><span>Platform shops</span><strong>{shops.length}</strong></div>
+        <div className="metric-card"><span>Locations</span><strong>{linkLocations.length}</strong></div>
+      </section>
+
+      <section className="panel platform-link-panel">
+        <div className="section-toolbar compact">
+          <div>
+            <span className="eyebrow">Tenant setup</span>
+            <h3>Link Existing Records</h3>
+          </div>
+          <button className="ghost-button" disabled={isSaving} onClick={onRefresh} type="button">
+            Refresh
+          </button>
+        </div>
+        <div className="platform-link-controls">
+          <Select
+            label="Assign to shop"
+            value={selectedShopId}
+            onChange={setSelectedShopId}
+            options={["", ...activeShops.map((shop) => String(shop.id))]}
+            optionLabel={(value) => {
+              const shop = shops.find((entry) => String(entry.id) === String(value));
+              return shop ? shop.name : "Choose shop";
+            }}
+          />
+          <Select
+            label="Tire location"
+            value={selectedLocationId}
+            onChange={setSelectedLocationId}
+            options={["", ...selectedShopLocations.map((location) => String(location.id))]}
+            optionLabel={(value) => {
+              const location = linkLocations.find((entry) => String(entry.id) === String(value));
+              return location ? location.name : "No location";
+            }}
+          />
+          <Select
+            label="Record type"
+            value={recordTypeFilter}
+            onChange={setRecordTypeFilter}
+            options={platformRecordTypes}
+            optionLabel={(value) => value === "ALL" ? "All records" : platformTypeLabel(value)}
+          />
+          <label className="checkbox-line">
+            <input
+              checked={showOnlyUnassigned}
+              onChange={(event) => setShowOnlyUnassigned(event.target.checked)}
+              type="checkbox"
+            />
+            <span>Unassigned only</span>
+          </label>
+          <button className="primary-button" disabled={isSaving || !selectedShopId} onClick={assignLegacyData} type="button">
+            Assign Legacy Data
+          </button>
+        </div>
+
+        <form className="location-management-form platform-location-form" onSubmit={submitLocation}>
+          <Select
+            label="Location shop"
+            value={locationForm.shopId}
+            onChange={(shopId) => setLocationForm({ ...locationForm, shopId })}
+            options={["", ...activeShops.map((shop) => String(shop.id))]}
+            optionLabel={(value) => {
+              const shop = shops.find((entry) => String(entry.id) === String(value));
+              return shop ? shop.name : "Choose shop";
+            }}
+          />
+          <Input label="Location name" required value={locationForm.name} onChange={(name) => setLocationForm({ ...locationForm, name })} />
+          <Select
+            label="Type"
+            value={locationForm.type}
+            onChange={(type) => setLocationForm({ ...locationForm, type })}
+            options={["STORE", "STORAGE", "WAREHOUSE", "MOBILE", "OTHER"]}
+          />
+          <Input label="Address" value={locationForm.address} onChange={(address) => setLocationForm({ ...locationForm, address })} />
+          <button className="ghost-button" disabled={isSaving || selectedShopAtLocationLimit} type="submit">Add Location</button>
+        </form>
+        {selectedShopAtLocationLimit && <p className="mini-status">Basic shops can only have one active location. Upgrade to Premium to add more.</p>}
+        {linkMessage && <p className="mini-status">{linkMessage}</p>}
+      </section>
+
+      <DataTable
+        actions={(record) => (
+          <div className="table-actions">
+            <button
+              className="primary-button"
+              disabled={isSaving || (!selectedShopId && !selectedLocationId) || (record.type === "USER" && String(record.status || "").includes("SUPER_ADMIN"))}
+              onClick={() => linkRecord(record)}
+              type="button"
+            >
+              Link
+            </button>
+            {record.shopId && (
+              <button className="ghost-button" disabled={isSaving} onClick={() => unlinkRecord(record)} type="button">
+                Unlink
+              </button>
+            )}
+          </div>
+        )}
+        columns={["Type", "Record", "Current shop", "Location", "Status", "Details", ""]}
+        emptyText="No records match this platform view."
+        rows={filteredRecords.map((record) => ({
+          key: `platform-link-${record.type}-${record.id}`,
+          searchText: `${record.type} ${record.label} ${record.detail} ${record.shopName || ""}`,
+          source: record,
+          values: [
+            platformTypeLabel(record.type),
+            record.label || "-",
+            record.shopName || "Unassigned",
+            record.locationName || "-",
+            record.status || "-",
+            record.detail || "-"
+          ]
+        }))}
+      />
+    </section>
+  );
+}
+
 function Tires({
-  barcodeLookupRequest,
+  auth,
   filters,
   form,
   highlightedRow,
-  onBarcodeLookupHandled,
   onChange,
   onClearFilters,
   onDelete,
   onFilterChange,
   onFilterSubmit,
   onImportCsv,
-  onQuickRefill,
+  onCreateLocation,
   onRefill,
   onSubmit,
+  shopLocations,
   tires
 }) {
-  const [barcodeQuery, setBarcodeQuery] = useState("");
-  const [barcodeResult, setBarcodeResult] = useState(null);
-  const [barcodeStatus, setBarcodeStatus] = useState("idle");
-  const [barcodeMessage, setBarcodeMessage] = useState("");
   const [importStatus, setImportStatus] = useState("idle");
   const [importMessage, setImportMessage] = useState("");
   const [importErrors, setImportErrors] = useState([]);
-  const [quickRefillQuantity, setQuickRefillQuantity] = useState("4");
-  const [quickRefillStatus, setQuickRefillStatus] = useState("idle");
-  const [quickRefillMessage, setQuickRefillMessage] = useState("");
+  const [locationForm, setLocationForm] = useState({ name: "", type: "STORE", address: "" });
+  const [locationMessage, setLocationMessage] = useState("");
   const importFileInputRef = useRef(null);
 
   useEffect(() => {
-    if (!barcodeLookupRequest) {
+    if (!auth?.shopId) {
       return;
     }
 
-    setBarcodeQuery(barcodeLookupRequest);
-    lookupBarcode(barcodeLookupRequest).finally(() => onBarcodeLookupHandled?.());
-  }, [barcodeLookupRequest, onBarcodeLookupHandled]);
+    onChange((current) => {
+      if (current.shopId && (!auth.locationId || current.locationId)) {
+        return current;
+      }
+
+      return {
+        ...current,
+        shopId: String(auth.shopId),
+        locationId: auth.locationId ? String(auth.locationId) : current.locationId
+      };
+    });
+  }, [auth?.shopId, auth?.locationId, onChange]);
 
   function exportInventory() {
     const csv = toCsv(
-      ["Brand", "Model", "Size", "Season", "Condition", "Quantity", "Reserved", "Available", "Price", "Location", "Barcode", "Batch Code"],
+      ["Brand", "Model", "Size", "Season", "Condition", "Quantity", "Reserved", "Available", "Price", "Location"],
       tires.map((tire) => [
         tire.brand,
         tire.model || "",
@@ -3039,18 +3910,11 @@ function Tires({
         tire.reservedQuantity || 0,
         tire.availableQuantity ?? tire.quantity,
         tire.price,
-        tire.location || "",
-        barcodeForTire(tire),
-        batchCodeForTire(tire)
+        displayTireLocation(tire)
       ])
     );
 
     downloadTextFile("tiretrack-inventory.csv", csv, "text/csv");
-  }
-
-  async function submitBarcodeLookup(event) {
-    event.preventDefault();
-    await lookupBarcode(barcodeQuery);
   }
 
   function openCsvImport() {
@@ -3082,55 +3946,16 @@ function Tires({
     }
   }
 
-  async function lookupBarcode(value) {
-    const normalizedBarcode = extractBarcodeValue(value);
-
-    if (!normalizedBarcode) {
-      setBarcodeStatus("error");
-      setBarcodeMessage("Enter a barcode to search.");
-      setBarcodeResult(null);
-      return;
-    }
-
-    setBarcodeStatus("loading");
-    setBarcodeMessage("Loading...");
-    setBarcodeResult(null);
-
-    try {
-      const tire = await getTireByBarcode(normalizedBarcode);
-      setBarcodeResult(tire);
-      setBarcodeStatus("found");
-      setBarcodeMessage("Inventory batch found.");
-      setQuickRefillQuantity("4");
-      setQuickRefillStatus("idle");
-      setQuickRefillMessage("");
-    } catch (err) {
-      setBarcodeResult(null);
-      setBarcodeStatus("error");
-      setBarcodeMessage(err.message || "Barcode not found.");
-    }
-  }
-
-  async function submitQuickRefill(event) {
+  async function submitLocation(event) {
     event.preventDefault();
-
-    if (!barcodeResult) {
-      return;
-    }
-
-    setQuickRefillStatus("loading");
-    setQuickRefillMessage("Refilling inventory...");
+    setLocationMessage("");
 
     try {
-      await onQuickRefill(barcodeResult, quickRefillQuantity);
-      const updatedTire = await getTireByBarcode(barcodeForTire(barcodeResult));
-      setBarcodeResult(updatedTire);
-      setQuickRefillStatus("found");
-      setQuickRefillMessage(`Added ${quickRefillQuantity} tire${Number(quickRefillQuantity) === 1 ? "" : "s"} to this batch.`);
-      setQuickRefillQuantity("4");
+      await onCreateLocation(locationForm);
+      setLocationForm({ name: "", type: "STORE", address: "" });
+      setLocationMessage("Location created.");
     } catch (err) {
-      setQuickRefillStatus("error");
-      setQuickRefillMessage(err.message || "Could not refill this batch.");
+      setLocationMessage(err.message || "Could not create location.");
     }
   }
 
@@ -3161,7 +3986,7 @@ function Tires({
       </div>
       {importMessage && (
         <div className="tire-import-feedback">
-          <p className={`barcode-status ${importStatus}`}>
+          <p className={`mini-status ${importStatus}`}>
             {importMessage}
           </p>
           {importErrors.length > 0 && (
@@ -3184,102 +4009,52 @@ function Tires({
         <Input label="Quantity" min="0" type="number" value={form.quantity} onChange={(quantity) => onChange({ ...form, quantity })} />
         <Input label="Price" min="0" required type="number" step="0.01" value={form.price} onChange={(price) => onChange({ ...form, price })} />
         <Input label="Location" value={form.location} onChange={(location) => onChange({ ...form, location })} />
+        {auth?.shopId && shopLocations.length > 0 && (
+          <Select
+            label="Shop location"
+            value={form.locationId || ""}
+            onChange={(locationId) => {
+              const selectedLocation = shopLocations.find((location) => String(location.id) === String(locationId));
+              onChange({
+                ...form,
+                shopId: String(auth.shopId),
+                locationId,
+                location: selectedLocation?.name || form.location
+              });
+            }}
+            options={["", ...shopLocations.map((location) => String(location.id))]}
+            optionLabel={(value) => {
+              const location = shopLocations.find((entry) => String(entry.id) === String(value));
+              return location ? location.name : "Unassigned";
+            }}
+          />
+        )}
         <button className="primary-button" type="submit">Add / Refill Tire</button>
       </form>
 
-      <section className="panel barcode-lookup-panel">
-        <form className="barcode-lookup-form" onSubmit={submitBarcodeLookup}>
-          <Input
-            label="Scan or Enter Barcode"
-            placeholder="TT-BATCH-000123"
-            value={barcodeQuery}
-            onChange={setBarcodeQuery}
-          />
-          <button className="primary-button" disabled={barcodeStatus === "loading"} type="submit">
-            Lookup Batch
-          </button>
-        </form>
-        {barcodeMessage && (
-          <p className={`barcode-status ${barcodeStatus}`}>
-            {barcodeMessage}
-          </p>
-        )}
-        {barcodeResult && (
-          <div className="barcode-result">
-            <div>
-              <span>Brand</span>
-              <strong>{barcodeResult.brand}</strong>
+      {auth?.shopId && (
+        <section className="panel location-management-panel">
+          <form className="location-management-form" onSubmit={submitLocation}>
+            <Input label="Location name" required value={locationForm.name} onChange={(name) => setLocationForm({ ...locationForm, name })} />
+            <Select
+              label="Type"
+              value={locationForm.type}
+              onChange={(type) => setLocationForm({ ...locationForm, type })}
+              options={["STORE", "STORAGE", "WAREHOUSE", "MOBILE", "OTHER"]}
+            />
+            <Input label="Address" value={locationForm.address} onChange={(address) => setLocationForm({ ...locationForm, address })} />
+            <button className="ghost-button" type="submit">Add Location</button>
+          </form>
+          {shopLocations.length > 0 && (
+            <div className="location-chip-row">
+              {shopLocations.map((location) => (
+                <span key={location.id}>{location.name}</span>
+              ))}
             </div>
-            <div>
-              <span>Model</span>
-              <strong>{barcodeResult.model || "-"}</strong>
-            </div>
-            <div>
-              <span>Size</span>
-              <strong>{tireSizeValue(barcodeResult)}</strong>
-            </div>
-            <div>
-              <span>Quantity</span>
-              <strong>{barcodeResult.quantity}</strong>
-            </div>
-            <div>
-              <span>Available</span>
-              <strong>{barcodeResult.availableQuantity ?? barcodeResult.quantity}</strong>
-            </div>
-            <div>
-              <span>Reserved</span>
-              <strong>{barcodeResult.reservedQuantity ?? 0}</strong>
-            </div>
-            <div>
-              <span>Condition</span>
-              <strong>{barcodeResult.condition || "-"}</strong>
-            </div>
-            <div>
-              <span>Season</span>
-              <strong>{barcodeResult.season || "-"}</strong>
-            </div>
-            <div>
-              <span>Price</span>
-              <strong>{money(barcodeResult.price)}</strong>
-            </div>
-            <div>
-              <span>Location</span>
-              <strong>{barcodeResult.location || "-"}</strong>
-            </div>
-            <div>
-              <span>Barcode</span>
-              <strong>{barcodeForTire(barcodeResult)}</strong>
-            </div>
-            <div>
-              <span>Batch code</span>
-              <strong>{batchCodeForTire(barcodeResult)}</strong>
-            </div>
-            <button className="ghost-button" onClick={() => printBarcodeLabel(barcodeResult)} type="button">
-              Print Barcode
-            </button>
-            <button className="primary-button" onClick={() => onRefill(barcodeResult)} type="button">
-              Refill Tires
-            </button>
-            <form className="barcode-refill-form" onSubmit={submitQuickRefill}>
-              <Input
-                label="Refill quantity"
-                min="1"
-                type="number"
-                value={quickRefillQuantity}
-                onChange={setQuickRefillQuantity}
-              />
-              <button className="primary-button" disabled={quickRefillStatus === "loading"} type="submit">
-                Add Quantity
-              </button>
-            </form>
-            {quickRefillMessage && (
-              <p className={`barcode-status ${quickRefillStatus}`}>
-                {quickRefillMessage}
-              </p>
-            )}
-          </div>
-        )}
-      </section>
+          )}
+          {locationMessage && <p className="mini-status">{locationMessage}</p>}
+        </section>
+      )}
 
       <form className="panel inventory-filters" onSubmit={onFilterSubmit}>
         <Select
@@ -3360,22 +4135,7 @@ function Appointments({
   onSubmit,
   tires
 }) {
-  const customerNeedles = [form.customerName, form.email, form.phone]
-    .map((value) => String(value || "").trim().toLowerCase())
-    .filter(Boolean);
-  const matchingCustomers = customerNeedles.length > 0 && !form.customerId
-    ? customers
-      .filter((customer) => {
-        const haystack = [
-          customer.fullName,
-          customer.email,
-          customer.phone
-        ].join(" ").toLowerCase();
-
-        return customerNeedles.some((needle) => haystack.includes(needle));
-      })
-      .slice(0, 5)
-    : [];
+  const matchingCustomers = matchingCustomersForForm(customers, form);
   const selectedCustomer = customers.find((customer) => Number(customer.id) === Number(form.customerId));
   const selectedCustomerVehicles = selectedCustomer?.vehicles || [];
 
@@ -3421,7 +4181,7 @@ function Appointments({
 
   return (
     <section className="work-area">
-      <form className="panel form-grid" onSubmit={onSubmit}>
+      <form className="panel form-grid appointment-form" onSubmit={onSubmit}>
         {editingId && (
           <div className="form-banner">
             <span>Editing appointment</span>
@@ -3430,32 +4190,38 @@ function Appointments({
             </button>
           </div>
         )}
-        <Input label="Customer" required value={form.customerName} onChange={(customerName) => onChange({ ...form, customerName, customerId: "" })} />
-        <Input label="Email" type="email" value={form.email} onChange={(email) => onChange({ ...form, email, customerId: "" })} />
-        <Input label="Phone" required type="tel" value={form.phone} onChange={(phone) => onChange({ ...form, phone, customerId: "" })} />
-        {matchingCustomers.length > 0 && (
-          <div className="customer-match-panel">
-            <span>Matching customers</span>
-            {matchingCustomers.map((customer) => (
-              <button key={customer.id} onClick={() => selectCustomer(customer)} type="button">
-                <strong>{customer.fullName}</strong>
-                <small>{[customer.email, customer.phone].filter(Boolean).join(" - ")}</small>
-              </button>
-            ))}
+        <div className="appointment-customer-lookup">
+          <div className="appointment-customer-fields">
+            <Input label="Customer" required value={form.customerName} onChange={(customerName) => onChange({ ...form, customerName, customerId: "" })} />
+            <Input label="Email" type="email" value={form.email} onChange={(email) => onChange({ ...form, email, customerId: "" })} />
+            <Input label="Phone" required type="tel" value={form.phone} onChange={(phone) => onChange({ ...form, phone, customerId: "" })} />
           </div>
-        )}
-        {selectedCustomerVehicles.length > 0 && (
-          <Select
-            label="Customer vehicle"
-            value={form.customerVehicleId || ""}
-            onChange={selectCustomerVehicle}
-            options={["", ...selectedCustomerVehicles.map((vehicle) => String(vehicle.id))]}
-            optionLabel={(value) => {
-              const vehicle = selectedCustomerVehicles.find((entry) => String(entry.id) === String(value));
-              return value ? `${vehicleName(vehicle)} - ${vehicleTireSize(vehicle)}` : "Select saved vehicle";
-            }}
-          />
-        )}
+          {matchingCustomers.length > 0 && (
+            <div className="customer-match-panel appointment-customer-results">
+              <span>Matching customers</span>
+              {matchingCustomers.map((customer) => (
+                <button key={customer.id} onClick={() => selectCustomer(customer)} type="button">
+                  <strong>{customer.fullName}</strong>
+                  <small>{[customer.email, customer.phone].filter(Boolean).join(" - ")}</small>
+                </button>
+              ))}
+            </div>
+          )}
+          {selectedCustomerVehicles.length > 0 && (
+            <div className="appointment-customer-vehicle">
+              <Select
+                label="Customer vehicle"
+                value={form.customerVehicleId || ""}
+                onChange={selectCustomerVehicle}
+                options={["", ...selectedCustomerVehicles.map((vehicle) => String(vehicle.id))]}
+                optionLabel={(value) => {
+                  const vehicle = selectedCustomerVehicles.find((entry) => String(entry.id) === String(value));
+                  return value ? `${vehicleName(vehicle)} - ${vehicleTireSize(vehicle)}` : "Select saved vehicle";
+                }}
+              />
+            </div>
+          )}
+        </div>
         <Input
           label="Vehicle"
           placeholder="Example: 2020 Toyota Camry"
@@ -3506,7 +4272,21 @@ function Appointments({
 
           return {
             key: `appointment-${appointment.id}`,
-            searchText: [appointment.customerName, email, appointment.phone, linkedCustomer?.phone].filter(Boolean).join(" "),
+            searchText: [
+              appointment.customerName,
+              email,
+              appointment.email,
+              appointment.phone,
+              linkedCustomer?.phone,
+              linkedCustomer?.email,
+              appointment.vehicle,
+              appointment.tireSize,
+              appointment.serviceType,
+              appointment.notes,
+              appointment.reminderStatus,
+              appointment.confirmationStatus,
+              appointment.status
+            ].filter(Boolean).join(" "),
             values: [
               appointment.customerName,
               email,
@@ -3527,14 +4307,674 @@ function Appointments({
   );
 }
 
+function WorkOrdersPage({ appointments, customers, onInvoiceCreated, onNotify, onRefresh, setError, workOrders }) {
+  const [form, setForm] = useState(emptyWorkOrder);
+  const [editingId, setEditingId] = useState(null);
+  const [invoicePreview, setInvoicePreview] = useState(null);
+  const [previewWorkOrderId, setPreviewWorkOrderId] = useState(null);
+  const sortedWorkOrders = [...workOrders].sort((first, second) => Number(second.id || 0) - Number(first.id || 0));
+  const workOrderAppointmentIds = new Set(workOrders.map((workOrder) => Number(workOrder.appointmentId)).filter(Boolean));
+  const availableAppointments = appointments.filter((appointment) => !workOrderAppointmentIds.has(Number(appointment.id)));
+  const selectedCustomer = customers.find((customer) => Number(customer.id) === Number(form.customerId));
+  const matchingCustomers = matchingCustomersForForm(customers, form, 4);
+
+  function resetForm() {
+    setForm(emptyWorkOrder);
+    setEditingId(null);
+  }
+
+  function chooseAppointment(appointmentId) {
+    const appointment = appointments.find((entry) => String(entry.id) === String(appointmentId));
+
+    if (!appointment) {
+      setForm({ ...form, appointmentId: "" });
+      return;
+    }
+
+    setForm({
+      ...form,
+      appointmentId,
+      customerId: appointment.customerId ? String(appointment.customerId) : "",
+      customerName: appointment.customerName || "",
+      email: appointment.email || "",
+      phone: appointment.phone || "",
+      vehicle: appointment.vehicle || "",
+      serviceType: appointment.serviceType || "INSTALLATION",
+      notes: appointment.notes || ""
+    });
+  }
+
+  function selectCustomer(customer) {
+    setForm({
+      ...form,
+      customerId: String(customer.id),
+      customerName: customer.fullName || "",
+      email: customer.email || "",
+      phone: customer.phone || ""
+    });
+  }
+
+  function editWorkOrder(workOrder) {
+    setEditingId(workOrder.id);
+    setForm({
+      appointmentId: workOrder.appointmentId ? String(workOrder.appointmentId) : "",
+      customerId: workOrder.customerId ? String(workOrder.customerId) : "",
+      customerName: workOrder.customerName || "",
+      email: workOrder.email || "",
+      phone: workOrder.phone || "",
+      vehicle: workOrder.vehicle || "",
+      assignedEmployeeId: workOrder.assignedEmployeeId ? String(workOrder.assignedEmployeeId) : "",
+      serviceType: workOrder.serviceType || "INSTALLATION",
+      notes: workOrder.notes || ""
+    });
+  }
+
+  function payloadFromForm() {
+    return {
+      appointmentId: form.appointmentId ? Number(form.appointmentId) : null,
+      customerId: form.customerId ? Number(form.customerId) : null,
+      customerName: form.customerName,
+      email: form.email,
+      phone: form.phone,
+      vehicle: form.vehicle,
+      assignedEmployeeId: form.assignedEmployeeId ? Number(form.assignedEmployeeId) : null,
+      serviceType: form.serviceType,
+      notes: form.notes
+    };
+  }
+
+  async function submitWorkOrder(event) {
+    event.preventDefault();
+    setError("");
+
+    try {
+      if (editingId) {
+        await updateWorkOrder(editingId, payloadFromForm());
+      } else {
+        await createWorkOrder(payloadFromForm());
+      }
+
+      resetForm();
+      onNotify(editingId ? "Work order updated." : "Work order created.");
+      await onRefresh();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function createFromAppointment(appointmentId) {
+    setError("");
+
+    try {
+      await createWorkOrderFromAppointment(appointmentId);
+      onNotify("Work order created from appointment.");
+      await onRefresh();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function runWorkOrderAction(message, action) {
+    setError("");
+
+    try {
+      await action();
+      onNotify(message);
+      await onRefresh();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function invoiceWorkOrder(workOrder) {
+    setError("");
+
+    try {
+      const preview = await previewWorkOrderInvoice(workOrder.id);
+      setInvoicePreview(preview);
+      setPreviewWorkOrderId(workOrder.id);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function confirmInvoiceWorkOrder() {
+    if (!previewWorkOrderId) {
+      return;
+    }
+
+    setError("");
+
+    try {
+      const invoice = await convertWorkOrderToInvoice(previewWorkOrderId);
+      onNotify("Invoice created from work order.");
+      setInvoicePreview(null);
+      setPreviewWorkOrderId(null);
+      await onRefresh();
+      await onInvoiceCreated(invoice);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  return (
+    <section className="work-area">
+      <div className="section-toolbar">
+        <div>
+          <span className="eyebrow">Jobs</span>
+          <h3>Work Orders</h3>
+        </div>
+        <div className="toolbar-actions">
+          <StatusBadge value="PENDING" />
+          <StatusBadge value="IN_PROGRESS" />
+          <StatusBadge value="VEHICLE_READY" />
+        </div>
+      </div>
+
+      <form className="panel form-grid" onSubmit={submitWorkOrder}>
+        {editingId && (
+          <div className="form-banner">
+            <span>Editing work order</span>
+            <button className="ghost-button" onClick={resetForm} type="button">
+              Cancel
+            </button>
+          </div>
+        )}
+        <Select
+          label="Appointment"
+          value={form.appointmentId}
+          onChange={chooseAppointment}
+          options={["", ...appointments.map((appointment) => String(appointment.id))]}
+          optionLabel={(value) => {
+            const appointment = appointments.find((entry) => String(entry.id) === String(value));
+            return appointment ? `${appointment.customerName} - ${dateTime(appointment.appointmentDate)}` : "Manual work order";
+          }}
+        />
+        <Input label="Customer" required value={form.customerName} onChange={(customerName) => setForm({ ...form, customerName, customerId: "" })} />
+        <Input label="Email" type="email" value={form.email} onChange={(email) => setForm({ ...form, email, customerId: "" })} />
+        <Input label="Phone" type="tel" value={form.phone} onChange={(phone) => setForm({ ...form, phone, customerId: "" })} />
+        {matchingCustomers.length > 0 && (
+          <div className="customer-match-panel">
+            <span>Matching customers</span>
+            {matchingCustomers.map((customer) => (
+              <button key={customer.id} onClick={() => selectCustomer(customer)} type="button">
+                <strong>{customer.fullName}</strong>
+                <small>{[customer.email, customer.phone].filter(Boolean).join(" - ")}</small>
+              </button>
+            ))}
+          </div>
+        )}
+        {selectedCustomer?.vehicles?.length > 0 && (
+          <Select
+            label="Customer vehicle"
+            value=""
+            onChange={(vehicleId) => {
+              const vehicle = selectedCustomer.vehicles.find((entry) => String(entry.id) === String(vehicleId));
+              setForm({ ...form, vehicle: vehicleName(vehicle) });
+            }}
+            options={["", ...selectedCustomer.vehicles.map((vehicle) => String(vehicle.id))]}
+            optionLabel={(value) => {
+              const vehicle = selectedCustomer.vehicles.find((entry) => String(entry.id) === String(value));
+              return value ? vehicleName(vehicle) : "Select saved vehicle";
+            }}
+          />
+        )}
+        <Input label="Vehicle" value={form.vehicle} onChange={(vehicle) => setForm({ ...form, vehicle })} />
+        <Select label="Service" required value={form.serviceType} onChange={(serviceType) => setForm({ ...form, serviceType })} options={["INSTALLATION", "BALANCING", "ROTATION", "REPAIR"]} />
+        <Input label="Notes" value={form.notes} onChange={(notes) => setForm({ ...form, notes })} />
+        <button className="primary-button" type="submit">
+          {editingId ? "Save Work Order" : "Create Work Order"}
+        </button>
+      </form>
+
+      {invoicePreview && (
+        <section className="panel invoice-conversion-preview">
+          <div className="section-toolbar compact">
+            <div>
+              <span className="eyebrow">Invoice preview</span>
+              <h3>{invoicePreview.customerName}</h3>
+              <p>{invoicePreview.vehicle || "No vehicle"} - review before saving the final invoice.</p>
+            </div>
+            <div className="toolbar-actions">
+              <button className="primary-button" onClick={confirmInvoiceWorkOrder} type="button">
+                Confirm Invoice
+              </button>
+              <button className="ghost-button" onClick={() => { setInvoicePreview(null); setPreviewWorkOrderId(null); }} type="button">
+                Cancel
+              </button>
+            </div>
+          </div>
+          <DataTable
+            columns={["Item", "Qty", "Unit", "Total"]}
+            emptyText="No invoice items."
+            rows={(invoicePreview.items || []).map((item, index) => ({
+              key: `preview-item-${index}`,
+              values: [
+                item.itemName || item.itemType,
+                item.quantity,
+                money(item.unitPrice),
+                money(Number(item.quantity || 0) * Number(item.unitPrice || 0))
+              ]
+            }))}
+          />
+        </section>
+      )}
+
+      {availableAppointments.length > 0 && (
+        <DataTable
+          actions={(appointment) => (
+            <button className="ghost-button" onClick={() => createFromAppointment(appointment.id)} type="button">
+              Create Work Order
+            </button>
+          )}
+          columns={["Appointment", "Customer", "Vehicle", "Service", ""]}
+          emptyText="No appointments waiting for work orders."
+          rows={availableAppointments.map((appointment) => ({
+            key: `appointment-work-source-${appointment.id}`,
+            values: [
+              dateTime(appointment.appointmentDate),
+              appointment.customerName,
+              appointment.vehicle || "-",
+              appointment.serviceType || "-"
+            ],
+            source: appointment
+          }))}
+        />
+      )}
+
+      <DataTable
+        actions={(workOrder) => (
+          <div className="table-actions">
+            {workOrder.status !== "COMPLETED" && workOrder.status !== "CANCELLED" && (
+              <button className="ghost-button" onClick={() => editWorkOrder(workOrder)} type="button">
+                Edit
+              </button>
+            )}
+            {workOrder.status === "PENDING" && (
+              <button className="ghost-button" onClick={() => runWorkOrderAction("Work order started.", () => startWorkOrder(workOrder.id))} type="button">
+                Start Job
+              </button>
+            )}
+            {["PENDING", "IN_PROGRESS"].includes(workOrder.status) && (
+              <button className="ghost-button" onClick={() => runWorkOrderAction("Vehicle marked ready.", () => markWorkOrderVehicleReady(workOrder.id))} type="button">
+                Vehicle Ready
+              </button>
+            )}
+            {workOrder.status !== "COMPLETED" && workOrder.status !== "CANCELLED" && (
+              <button className="ghost-button" onClick={() => runWorkOrderAction("Work order completed.", () => completeWorkOrder(workOrder.id))} type="button">
+                Complete
+              </button>
+            )}
+            {workOrder.status !== "CANCELLED" && !workOrder.invoiceId && (
+              <button className="ghost-button" onClick={() => invoiceWorkOrder(workOrder)} type="button">
+                Create Invoice
+              </button>
+            )}
+            {workOrder.status !== "COMPLETED" && workOrder.status !== "CANCELLED" && !workOrder.invoiceId && (
+              <button className="danger-button" onClick={() => runWorkOrderAction("Work order cancelled.", () => cancelWorkOrder(workOrder.id))} type="button">
+                Cancel
+              </button>
+            )}
+          </div>
+        )}
+        columns={["Customer", "Vehicle", "Service", "Assigned", "Appointment", "Status", "Invoice", ""]}
+        emptyText="No work orders yet."
+        rows={sortedWorkOrders.map((workOrder) => ({
+          key: `work-order-${workOrder.id}`,
+          searchText: [workOrder.customerName, workOrder.phone, workOrder.email, workOrder.vehicle, workOrder.status, workOrder.serviceType].join(" "),
+          values: [
+            workOrder.customerName,
+            workOrder.vehicle || "-",
+            workOrder.serviceType || "-",
+            workOrder.assignedEmployeeName || "-",
+            dateTime(workOrder.appointmentDate),
+            workOrder.status || "PENDING",
+            workOrder.invoiceId ? `#${workOrder.invoiceId}` : "-"
+          ],
+          source: workOrder
+        }))}
+      />
+    </section>
+  );
+}
+
+function EstimatesPage({ customers, estimates, onInvoiceCreated, onNotify, onRefresh, settings, setError, tires }) {
+  const [form, setForm] = useState(() => ({ ...emptyEstimate, taxRate: settings?.taxRate || "13" }));
+  const [editingId, setEditingId] = useState(null);
+  const [tireSearch, setTireSearch] = useState("");
+  const [previewEstimate, setPreviewEstimate] = useState(null);
+  const sortedEstimates = [...estimates].sort((first, second) => Number(second.id || 0) - Number(first.id || 0));
+  const selectedCustomer = customers.find((customer) => Number(customer.id) === Number(form.customerId));
+  const subtotal = form.items.reduce((total, item) => total + Number(item.quantity || 0) * Number(item.unitPrice || 0), 0);
+  const taxRate = Number(form.taxRate || 0) > 1 ? Number(form.taxRate || 0) / 100 : Number(form.taxRate || 0);
+  const tax = subtotal * taxRate;
+  const matchingCustomers = matchingCustomersForForm(customers, form, 4);
+  const normalizedTireSearch = tireSearch.trim().toLowerCase();
+  const estimateTireOptions = normalizedTireSearch
+    ? tires.filter((tire) => [
+      tire.brand,
+      tire.model,
+      tire.width && tire.aspectRatio && tire.rimSize ? `${tire.width}/${tire.aspectRatio}R${tire.rimSize}` : "",
+      tire.condition,
+      tire.season,
+      tire.location,
+      tire.locationName
+    ].filter(Boolean).join(" ").toLowerCase().includes(normalizedTireSearch))
+    : tires;
+
+  function resetForm() {
+    setForm({ ...emptyEstimate, taxRate: settings?.taxRate || "13", items: [makeInvoiceItem()] });
+    setEditingId(null);
+  }
+
+  function selectCustomer(customer) {
+    setForm({
+      ...form,
+      customerId: String(customer.id),
+      customerName: customer.fullName || "",
+      email: customer.email || "",
+      phone: customer.phone || ""
+    });
+  }
+
+  function editEstimate(estimate) {
+    setEditingId(estimate.id);
+    setForm({
+      customerId: estimate.customerId ? String(estimate.customerId) : "",
+      customerName: estimate.customerName || "",
+      email: estimate.email || "",
+      phone: estimate.phone || "",
+      vehicle: estimate.vehicle || "",
+      taxRate: String(Number(estimate.taxRate || 0) > 1 ? estimate.taxRate : Number(estimate.taxRate || 0) * 100),
+      notes: estimate.notes || "",
+      validUntil: estimate.validUntil || "",
+      items: (estimate.items || []).length ? estimate.items.map((item) => ({
+        tireId: item.tireId ? String(item.tireId) : "",
+        itemType: item.itemType || "SERVICE",
+        itemName: item.itemName || "",
+        quantity: item.quantity || 1,
+        unitPrice: String(item.unitPrice ?? "0.00")
+      })) : [makeInvoiceItem()]
+    });
+  }
+
+  function updateItem(index, nextValues) {
+    setForm({
+      ...form,
+      items: form.items.map((item, itemIndex) => itemIndex === index ? { ...item, ...nextValues } : item)
+    });
+  }
+
+  function addTireLine(tire) {
+    const nextLine = invoiceItemFromTire(tire.id, 1, tires);
+    const reusableIndex = form.items.findIndex((item) =>
+      item.itemType !== "TIRE"
+      && !item.tireId
+      && !String(item.itemName || "").trim()
+      && Number(item.unitPrice || 0) === 0
+    );
+
+    if (reusableIndex >= 0) {
+      setForm({
+        ...form,
+        items: form.items.map((item, index) => index === reusableIndex ? nextLine : item)
+      });
+      return;
+    }
+
+    setForm({ ...form, items: [...form.items, nextLine] });
+  }
+
+  function payloadFromForm() {
+    return {
+      customerId: form.customerId ? Number(form.customerId) : null,
+      customerName: form.customerName,
+      email: form.email,
+      phone: form.phone,
+      vehicle: form.vehicle,
+      taxRate: Number(form.taxRate || 0),
+      notes: form.notes,
+      validUntil: form.validUntil || null,
+      items: form.items.map((item) => ({
+        tireId: item.tireId ? Number(item.tireId) : null,
+        itemType: item.itemType,
+        itemName: item.itemName?.trim() || (item.itemType === "SERVICE" ? "Service" : ""),
+        quantity: Number(item.quantity || 1),
+        unitPrice: item.unitPrice === "" ? null : Number(item.unitPrice || 0)
+      }))
+    };
+  }
+
+  async function submitEstimate(event) {
+    event.preventDefault();
+    setError("");
+
+    try {
+      if (editingId) {
+        await updateEstimate(editingId, payloadFromForm());
+      } else {
+        await createEstimate(payloadFromForm());
+      }
+
+      resetForm();
+      onNotify(editingId ? "Estimate updated." : "Estimate created.");
+      await onRefresh();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function runEstimateAction(message, action) {
+    setError("");
+
+    try {
+      await action();
+      onNotify(message);
+      await onRefresh();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function invoiceEstimate(estimate) {
+    setError("");
+
+    try {
+      const invoice = await convertEstimateToInvoice(estimate.id);
+      onNotify("Invoice created from estimate.");
+      await onRefresh();
+      await onInvoiceCreated(invoice);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  return (
+    <section className="work-area">
+      <div className="section-toolbar">
+        <div>
+          <span className="eyebrow">Quotes</span>
+          <h3>Estimates</h3>
+        </div>
+        <div className="toolbar-actions">
+          <StatusBadge value="DRAFT" />
+          <StatusBadge value="APPROVED" />
+          <StatusBadge value="CONVERTED" />
+        </div>
+      </div>
+
+      <form className="panel form-grid" onSubmit={submitEstimate}>
+        {editingId && (
+          <div className="form-banner">
+            <span>Editing estimate</span>
+            <button className="ghost-button" onClick={resetForm} type="button">
+              Cancel
+            </button>
+          </div>
+        )}
+        <Input label="Customer" required value={form.customerName} onChange={(customerName) => setForm({ ...form, customerName, customerId: "" })} />
+        <Input label="Email" type="email" value={form.email} onChange={(email) => setForm({ ...form, email, customerId: "" })} />
+        <Input label="Phone" required type="tel" value={form.phone} onChange={(phone) => setForm({ ...form, phone, customerId: "" })} />
+        {matchingCustomers.length > 0 && (
+          <div className="customer-match-panel">
+            <span>Matching customers</span>
+            {matchingCustomers.map((customer) => (
+              <button key={customer.id} onClick={() => selectCustomer(customer)} type="button">
+                <strong>{customer.fullName}</strong>
+                <small>{[customer.email, customer.phone].filter(Boolean).join(" - ")}</small>
+              </button>
+            ))}
+          </div>
+        )}
+        {selectedCustomer?.vehicles?.length > 0 && (
+          <Select
+            label="Customer vehicle"
+            value=""
+            onChange={(vehicleId) => {
+              const vehicle = selectedCustomer.vehicles.find((entry) => String(entry.id) === String(vehicleId));
+              setForm({ ...form, vehicle: vehicleName(vehicle) });
+            }}
+            options={["", ...selectedCustomer.vehicles.map((vehicle) => String(vehicle.id))]}
+            optionLabel={(value) => {
+              const vehicle = selectedCustomer.vehicles.find((entry) => String(entry.id) === String(value));
+              return value ? vehicleName(vehicle) : "Select saved vehicle";
+            }}
+          />
+        )}
+        <Input label="Vehicle" value={form.vehicle} onChange={(vehicle) => setForm({ ...form, vehicle })} />
+        <Input label="Valid until" type="date" value={form.validUntil} onChange={(validUntil) => setForm({ ...form, validUntil })} />
+        <Input label="Tax rate %" min="0" step="0.01" type="number" value={form.taxRate} onChange={(taxRate) => setForm({ ...form, taxRate })} />
+        <Input label="Notes" value={form.notes} onChange={(notes) => setForm({ ...form, notes })} />
+
+        <fieldset className="invoice-items-editor">
+          <legend>Line items</legend>
+          <Input
+            label="Search inventory tires"
+            placeholder="Brand, size, condition, season, or location..."
+            value={tireSearch}
+            onChange={setTireSearch}
+          />
+          {normalizedTireSearch && (
+            <div className="tire-search-results">
+              {estimateTireOptions.length === 0 ? (
+                <span className="empty-note">No matching tires.</span>
+              ) : (
+                estimateTireOptions.slice(0, 6).map((tire) => (
+                  <button key={tire.id} onClick={() => addTireLine(tire)} type="button">
+                    <strong>{tireOptionLabel(String(tire.id), tires)}</strong>
+                    <small>{Number(tire.availableQuantity ?? tire.quantity ?? 0)} available{tire.locationName || tire.location ? ` - ${tire.locationName || tire.location}` : ""}</small>
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+          <div className="invoice-item-list">
+            {form.items.map((item, index) => (
+              <div className="invoice-item-row" key={index}>
+                <Select label="Type" required value={item.itemType} onChange={(itemType) => updateItem(index, { itemType, tireId: itemType === "SERVICE" ? "" : item.tireId })} options={["SERVICE", "TIRE"]} />
+                <Select
+                  disabled={item.itemType !== "TIRE"}
+                  label="Tire"
+                  value={item.tireId}
+                  onChange={(tireId) => updateItem(index, invoiceItemFromTire(tireId, item.quantity, tires))}
+                  options={["", ...estimateTireOptions.map((tire) => String(tire.id))]}
+                  optionLabel={(value) => tireOptionLabel(value, tires)}
+                />
+                <Input label="Name" value={item.itemName} onChange={(itemName) => updateItem(index, { itemName })} />
+                <Input label="Qty" min="1" type="number" value={item.quantity} onChange={(quantity) => updateItem(index, { quantity })} />
+                <Input label="Price" min="0" type="number" step="0.01" value={item.unitPrice} onChange={(unitPrice) => updateItem(index, { unitPrice })} />
+                <button
+                  className="danger-button"
+                  disabled={form.items.length === 1}
+                  onClick={() => setForm({ ...form, items: form.items.filter((_, itemIndex) => itemIndex !== index) })}
+                  type="button"
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+          </div>
+          <button className="ghost-button" onClick={() => setForm({ ...form, items: [...form.items, makeInvoiceItem()] })} type="button">
+            Add line
+          </button>
+        </fieldset>
+
+        <div className="invoice-total-preview">
+          <span>Estimate total</span>
+          <strong>{money(subtotal + tax)}</strong>
+          <small>{money(subtotal)} subtotal + {money(tax)} tax preview</small>
+        </div>
+        <button className="primary-button" type="submit">
+          {editingId ? "Save Estimate" : "Create Estimate"}
+        </button>
+      </form>
+
+      <DataTable
+        actions={(estimate) => (
+          <div className="table-actions">
+            {estimate.status === "DRAFT" && (
+              <button className="ghost-button" onClick={() => editEstimate(estimate)} type="button">
+                Edit
+              </button>
+            )}
+            {estimate.status === "DRAFT" && (
+              <button className="ghost-button" onClick={() => runEstimateAction("Estimate sent to customer.", () => sendEstimate(estimate.id))} type="button">
+                Send
+              </button>
+            )}
+            {["DRAFT", "SENT", "VIEWED"].includes(String(estimate.status || "DRAFT").toUpperCase()) && (
+              <button className="ghost-button" onClick={() => runEstimateAction("Estimate approved and appointment created.", () => approveEstimate(estimate.id))} type="button">
+                Approve
+              </button>
+            )}
+            {estimate.status === "APPROVED" && (
+              <button className="ghost-button" onClick={() => invoiceEstimate(estimate)} type="button">
+                Create Invoice
+              </button>
+            )}
+            <button className="ghost-button" onClick={() => setPreviewEstimate(estimate)} type="button">
+              Preview
+            </button>
+            {!["CONVERTED", "DECLINED", "REJECTED", "CANCELLED"].includes(estimate.status) && (
+              <button className="ghost-button" onClick={() => runEstimateAction("Estimate rejected.", () => declineEstimate(estimate.id))} type="button">
+                Reject
+              </button>
+            )}
+            {!["CONVERTED", "CANCELLED"].includes(estimate.status) && (
+              <button className="danger-button" onClick={() => runEstimateAction("Estimate cancelled.", () => cancelEstimate(estimate.id))} type="button">
+                Cancel
+              </button>
+            )}
+          </div>
+        )}
+        columns={["Estimate", "Customer", "Vehicle", "Subtotal", "Tax", "Total", "Valid Until", "Status", "Invoice", ""]}
+        emptyText="No estimates yet."
+        rows={sortedEstimates.map((estimate) => ({
+          key: `estimate-${estimate.id}`,
+          searchText: [estimate.estimateNumber, estimate.customerName, estimate.phone, estimate.email, estimate.vehicle, estimate.status].join(" "),
+          values: [
+            estimate.estimateNumber || `#${estimate.id}`,
+            estimate.customerName,
+            estimate.vehicle || "-",
+            money(estimate.subtotal),
+            money(estimate.taxAmount),
+            money(estimate.total),
+            estimate.validUntil || "-",
+            estimate.status || "DRAFT",
+            estimate.convertedInvoiceId ? `#${estimate.convertedInvoiceId}` : "-"
+          ],
+          source: estimate
+        }))}
+      />
+      {previewEstimate && <PrintableEstimate estimate={previewEstimate} settings={settings} />}
+    </section>
+  );
+}
+
 function TireSetupFields({ disabled, form, onChange, tires }) {
   const isStaggered = form.tireSetup === "staggered";
   const [searchQuery, setSearchQuery] = useState("");
   const [conditionFilter, setConditionFilter] = useState("ALL");
-  const [batchQuery, setBatchQuery] = useState("");
-  const [batchLookupStatus, setBatchLookupStatus] = useState("idle");
-  const [batchLookupMessage, setBatchLookupMessage] = useState("");
-  const [batchLookupResult, setBatchLookupResult] = useState(null);
   const matchingTires = filterTiresForAppointment(tires, searchQuery, conditionFilter);
 
   function selectTire(tire, position = "front") {
@@ -3587,36 +5027,6 @@ function TireSetupFields({ disabled, form, onChange, tires }) {
     selectTire(tire, position);
   }
 
-  async function submitBatchLookup() {
-    const barcode = extractBarcodeValue(batchQuery);
-
-    if (!barcode) {
-      setBatchLookupStatus("error");
-      setBatchLookupMessage("Enter or scan a batch barcode.");
-      setBatchLookupResult(null);
-      return;
-    }
-
-    setBatchLookupStatus("loading");
-    setBatchLookupMessage("Loading batch...");
-    setBatchLookupResult(null);
-
-    try {
-      const tire = await getTireByBarcode(barcode);
-      setBatchLookupResult(tire);
-      setBatchLookupStatus("found");
-      setBatchLookupMessage("Inventory batch found.");
-
-      if (!isStaggered) {
-        selectTire(tire);
-      }
-    } catch (err) {
-      setBatchLookupResult(null);
-      setBatchLookupStatus("error");
-      setBatchLookupMessage(err.message || "Barcode not found.");
-    }
-  }
-
   return (
     <fieldset className={`tire-setup-fields ${disabled ? "disabled" : ""}`}>
       <legend>
@@ -3638,43 +5048,6 @@ function TireSetupFields({ disabled, form, onChange, tires }) {
       />
       {!disabled && (
         <div className="tire-search-panel">
-          <div className="appointment-batch-lookup">
-            <Input
-              label="Scan or Enter Batch Barcode"
-              value={batchQuery}
-              onChange={setBatchQuery}
-              placeholder="TT-BATCH-000123 or QR lookup link"
-            />
-            <button className="primary-button" disabled={batchLookupStatus === "loading"} onClick={submitBatchLookup} type="button">
-              Lookup Batch
-            </button>
-          </div>
-          {batchLookupMessage && (
-            <p className={`barcode-status ${batchLookupStatus}`}>
-              {batchLookupMessage}
-            </p>
-          )}
-          {batchLookupResult && (
-            <div className="appointment-batch-result">
-              <div>
-                <strong>{batchLookupResult.brand} {batchLookupResult.model || ""} {tireSizeValue(batchLookupResult)}</strong>
-                <small>
-                  {batchLookupResult.condition || "-"} - {tireAvailableQuantity(batchLookupResult)} available - {batchLookupResult.location || "No location"}
-                </small>
-                <small>{barcodeForTire(batchLookupResult)} - {batchCodeForTire(batchLookupResult)}</small>
-              </div>
-              <div className="result-actions">
-                <button onClick={() => selectTire(batchLookupResult, "front")} type="button">
-                  {isStaggered ? "Use front" : "Use tire"}
-                </button>
-                {isStaggered && (
-                  <button onClick={() => selectTire(batchLookupResult, "rear")} type="button">
-                    Use rear
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
           <Input
             label="Search inventory tires"
             value={searchQuery}
@@ -3697,7 +5070,7 @@ function TireSetupFields({ disabled, form, onChange, tires }) {
                     {tire.brand} {tire.model || ""} {tireSizeValue(tire)}
                     <span className={`condition-pill ${String(tire.condition || "").toLowerCase()}`}>{tire.condition || "N/A"}</span>
                   </strong>
-                  <small>{tire.season || "Any season"} - {tireAvailableQuantity(tire)} available - {tire.location || "No location"}</small>
+                  <small>{tire.season || "Any season"} - {tireAvailableQuantity(tire)} available - {displayTireLocation(tire)}</small>
                 </div>
                 <div className="result-actions">
                   <button onClick={() => selectTire(tire, "front")} type="button">
@@ -3812,12 +5185,17 @@ function AppointmentDatePicker({ appointments, editingId, onChange, value }) {
   }
 
   function updateDate(nextDate) {
-    if (nextDate < minDate) {
-      onChange(joinAppointmentDate(minDate, time || "09:00"));
+    if (!nextDate) {
+      onChange("");
       return;
     }
 
-    onChange(joinAppointmentDate(nextDate, time || "09:00"));
+    if (nextDate < minDate) {
+      onChange(time ? joinAppointmentDate(minDate, time) : minDate);
+      return;
+    }
+
+    onChange(time ? joinAppointmentDate(nextDate, time) : nextDate);
   }
 
   function updateTime(nextTime) {
@@ -3841,30 +5219,36 @@ function AppointmentDatePicker({ appointments, editingId, onChange, value }) {
           <input required type="time" value={time} onChange={(event) => updateTime(event.target.value)} />
         </label>
       </div>
-      <div className="time-slots" aria-label="Quick appointment times">
-        {appointmentTimes.map((slot) => {
-          const bookedAppointment = appointmentAtSlot(slot);
+      {date ? (
+        <>
+          <div className="time-slots" aria-label="Quick appointment times">
+            {appointmentTimes.map((slot) => {
+              const bookedAppointment = appointmentAtSlot(slot);
 
-          return (
-            <button
-              className={[time === slot ? "selected" : "", bookedAppointment ? "booked" : ""].filter(Boolean).join(" ")}
-              disabled={!date || date < minDate || Boolean(bookedAppointment)}
-              key={slot}
-              onClick={() => updateTime(slot)}
-              title={bookedAppointment ? `Booked by ${bookedAppointment.customerName}` : "Available"}
-              type="button"
-            >
-              {slot}
-            </button>
-          );
-        })}
-      </div>
-      <AppointmentDayView
-        appointments={appointments}
-        editingId={editingId}
-        selectedValue={value}
-        onSelect={onChange}
-      />
+              return (
+                <button
+                  className={[time === slot ? "selected" : "", bookedAppointment ? "booked" : ""].filter(Boolean).join(" ")}
+                  disabled={date < minDate || Boolean(bookedAppointment)}
+                  key={slot}
+                  onClick={() => updateTime(slot)}
+                  title={bookedAppointment ? `Booked by ${bookedAppointment.customerName}` : "Available"}
+                  type="button"
+                >
+                  {slot}
+                </button>
+              );
+            })}
+          </div>
+          <AppointmentDayView
+            appointments={appointments}
+            editingId={editingId}
+            selectedValue={value}
+            onSelect={onChange}
+          />
+        </>
+      ) : (
+        <p className="appointment-time-empty">Choose a date to see available times.</p>
+      )}
     </fieldset>
   );
 }
@@ -3913,7 +5297,7 @@ function AppointmentDayView({ appointments, editingId, onSelect, selectedValue }
               type="button"
             >
               <strong>{slot}</strong>
-              <span>{appointment ? appointment.customerName : "Open slot"}</span>
+              <span>{appointment ? appointment.customerName : "Available"}</span>
               {appointment && <small>{appointment.serviceType}</small>}
               {!appointment && <CheckCircle2 size={16} />}
             </button>
@@ -3951,7 +5335,7 @@ function Invoices({
 
   function exportInvoices() {
     const csv = toCsv(
-      ["Customer", "Phone", "Vehicle", "Subtotal", "Tax", "Total", "Payment", "Status"],
+      ["Customer", "Phone", "Vehicle", "Subtotal", "Tax", "Total", "Paid", "Balance", "Payment", "Status"],
       displayedInvoices.map((invoice) => [
         invoice.customerName,
         invoice.phone,
@@ -3959,6 +5343,8 @@ function Invoices({
         invoice.subtotal,
         invoice.taxAmount,
         invoice.total,
+        invoiceCollectedAmount(invoice),
+        invoiceBalanceAmount(invoice),
         invoice.paymentMethod || "",
         invoice.status || ""
       ])
@@ -3975,7 +5361,7 @@ function Invoices({
       const date = new Date(invoice.createdAt || invoice.invoiceDate || Date.now());
       return date.getMonth() === month && date.getFullYear() === year;
     });
-    const revenue = monthlyInvoices.reduce((sum, invoice) => sum + Number(invoice.total || 0), 0);
+    const revenue = monthlyInvoices.reduce((sum, invoice) => sum + invoiceCollectedAmount(invoice), 0);
     const reportHtml = `
       <html><head><title>Monthly Sales Report</title></head>
       <body style="font-family: Arial, sans-serif; padding: 32px;">
@@ -3986,7 +5372,7 @@ function Invoices({
         <table style="width:100%;border-collapse:collapse;margin-top:24px;">
           <thead><tr><th align="left">Customer</th><th align="left">Status</th><th align="right">Total</th></tr></thead>
           <tbody>
-            ${monthlyInvoices.map((invoice) => `<tr><td>${htmlEscape(invoice.customerName)}</td><td>${htmlEscape(invoice.status || "")}</td><td align="right">${htmlEscape(money(invoice.total))}</td></tr>`).join("")}
+            ${monthlyInvoices.map((invoice) => `<tr><td>${htmlEscape(invoice.customerName)}</td><td>${htmlEscape(invoice.status || "")}</td><td align="right">${htmlEscape(money(invoiceCollectedAmount(invoice)))}</td></tr>`).join("")}
           </tbody>
         </table>
         <script>window.print()</script>
@@ -4079,7 +5465,13 @@ function Invoices({
         <Input label="Vehicle" placeholder="Example: 2020 Toyota Camry" value={form.vehicle} onChange={(vehicle) => onChange({ ...form, vehicle })} />
         <Input label="Company name" value={settings.shopName} onChange={() => {}} disabled />
         <Select label="Payment" value={form.paymentMethod} onChange={(paymentMethod) => onChange({ ...form, paymentMethod })} options={["Cash", "Debit", "Credit", "E-Transfer"]} />
-        <Select label="Status" value={form.status} onChange={(status) => onChange({ ...form, status })} options={["DRAFT", "SENT", "UNPAID", "PARTIAL", "PAID", "VOID"]} />
+        <Select label="Status" value={form.status} onChange={(status) => onChange({ ...form, status })} options={["DRAFT", "SENT", "UNPAID", "PARTIALLY_PAID", "PAID", "VOID"]} />
+        {invoiceStatusKey(form.status) === "PARTIALLY_PAID" && (
+          <Input label="Amount paid" min="0" step="0.01" type="number" value={form.amountPaid} onChange={(amountPaid) => onChange({ ...form, amountPaid })} />
+        )}
+        {invoiceStatusKey(form.status) !== "PAID" && invoiceStatusKey(form.status) !== "VOID" && (
+          <Input label="Due date" type="date" value={form.dueDate || ""} onChange={(dueDate) => onChange({ ...form, dueDate })} />
+        )}
 
         <fieldset className="invoice-items-editor">
           <legend>Line items</legend>
@@ -4117,7 +5509,10 @@ function Invoices({
         <div className="invoice-total-preview">
           <span>Invoice total</span>
           <strong>{money(total)}</strong>
-          <small>{money(subtotal)} subtotal + {money(tax)} tax preview</small>
+          <small>
+            {money(subtotal)} subtotal + {money(tax)} tax preview
+            {invoiceStatusKey(form.status) === "PARTIALLY_PAID" ? ` - ${money(Math.max(total - Number(form.amountPaid || 0), 0))} balance` : ""}
+          </small>
         </div>
         <button className="primary-button" type="submit">Create Invoice</button>
       </form>
@@ -4126,13 +5521,13 @@ function Invoices({
         highlightedRow={highlightedRow}
         actions={(invoice) => (
           <div className="table-actions">
-            {invoice.status !== "PAID" && (
+            {invoiceStatusKey(invoice.status) !== "PAID" && (
               <button className="ghost-button" onClick={() => onMarkPaid(invoice)} type="button">
                 Mark Paid
               </button>
             )}
-            {["SENT", "UNPAID", "PARTIAL", "VOID"].map((status) => (
-              invoice.status !== status && (
+            {["SENT", "UNPAID", "PARTIALLY_PAID", "VOID"].map((status) => (
+              invoiceStatusKey(invoice.status) !== status && (
                 <button className="ghost-button" key={status} onClick={() => onUpdateStatus(invoice, status)} type="button">
                   {status}
                 </button>
@@ -4146,7 +5541,7 @@ function Invoices({
             </button>
           </div>
         )}
-        columns={["Customer", "Phone", "Vehicle", "Subtotal", "HST", "Total", "Payment", "Status", "Due", "Paid At", ""]}
+        columns={["Customer", "Phone", "Vehicle", "Subtotal", "HST", "Total", "Paid", "Balance", "Payment", "Status", "Due", "Paid At", ""]}
         emptyText="No invoices yet."
         rows={displayedInvoices.map((invoice) => ({
           key: `invoice-${invoice.id}`,
@@ -4157,6 +5552,8 @@ function Invoices({
             money(invoice.subtotal),
             money(invoice.taxAmount),
             money(invoice.total),
+            money(invoiceCollectedAmount(invoice)),
+            money(invoiceBalanceAmount(invoice)),
             invoice.paymentMethod || "-",
             invoice.status || "-",
             invoice.dueDate || "-",
@@ -4227,6 +5624,8 @@ function PrintableInvoice({ settings, invoice }) {
             <span>Payment</span>
             <strong>{invoice.status || "-"}</strong>
             <p>{invoice.paymentMethod || "-"}</p>
+            <p>Paid: {money(invoiceCollectedAmount(invoice))}</p>
+            <p>Balance: {money(invoiceBalanceAmount(invoice))}</p>
           </div>
         </section>
         <table className="invoice-lines">
@@ -4261,6 +5660,90 @@ function PrintableInvoice({ settings, invoice }) {
           <div className="grand-total"><span>Total</span><strong>{money(invoice.total)}</strong></div>
         </section>
         <p className="invoice-terms">{settings.invoiceTerms}</p>
+        <p className="monarch-print-footer">Powered by Monarch Solutions | Support: support@monarchsolutions.ca</p>
+      </article>
+    </section>
+  );
+}
+
+function PrintableEstimate({ estimate, settings }) {
+  const items = estimate.items || [];
+  const subtotal = estimate.subtotal ?? items.reduce((sum, item) => sum + Number(item.lineTotal ?? Number(item.quantity || 0) * Number(item.unitPrice || 0)), 0);
+
+  return (
+    <section className="printable-invoice panel">
+      <div className="invoice-toolbar">
+        <div>
+          <span className="eyebrow">Estimate document</span>
+          <h3>{estimate.estimateNumber || `Estimate #${estimate.id}`}</h3>
+          <p>Preview, print, or save this estimate for the customer.</p>
+        </div>
+        <button className="ghost-button" onClick={() => window.print()} type="button">
+          Print / Save PDF
+        </button>
+      </div>
+      <article className="invoice-document estimate-document">
+        <header className="invoice-document-header">
+          <div>
+            {settings.logoUrl && <img alt={`${settings.shopName} logo`} className="invoice-logo" src={settings.logoUrl} />}
+            <h2>{settings.shopName}</h2>
+            <p>Estimate</p>
+            <p>{settings.phone}</p>
+            <p>{settings.address}</p>
+          </div>
+          <div>
+            <strong>{estimate.estimateNumber || `Estimate #${estimate.id}`}</strong>
+            <span>{dateTime(estimate.createdAt)}</span>
+            <span>Valid until {estimate.validUntil || "-"}</span>
+            <StatusBadge value={estimate.status || "DRAFT"} />
+          </div>
+        </header>
+        <section className="invoice-parties">
+          <div>
+            <span>Prepared for</span>
+            <strong>{estimate.customerName}</strong>
+            <p>{estimate.phone}</p>
+            <p>{estimate.vehicle || "No vehicle"}</p>
+          </div>
+          <div>
+            <span>Estimate status</span>
+            <strong>{estimate.status || "DRAFT"}</strong>
+            <p>{estimate.email || "-"}</p>
+          </div>
+        </section>
+        <table className="invoice-lines">
+          <thead>
+            <tr>
+              <th>Item</th>
+              <th>Qty</th>
+              <th>Unit</th>
+              <th>Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.length === 0 ? (
+              <tr>
+                <td colSpan="4">No line items.</td>
+              </tr>
+            ) : (
+              items.map((item, index) => (
+                <tr key={item.id || `${item.itemName}-${index}`}>
+                  <td>{item.itemName || item.itemType}</td>
+                  <td>{item.quantity}</td>
+                  <td>{money(item.unitPrice)}</td>
+                  <td>{money(item.lineTotal ?? Number(item.quantity || 0) * Number(item.unitPrice || 0))}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+        <section className="invoice-totals">
+          <div><span>Subtotal</span><strong>{money(subtotal)}</strong></div>
+          <div><span>HST</span><strong>{money(estimate.taxAmount ?? 0)}</strong></div>
+          <div className="grand-total"><span>Total</span><strong>{money(estimate.total)}</strong></div>
+        </section>
+        {estimate.notes && <p className="invoice-terms">{estimate.notes}</p>}
+        <p className="monarch-print-footer">Powered by Monarch Solutions | Support: support@monarchsolutions.ca</p>
       </article>
     </section>
   );
@@ -4320,19 +5803,16 @@ function InventoryTable({ highlightedRow, onDelete, onRefill, tires }) {
             <button className="ghost-button" onClick={() => onRefill(tire)} type="button">
               Refill
             </button>
-            <button className="ghost-button" onClick={() => printBarcodeLabel(tire)} type="button">
-              Print
-            </button>
             <button className="danger-button" onClick={() => onDelete(tire.id)} type="button">
               Delete
             </button>
           </div>
         )}
-        columns={["Brand", "Model", "Size", "Season", "Condition", "Warnings", "Qty", "Reserved", "Available", "Price", "Location", "Barcode", "Batch", ""]}
+        columns={["Brand", "Model", "Size", "Season", "Condition", "Warnings", "Qty", "Reserved", "Available", "Price", "Location", ""]}
         emptyText="No tires yet."
         rows={tires.map((tire) => ({
           key: `tire-${tire.id}`,
-          searchText: [tire.barcode, tire.batchCode].filter(Boolean).join(" "),
+          searchText: [tire.brand, tire.model, tire.season, tire.condition, tire.location, tire.locationName, `${tire.width}/${tire.aspectRatio}R${tire.rimSize}`].filter(Boolean).join(" "),
           values: [
             tire.brand,
             tire.model || "-",
@@ -4344,9 +5824,7 @@ function InventoryTable({ highlightedRow, onDelete, onRefill, tires }) {
             tire.reservedQuantity || 0,
             urgentStockValue(tire, tire.availableQuantity ?? tire.quantity),
             money(tire.price),
-            tire.location || "-",
-            barcodeForTire(tire),
-            batchCodeForTire(tire)
+            displayTireLocation(tire)
           ],
           source: tire
         }))}
@@ -4389,13 +5867,11 @@ function TireDrawer({ onClose, onRefill, tire }) {
         <WarningBadges warnings={warnings} />
         <div className="drawer-meta">
           <span>Season</span><strong>{tire.season || "-"}</strong>
-          <span>Location</span><strong>{tire.location || "-"}</strong>
+          <span>Shop</span><strong>{tire.shopName || "Unassigned"}</strong>
+          <span>Location</span><strong>{displayTireLocation(tire)}</strong>
           <span>Unit price</span><strong>{money(tire.price)}</strong>
-          <span>Barcode</span><strong>{barcodeForTire(tire)}</strong>
-          <span>Batch code</span><strong>{batchCodeForTire(tire)}</strong>
         </div>
         <div className="drawer-actions">
-          <button className="ghost-button" onClick={() => printBarcodeLabel(tire)} type="button">Print Barcode</button>
           <button className="primary-button" onClick={onRefill} type="button">Refill Tire</button>
         </div>
       </aside>
@@ -4407,7 +5883,7 @@ function emptyCustomerVehicleForm() {
   return { nickname: "", year: "", make: "", model: "", plateNumber: "", tireSetup: "regular", tireSize: "", frontTireSize: "", rearTireSize: "" };
 }
 
-function CustomerPortalShell({ auth, onBookAppointment, onDeleteVehicle, onLogout, onMarkNoticeRead, onPayInvoice, onRefresh, onSaveVehicle, portal }) {
+function CustomerPortalShell({ auth, onApproveEstimate, onBookAppointment, onDeleteVehicle, onLogout, onMarkNoticeRead, onPayInvoice, onRefresh, onSaveVehicle, portal }) {
   const [vehicleForm, setVehicleForm] = useState(emptyCustomerVehicleForm);
   const [bookingForm, setBookingForm] = useState({
     vehicleId: "",
@@ -4418,6 +5894,8 @@ function CustomerPortalShell({ auth, onBookAppointment, onDeleteVehicle, onLogou
   });
   const [slots, setSlots] = useState([]);
   const [isLoadingSlots, setIsLoadingSlots] = useState(false);
+  const [payingInvoiceId, setPayingInvoiceId] = useState(null);
+  const [approvingEstimateId, setApprovingEstimateId] = useState(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
@@ -4430,8 +5908,10 @@ function CustomerPortalShell({ auth, onBookAppointment, onDeleteVehicle, onLogou
   const vehicles = portal?.vehicles || [];
   const appointments = portal?.appointments || [];
   const invoices = portal?.invoices || [];
+  const estimates = portal?.estimates || [];
   const notifications = portal?.notifications || [];
   const unreadCount = notifications.filter((notification) => !notification.read).length;
+  const unpaidInvoices = invoices.filter((invoice) => !["PAID", "VOID"].includes(invoiceStatusKey(invoice.status)));
 
   useEffect(() => {
     async function loadSlots() {
@@ -4504,6 +5984,38 @@ function CustomerPortalShell({ auth, onBookAppointment, onDeleteVehicle, onLogou
     }
   }
 
+  async function payInvoice(invoiceId) {
+    setError("");
+    setMessage("Marking invoice paid...");
+    setPayingInvoiceId(invoiceId);
+
+    try {
+      await onPayInvoice(invoiceId);
+      setMessage("Payment recorded. This is a manual/simulated portal payment for now.");
+    } catch (err) {
+      setError(err.message || "Invoice could not be paid.");
+      setMessage("");
+    } finally {
+      setPayingInvoiceId(null);
+    }
+  }
+
+  async function approveEstimate(estimateId) {
+    setError("");
+    setMessage("Approving estimate and creating appointment...");
+    setApprovingEstimateId(estimateId);
+
+    try {
+      await onApproveEstimate(estimateId);
+      setMessage("Estimate approved. Your appointment was created from this estimate.");
+    } catch (err) {
+      setError(err.message || "Estimate could not be approved.");
+      setMessage("");
+    } finally {
+      setApprovingEstimateId(null);
+    }
+  }
+
   return (
     <main className="customer-portal">
       <header className="customer-header">
@@ -4519,11 +6031,19 @@ function CustomerPortalShell({ auth, onBookAppointment, onDeleteVehicle, onLogou
 
       {message ? <div className="success-alert">{message}</div> : null}
       {error ? <div className="alert error">{error}</div> : null}
+      {unpaidInvoices.length > 0 && (
+        <div className="portal-payment-alert">
+          <strong>You have unpaid invoices requiring payment.</strong>
+          <span>{unpaidInvoices.length} invoice{unpaidInvoices.length === 1 ? "" : "s"} outstanding.</span>
+        </div>
+      )}
 
       <section className="customer-metrics">
         <div className="metric-card"><span>Vehicles</span><strong>{vehicles.length}</strong></div>
         <div className="metric-card"><span>Appointments</span><strong>{appointments.length}</strong></div>
         <div className="metric-card"><span>Invoices</span><strong>{invoices.length}</strong></div>
+        <div className="metric-card"><span>Unpaid invoices</span><strong>{unpaidInvoices.length}</strong></div>
+        <div className="metric-card"><span>Estimates</span><strong>{estimates.length}</strong></div>
         <div className="metric-card"><span>Unread notices</span><strong>{unreadCount}</strong></div>
       </section>
 
@@ -4628,18 +6148,46 @@ function CustomerPortalShell({ auth, onBookAppointment, onDeleteVehicle, onLogou
           rows={appointments.map((appointment) => ({ key: `customer-appt-${appointment.id}`, values: [dateTime(appointment.appointmentDate), appointment.vehicle || "-", appointment.serviceType || "-", appointment.status || "-", appointment.notes || "-"] }))}
         />
         <DataTable
-          actions={(invoice) => (
-            invoice.status !== "PAID" ? (
-              <button className="primary-button" onClick={() => onPayInvoice(invoice.id)} type="button">
-                Pay
+          actions={(estimate) => (
+            ["DRAFT", "SENT", "VIEWED"].includes(String(estimate.status || "DRAFT").toUpperCase()) ? (
+              <button className="primary-button" disabled={approvingEstimateId === estimate.id} onClick={() => approveEstimate(estimate.id)} type="button">
+                {approvingEstimateId === estimate.id ? "Approving..." : "Approve"}
               </button>
             ) : null
           )}
-          columns={["Invoice", "Vehicle", "Total", "Status", "Due", "Paid At", "Created", ""]}
+          columns={["Estimate", "Vehicle", "Total", "Status", "Valid Until", "Appointment", "Created", ""]}
+          emptyText="No estimates yet."
+          rows={estimates.map((estimate) => ({
+            key: `customer-estimate-${estimate.id}`,
+            source: estimate,
+            values: [
+              estimate.estimateNumber || `#${estimate.id}`,
+              estimate.vehicle || "-",
+              money(estimate.total),
+              estimate.status || "DRAFT",
+              estimate.validUntil || "-",
+              estimate.appointmentId ? `#${estimate.appointmentId}` : "-",
+              dateTime(estimate.createdAt)
+            ]
+          }))}
+        />
+        <DataTable
+          actions={(invoice) => (
+            invoiceStatusKey(invoice.status) !== "PAID" ? (
+              <button className="primary-button" disabled={payingInvoiceId === invoice.id} onClick={() => payInvoice(invoice.id)} type="button">
+                {payingInvoiceId === invoice.id ? "Paying..." : "Pay"}
+              </button>
+            ) : null
+          )}
+          columns={["Invoice", "Vehicle", "Total", "Paid", "Balance", "Status", "Due", "Paid At", "Created", ""]}
           emptyText="No invoices yet."
-          rows={invoices.map((invoice) => ({ key: `customer-invoice-${invoice.id}`, source: invoice, values: [`#${invoice.id}`, invoice.vehicle || "-", money(invoice.total), invoice.status || "-", invoice.dueDate || "-", dateTime(invoice.paidAt), dateTime(invoice.createdAt)] }))}
+          rows={invoices.map((invoice) => ({ key: `customer-invoice-${invoice.id}`, source: invoice, values: [`#${invoice.id}`, invoice.vehicle || "-", money(invoice.total), money(invoiceCollectedAmount(invoice)), money(invoiceBalanceAmount(invoice)), invoice.status || "-", invoice.dueDate || "-", dateTime(invoice.paidAt), dateTime(invoice.createdAt)] }))}
         />
       </section>
+      <div className="monarch-footer customer-footer">
+        <strong>Powered by Monarch Solutions</strong>
+        <a href="mailto:support@monarchsolutions.ca">Support: support@monarchsolutions.ca</a>
+      </div>
     </main>
   );
 }
@@ -4820,6 +6368,10 @@ function PublicBookingPage() {
             </button>
           </div>
         </form>
+        <div className="login-footer">
+          <strong>Powered by Monarch Solutions</strong>
+          <a href="mailto:support@monarchsolutions.ca">Support: support@monarchsolutions.ca</a>
+        </div>
       </section>
     </main>
   );
@@ -4871,6 +6423,10 @@ function LoginScreen({ onSubmit, loginForm, setLoginForm, error, isSubmitting })
             Create Customer Account
           </button>
         </form>
+        <div className="login-footer">
+          <strong>Powered by Monarch Solutions</strong>
+          <a href="mailto:support@monarchsolutions.ca">Support: support@monarchsolutions.ca</a>
+        </div>
       </motion.section>
     </main>
   );
@@ -4932,6 +6488,10 @@ function CustomerSignupScreen({ error, form, isSubmitting, onSubmit, setForm }) 
             Staff / Customer Sign In
           </button>
         </form>
+        <div className="login-footer">
+          <strong>Powered by Monarch Solutions</strong>
+          <a href="mailto:support@monarchsolutions.ca">Support: support@monarchsolutions.ca</a>
+        </div>
       </motion.section>
     </main>
   );
@@ -5637,7 +7197,7 @@ function expenseDisplayStatus(expense) {
 }
 
 function invoiceDisplayStatus(invoice) {
-  const status = String(invoice.status || "UNPAID").toUpperCase();
+  const status = invoiceStatusKey(invoice.status);
 
   if (status === "PAID") {
     return "PAID";
@@ -5686,22 +7246,439 @@ function AccountingSectionTitle({ detail, title }) {
   );
 }
 
+function EmployeePortal({ auth, onOpenPayroll }) {
+  const [todayAttendance, setTodayAttendance] = useState(null);
+  const [history, setHistory] = useState([]);
+  const [range, setRange] = useState(() => {
+    const start = new Date();
+    start.setDate(start.getDate() - 13);
+    return { start: toDateKey(start), end: todayDateKey() };
+  });
+  const [isLoading, setIsLoading] = useState(true);
+  const [isWorking, setIsWorking] = useState(false);
+  const [message, setMessage] = useState("");
+  const [portalError, setPortalError] = useState("");
+
+  useEffect(() => {
+    loadAttendance();
+  }, []);
+
+  async function loadAttendance(nextRange = range) {
+    setIsLoading(true);
+    setPortalError("");
+
+    try {
+      const [today, rows] = await Promise.all([
+        getMyTodayAttendance().catch(() => null),
+        getMyAttendanceRange(nextRange.start, nextRange.end).catch(() => [])
+      ]);
+      setTodayAttendance(today);
+      setHistory(rows || []);
+    } catch (err) {
+      setPortalError(err.message || "Attendance could not be loaded.");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function runClockAction(action, successText) {
+    setIsWorking(true);
+    setMessage("");
+    setPortalError("");
+
+    try {
+      const updated = await action();
+      setTodayAttendance(updated);
+      setMessage(successText);
+      await loadAttendance();
+    } catch (err) {
+      setPortalError(err.message || "Attendance action failed.");
+    } finally {
+      setIsWorking(false);
+    }
+  }
+
+  async function submitRange(event) {
+    event.preventDefault();
+    await loadAttendance(range);
+  }
+
+  const clockedIn = Boolean(todayAttendance?.clockIn);
+  const clockedOut = Boolean(todayAttendance?.clockOut);
+  const statusText = !todayAttendance
+    ? "Not clocked in"
+    : clockedOut
+      ? "Clocked out"
+      : clockedIn
+        ? "Clocked in"
+        : todayAttendance.status || "Pending";
+
+  return (
+    <section className="work-area employee-portal">
+      <div className="section-toolbar">
+        <div>
+          <span className="eyebrow">{formatDateLabel(todayDateKey())}</span>
+          <h3>Hi, {auth?.fullName || "there"}</h3>
+        </div>
+        <button className="ghost-button" onClick={onOpenPayroll} type="button">My Payroll</button>
+      </div>
+
+      {isLoading && <div className="loading">Loading attendance...</div>}
+      {portalError && <div className="alert error">{portalError}</div>}
+      {message && <div className="success-alert">{message}</div>}
+
+      <section className="metric-grid">
+        <div className="metric-card"><span>Today</span><strong>{statusText}</strong></div>
+        <div className="metric-card"><span>Clock in</span><strong>{attendanceTime(todayAttendance?.clockIn)}</strong></div>
+        <div className="metric-card"><span>Clock out</span><strong>{attendanceTime(todayAttendance?.clockOut)}</strong></div>
+        <div className="metric-card"><span>Worked hours</span><strong>{attendanceHours(todayAttendance?.workedHours)}</strong></div>
+        <div className="metric-card"><span>Shop</span><strong>{auth?.shopName || "Unassigned"}</strong></div>
+      </section>
+
+      <section className="panel employee-clock-panel">
+        <button
+          className="primary-button"
+          disabled={isWorking || clockedIn}
+          onClick={() => runClockAction(clockIn, "Clocked in. Have a good shift.")}
+          type="button"
+        >
+          Clock In
+        </button>
+        <button
+          className="ghost-button"
+          disabled={isWorking || !clockedIn || clockedOut}
+          onClick={() => runClockAction(clockOut, "Clocked out. Hours saved.")}
+          type="button"
+        >
+          Clock Out
+        </button>
+      </section>
+
+      <section className="panel audit-log-panel">
+        <div className="section-toolbar">
+          <div>
+            <span className="eyebrow">My attendance</span>
+            <h3>History</h3>
+          </div>
+          <form className="attendance-range-form" onSubmit={submitRange}>
+            <input type="date" value={range.start} onChange={(event) => setRange({ ...range, start: event.target.value })} />
+            <input type="date" value={range.end} onChange={(event) => setRange({ ...range, end: event.target.value })} />
+            <button className="ghost-button" type="submit">Load</button>
+          </form>
+        </div>
+        <AttendanceTable records={history} emptyText="No attendance records in this range." />
+      </section>
+    </section>
+  );
+}
+
+function AttendancePage({ auth }) {
+  const [employees, setEmployees] = useState([]);
+  const [todayRows, setTodayRows] = useState([]);
+  const [unresolvedAbsences, setUnresolvedAbsences] = useState([]);
+  const [employeeRows, setEmployeeRows] = useState([]);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState("");
+  const [absenceDate, setAbsenceDate] = useState(todayDateKey());
+  const [range, setRange] = useState(() => {
+    const start = new Date();
+    start.setDate(start.getDate() - 13);
+    return { start: toDateKey(start), end: todayDateKey() };
+  });
+  const [resolveDrafts, setResolveDrafts] = useState({});
+  const [isLoading, setIsLoading] = useState(true);
+  const [isWorking, setIsWorking] = useState(false);
+  const [message, setMessage] = useState("");
+  const [attendanceError, setAttendanceError] = useState("");
+
+  useEffect(() => {
+    loadAttendanceAdmin();
+  }, [auth?.role]);
+
+  async function loadAttendanceAdmin(nextEmployeeId = selectedEmployeeId) {
+    setIsLoading(true);
+    setAttendanceError("");
+
+    try {
+      const [employeeList, dayRows, unresolved] = await Promise.all([
+        getAttendanceEmployees().catch(() => []),
+        getAttendanceByDate(todayDateKey()).catch(() => []),
+        getUnresolvedAbsences().catch(() => [])
+      ]);
+      const safeEmployees = employeeList || [];
+      const resolvedEmployeeId = nextEmployeeId || safeEmployees[0]?.id || "";
+      setEmployees(safeEmployees);
+      setTodayRows(dayRows || []);
+      setUnresolvedAbsences(unresolved || []);
+      setSelectedEmployeeId(resolvedEmployeeId);
+      setEmployeeRows(resolvedEmployeeId ? await getEmployeeAttendanceRange(resolvedEmployeeId, range.start, range.end).catch(() => []) : []);
+    } catch (err) {
+      setAttendanceError(err.message || "Attendance data could not be loaded.");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function loadEmployeeRange(event) {
+    event.preventDefault();
+
+    if (!selectedEmployeeId) {
+      setAttendanceError("Choose an employee first.");
+      return;
+    }
+
+    setIsWorking(true);
+    setAttendanceError("");
+
+    try {
+      setEmployeeRows(await getEmployeeAttendanceRange(selectedEmployeeId, range.start, range.end));
+    } catch (err) {
+      setAttendanceError(err.message || "Employee attendance could not be loaded.");
+    } finally {
+      setIsWorking(false);
+    }
+  }
+
+  async function markAbsent() {
+    if (!selectedEmployeeId) {
+      setAttendanceError("Choose an employee first.");
+      return;
+    }
+
+    setIsWorking(true);
+    setMessage("");
+    setAttendanceError("");
+
+    try {
+      await markEmployeeAbsent(selectedEmployeeId, absenceDate);
+      setMessage("Absence marked.");
+      await loadAttendanceAdmin(selectedEmployeeId);
+    } catch (err) {
+      setAttendanceError(err.message || "Could not mark absence.");
+    } finally {
+      setIsWorking(false);
+    }
+  }
+
+  async function resolveAttendanceAbsence(attendance) {
+    const draft = resolveDrafts[attendance.id] || {};
+
+    setIsWorking(true);
+    setMessage("");
+    setAttendanceError("");
+
+    try {
+      await resolveAbsence(attendance.id, draft.decision || "UNPAID_ABSENCE", draft.notes || attendance.notes || "");
+      setMessage("Absence resolved.");
+      await loadAttendanceAdmin(selectedEmployeeId);
+    } catch (err) {
+      setAttendanceError(err.message || "Could not resolve absence.");
+    } finally {
+      setIsWorking(false);
+    }
+  }
+
+  function updateResolveDraft(id, field, value) {
+    setResolveDrafts((current) => ({
+      ...current,
+      [id]: {
+        decision: "UNPAID_ABSENCE",
+        notes: "",
+        ...(current[id] || {}),
+        [field]: value
+      }
+    }));
+  }
+
+  const selectedEmployee = employees.find((employee) => String(employee.id) === String(selectedEmployeeId));
+
+  return (
+    <section className="work-area attendance-page">
+      <div className="section-toolbar">
+        <div>
+          <span className="eyebrow">Attendance review</span>
+          <h3>Employee Attendance</h3>
+        </div>
+        <button className="ghost-button with-icon" disabled={isWorking} onClick={() => loadAttendanceAdmin(selectedEmployeeId)} type="button">
+          <RefreshCw size={16} />
+          Refresh
+        </button>
+      </div>
+
+      {isLoading && <div className="loading">Loading attendance...</div>}
+      {attendanceError && <div className="alert error">{attendanceError}</div>}
+      {message && <div className="success-alert">{message}</div>}
+
+      <section className="metric-grid">
+        <div className="metric-card"><span>Employees</span><strong>{employees.length}</strong></div>
+        <div className="metric-card"><span>Today records</span><strong>{todayRows.length}</strong></div>
+        <div className="metric-card"><span>Unresolved absences</span><strong>{unresolvedAbsences.length}</strong></div>
+        <div className="metric-card"><span>Selected employee</span><strong>{selectedEmployee?.fullName || "-"}</strong></div>
+        <div className="metric-card"><span>Shop</span><strong>{selectedEmployee?.shopName || "Unassigned"}</strong></div>
+      </section>
+
+      <section className="panel attendance-admin-controls">
+        <Select
+          label="Employee"
+          value={selectedEmployeeId}
+          onChange={setSelectedEmployeeId}
+          options={["", ...employees.map((employee) => String(employee.id))]}
+          optionLabel={(value) => {
+            const employee = employees.find((entry) => String(entry.id) === String(value));
+            return employee ? `${employee.fullName} (${employee.shopName || "Unassigned"})` : "Choose employee";
+          }}
+        />
+        <Input label="Absence date" type="date" value={absenceDate} onChange={setAbsenceDate} />
+        <button className="ghost-button" disabled={isWorking || !selectedEmployeeId} onClick={markAbsent} type="button">
+          Mark Absent
+        </button>
+        <form className="attendance-range-form" onSubmit={loadEmployeeRange}>
+          <input type="date" value={range.start} onChange={(event) => setRange({ ...range, start: event.target.value })} />
+          <input type="date" value={range.end} onChange={(event) => setRange({ ...range, end: event.target.value })} />
+          <button className="primary-button" disabled={isWorking || !selectedEmployeeId} type="submit">Search</button>
+        </form>
+      </section>
+
+      <section className="split">
+        <section className="panel audit-log-panel">
+          <div className="section-toolbar compact">
+            <div>
+              <span className="eyebrow">Today</span>
+              <h3>Clock Activity</h3>
+            </div>
+          </div>
+          <AttendanceTable records={todayRows} emptyText="No one has clocked in today." />
+        </section>
+
+        <section className="panel audit-log-panel">
+          <div className="section-toolbar compact">
+            <div>
+              <span className="eyebrow">Exceptions</span>
+              <h3>Unresolved Absences</h3>
+            </div>
+          </div>
+          <DataTable
+            actions={(attendance) => (
+              <div className="attendance-resolve-actions">
+                <select
+                  value={resolveDrafts[attendance.id]?.decision || "UNPAID_ABSENCE"}
+                  onChange={(event) => updateResolveDraft(attendance.id, "decision", event.target.value)}
+                >
+                  <option value="UNPAID_ABSENCE">Unpaid Absence</option>
+                  <option value="PAID_ABSENCE">Paid Absence</option>
+                  <option value="EXCUSED">Excused</option>
+                  <option value="SICK_DAY">Sick Day</option>
+                  <option value="VACATION">Vacation</option>
+                </select>
+                <input
+                  placeholder="Notes"
+                  value={resolveDrafts[attendance.id]?.notes || ""}
+                  onChange={(event) => updateResolveDraft(attendance.id, "notes", event.target.value)}
+                />
+                <button className="primary-button" disabled={isWorking} onClick={() => resolveAttendanceAbsence(attendance)} type="button">
+                  Resolve
+                </button>
+              </div>
+            )}
+            columns={["Employee", "Date", "Status", "Decision", "Notes", ""]}
+            emptyText="No unresolved absences."
+            rows={unresolvedAbsences.map((attendance) => ({
+              key: `absence-${attendance.id}`,
+              source: attendance,
+              values: [
+                attendance.employeeName || "-",
+                attendance.workDate || "-",
+                attendance.status || "-",
+                attendance.absenceDecision || "-",
+                attendance.notes || "-"
+              ]
+            }))}
+          />
+        </section>
+      </section>
+
+      <section className="panel audit-log-panel">
+        <div className="section-toolbar compact">
+          <div>
+            <span className="eyebrow">Employee range</span>
+            <h3>{selectedEmployee?.fullName || "Attendance History"}</h3>
+          </div>
+        </div>
+        <AttendanceTable records={employeeRows} emptyText="No attendance records for this employee and range." />
+      </section>
+    </section>
+  );
+}
+
+function AttendanceTable({ emptyText, records }) {
+  return (
+    <DataTable
+      columns={["Date", "Employee", "Clock In", "Clock Out", "Hours", "Status", "Decision"]}
+      emptyText={emptyText}
+      rows={(records || []).map((record) => ({
+        key: `attendance-${record.id}`,
+        searchText: `${record.employeeName || ""} ${record.status || ""} ${record.absenceDecision || ""}`,
+        source: record,
+        values: [
+          record.workDate || "-",
+          record.employeeName || "-",
+          attendanceTime(record.clockIn),
+          attendanceTime(record.clockOut),
+          attendanceHours(record.workedHours),
+          record.status || "-",
+          record.absenceDecision || "-"
+        ]
+      }))}
+    />
+  );
+}
+
+function attendanceTime(value) {
+  if (!value) {
+    return "-";
+  }
+
+  return new Date(value).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
+function attendanceHours(value) {
+  if (value === null || value === undefined || value === "") {
+    return "0.00";
+  }
+
+  return Number(value || 0).toFixed(2);
+}
+
+const payrollAdjustmentTypes = [
+  "BONUS",
+  "REIMBURSEMENT",
+  "DEDUCTION",
+  "PENALTY",
+  "LOAN_DEDUCTION",
+  "TAX_DEDUCTION",
+  "OTHER"
+];
+
 function PayrollPage({ auth, mode }) {
   const isAdmin = mode === "admin" && auth?.role === "ADMIN";
   const isEmployee = mode === "employee" && auth?.role === "EMPLOYEE";
   const emptyPeriodForm = { startDate: "", endDate: "", notes: "" };
   const emptyShiftForm = { employeeId: "", shiftDate: "", clockIn: "09:00", clockOut: "17:00", breakMinutes: "30", notes: "" };
   const emptySlotForm = { shiftDate: "", startTime: "09:00", endTime: "17:00", requiredEmployees: "2", notes: "" };
+  const emptyLoanForm = { employeeId: "", originalAmount: "", installmentAmount: "", notes: "" };
   const [periods, setPeriods] = useState([]);
   const [records, setRecords] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [workShifts, setWorkShifts] = useState([]);
   const [shiftSlots, setShiftSlots] = useState([]);
+  const [loans, setLoans] = useState([]);
   const [employeeDrafts, setEmployeeDrafts] = useState({});
+  const [adjustmentDrafts, setAdjustmentDrafts] = useState({});
+  const [recordNotes, setRecordNotes] = useState({});
   const [selectedPeriodId, setSelectedPeriodId] = useState("");
   const [periodForm, setPeriodForm] = useState(emptyPeriodForm);
   const [shiftForm, setShiftForm] = useState(emptyShiftForm);
   const [slotForm, setSlotForm] = useState(emptySlotForm);
+  const [loanForm, setLoanForm] = useState(emptyLoanForm);
   const [editingPeriodId, setEditingPeriodId] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isWorking, setIsWorking] = useState(false);
@@ -5720,23 +7697,28 @@ function PayrollPage({ auth, mode }) {
 
     try {
       if (isAdmin) {
-        const [periodList, employeeList, shiftList] = await Promise.all([
+        const [periodList, employeeList, shiftList, loanList] = await Promise.all([
           getPayrollPeriods().catch((err) => {
             throw err;
           }),
           getPayrollEmployees().catch(() => []),
-          getWorkShifts().catch(() => [])
+          getWorkShifts().catch(() => []),
+          getPayrollLoans().catch(() => [])
         ]);
         const safePeriods = periodList || [];
         const safeEmployees = employeeList || [];
         const resolvedPeriodId = nextPeriodId || safePeriods[0]?.id || "";
         const selectedPeriod = safePeriods.find((period) => String(period.id) === String(resolvedPeriodId));
+        const periodRecords = resolvedPeriodId ? await getPayrollRecordsForPeriod(resolvedPeriodId).catch(() => []) : [];
 
         setPeriods(safePeriods);
         setEmployees(safeEmployees);
         setWorkShifts(shiftList || []);
+        setLoans(loanList || []);
         setShiftSlots(resolvedPeriodId ? await getPayrollShiftSlots(resolvedPeriodId).catch(() => []) : []);
         setEmployeeDrafts(makeEmployeeDrafts(safeEmployees));
+        setAdjustmentDrafts(makeAdjustmentDrafts(periodRecords));
+        setRecordNotes(makeRecordNotes(periodRecords));
         setSelectedPeriodId(resolvedPeriodId);
         setShiftForm((current) => ({
           ...current,
@@ -5747,7 +7729,11 @@ function PayrollPage({ auth, mode }) {
           ...current,
           shiftDate: current.shiftDate || selectedPeriod?.startDate || todayDateKey()
         }));
-        setRecords(resolvedPeriodId ? await getPayrollRecordsForPeriod(resolvedPeriodId).catch(() => []) : []);
+        setLoanForm((current) => ({
+          ...current,
+          employeeId: current.employeeId || safeEmployees[0]?.id || ""
+        }));
+        setRecords(periodRecords || []);
       } else if (isEmployee && auth?.id) {
         const [employeeRecords, slots] = await Promise.all([
           getPayrollRecordsForEmployee(auth.id).catch((err) => {
@@ -5835,7 +7821,10 @@ function PayrollPage({ auth, mode }) {
         setSlotForm((current) => ({ ...current, shiftDate: period.startDate }));
       }
       setShiftSlots(periodId ? await getPayrollShiftSlots(periodId).catch(() => []) : []);
-      setRecords(periodId ? await getPayrollRecordsForPeriod(periodId) || [] : []);
+      const periodRecords = periodId ? await getPayrollRecordsForPeriod(periodId) || [] : [];
+      setRecords(periodRecords);
+      setAdjustmentDrafts(makeAdjustmentDrafts(periodRecords));
+      setRecordNotes(makeRecordNotes(periodRecords));
     } catch (err) {
       setPayrollError(payrollErrorMessage(err));
     } finally {
@@ -5850,14 +7839,22 @@ function PayrollPage({ auth, mode }) {
     setSelectedPeriodId(periodId);
 
     try {
-      const createdRecords = await generatePayroll(periodId);
+      const generation = await generatePayroll(periodId);
+      const createdRecords = Array.isArray(generation) ? generation : generation?.records || [];
+      const skippedReasons = Array.isArray(generation) ? [] : generation?.skippedReasons || [];
       const periodRecords = await getPayrollRecordsForPeriod(periodId).catch(() => []);
 
       setRecords(periodRecords || []);
+      setAdjustmentDrafts(makeAdjustmentDrafts(periodRecords || []));
+      setRecordNotes(makeRecordNotes(periodRecords || []));
       await loadPayroll(periodId);
-      setMessage((createdRecords || []).length === 0
+      const fallbackMessage = (createdRecords || []).length === 0
         ? existingPayrollMessage(periodRecords)
-        : `Generated ${(createdRecords || []).length} payroll records.`);
+        : `Generated ${(createdRecords || []).length} payroll records.`;
+      setMessage(generation?.message || fallbackMessage);
+      if (skippedReasons.length) {
+        setPayrollError(skippedReasons.join(" "));
+      }
     } catch (err) {
       setPayrollError(payrollErrorMessage(err));
     } finally {
@@ -5885,6 +7882,65 @@ function PayrollPage({ auth, mode }) {
         [field]: value
       }
     }));
+  }
+
+  function updateAdjustmentDraft(recordId, field, value) {
+    setAdjustmentDrafts((current) => ({
+      ...current,
+      [recordId]: {
+        ...(current[recordId] || defaultAdjustmentDraft()),
+        [field]: value
+      }
+    }));
+  }
+
+  async function submitAdjustment(recordId, event) {
+    event.preventDefault();
+    const draft = adjustmentDrafts[recordId] || defaultAdjustmentDraft();
+    await runPayrollAction(
+      () => addPayrollAdjustment(recordId, {
+        type: draft.type,
+        amount: Number(draft.amount || 0),
+        notes: draft.notes,
+        employeeLoanId: draft.employeeLoanId ? Number(draft.employeeLoanId) : null
+      }),
+      () => "Payroll adjustment added."
+    );
+  }
+
+  async function removeAdjustment(recordId, adjustmentId) {
+    await runPayrollAction(
+      () => deletePayrollAdjustment(recordId, adjustmentId),
+      () => "Payroll adjustment removed."
+    );
+  }
+
+  async function saveRecordNotes(recordId) {
+    await runPayrollAction(
+      () => updatePayrollRecordNotes(recordId, recordNotes[recordId] || ""),
+      () => "Payroll notes saved."
+    );
+  }
+
+  async function submitLoan(event) {
+    event.preventDefault();
+    await runPayrollAction(
+      () => createEmployeeLoan({
+        employeeId: Number(loanForm.employeeId),
+        originalAmount: Number(loanForm.originalAmount || 0),
+        installmentAmount: loanForm.installmentAmount === "" ? 0 : Number(loanForm.installmentAmount || 0),
+        notes: loanForm.notes
+      }),
+      () => "Employee loan created."
+    );
+    setLoanForm({ ...emptyLoanForm, employeeId: loanForm.employeeId });
+  }
+
+  async function cancelLoan(loanId) {
+    await runPayrollAction(
+      () => cancelEmployeeLoan(loanId),
+      () => "Employee loan cancelled."
+    );
   }
 
   async function submitWorkShift(event) {
@@ -5998,6 +8054,8 @@ function PayrollPage({ auth, mode }) {
             <div className="metric-card"><span>Paid payroll</span><strong>{summary.paid}</strong></div>
             <div className="metric-card"><span>Cancelled payroll</span><strong>{summary.cancelled}</strong></div>
             <div className="metric-card"><span>Total gross pay</span><strong>{money(summary.grossPay)}</strong></div>
+            <div className="metric-card"><span>Total deductions</span><strong>{money(summary.deductions)}</strong></div>
+            <div className="metric-card"><span>Total net pay</span><strong>{money(summary.netPay)}</strong></div>
           </section>
 
           {isAdmin && (
@@ -6187,14 +8245,14 @@ function PayrollPage({ auth, mode }) {
             <DataTable
               actions={isAdmin ? (record) => (
                 <div className="table-actions compact">
-                  <button className="ghost-button" disabled={isWorking} onClick={() => runPayrollAction(() => approvePayrollRecord(record.id), () => "Payroll record approved.")} type="button">Approve</button>
-                  <button className="primary-button" disabled={isWorking} onClick={() => runPayrollAction(() => payPayrollRecord(record.id), () => "Payroll record marked paid.")} type="button">Mark Paid</button>
-                  <button className="danger-button" disabled={isWorking} onClick={() => runPayrollAction(() => cancelPayrollRecord(record.id), () => "Payroll record cancelled.")} type="button">Cancel</button>
+                  <button className="ghost-button" disabled={isWorking || record.status !== "PENDING"} onClick={() => runPayrollAction(() => approvePayrollRecord(record.id), () => "Payroll record approved.")} type="button">Approve</button>
+                  <button className="primary-button" disabled={isWorking || record.status === "PAID" || record.status === "CANCELLED"} onClick={() => runPayrollAction(() => payPayrollRecord(record.id), () => "Payroll record marked paid.")} type="button">Mark Paid</button>
+                  <button className="danger-button" disabled={isWorking || record.status === "PAID"} onClick={() => runPayrollAction(() => cancelPayrollRecord(record.id), () => "Payroll record cancelled.")} type="button">Cancel</button>
                 </div>
               ) : null}
               columns={isAdmin
-                ? ["Employee", "Email", "Regular", "Overtime", "Rate", "Gross", "Status", "Paid At", ""]
-                : ["Period", "Regular", "Overtime", "Rate", "Gross", "Status", "Paid At"]}
+                ? ["Employee", "Email", "Regular", "Rate", "Gross", "Deductions", "Net", "Status", "Accounting", "Paid At", ""]
+                : ["Period", "Regular", "Gross", "Deductions", "Net", "Status", "Paid At"]}
               emptyText={isAdmin ? "No payroll records for this period." : "No payroll records found yet."}
               rows={records.map((record) => ({
                 key: `payroll-record-${record.id}`,
@@ -6203,22 +8261,174 @@ function PayrollPage({ auth, mode }) {
                   record.employeeName || record.employee?.fullName || "-",
                   record.employeeEmail || record.employee?.email || "-",
                   numberCell(record.regularHours),
-                  numberCell(record.overtimeHours),
                   money(record.hourlyRate),
                   money(record.grossPay),
+                  money(record.totalDeductions),
+                  money(record.netPay),
                   record.status || "-",
+                  record.accountingSynced ? "Synced" : "-",
                   dateTime(record.paidAt)
                 ] : [
                   `${record.periodStartDate || record.payrollPeriod?.startDate || "-"} to ${record.periodEndDate || record.payrollPeriod?.endDate || "-"}`,
                   numberCell(record.regularHours),
-                  numberCell(record.overtimeHours),
-                  money(record.hourlyRate),
                   money(record.grossPay),
+                  money(record.totalDeductions),
+                  money(record.netPay),
                   record.status || "-",
                   dateTime(record.paidAt)
                 ]
               }))}
             />
+          </section>
+
+          {isAdmin && (
+            <section className="panel audit-log-panel payroll-loans-panel">
+              <div className="section-toolbar">
+                <div>
+                  <span className="eyebrow">Advances</span>
+                  <h3>Employee Loans</h3>
+                </div>
+              </div>
+              <form className="payroll-loan-form" onSubmit={submitLoan}>
+                <label>
+                  <span>Employee</span>
+                  <select required value={loanForm.employeeId} onChange={(event) => setLoanForm({ ...loanForm, employeeId: event.target.value })}>
+                    <option value="">Choose employee</option>
+                    {employees.map((employee) => (
+                      <option key={employee.id} value={employee.id}>{employee.fullName}</option>
+                    ))}
+                  </select>
+                </label>
+                <Input label="Amount" min="0.01" required step="0.01" type="number" value={loanForm.originalAmount} onChange={(originalAmount) => setLoanForm({ ...loanForm, originalAmount })} />
+                <Input label="Installment" min="0" step="0.01" type="number" value={loanForm.installmentAmount} onChange={(installmentAmount) => setLoanForm({ ...loanForm, installmentAmount })} />
+                <Input label="Notes" value={loanForm.notes} onChange={(notes) => setLoanForm({ ...loanForm, notes })} />
+                <button className="primary-button" disabled={isWorking} type="submit">Create Loan</button>
+              </form>
+              <DataTable
+                actions={(loan) => (
+                  <button className="danger-button" disabled={isWorking || loan.status !== "ACTIVE"} onClick={() => cancelLoan(loan.id)} type="button">
+                    Cancel
+                  </button>
+                )}
+                columns={["Employee", "Original", "Remaining", "Installment", "Status", "Notes", ""]}
+                emptyText="No employee loans yet."
+                rows={loans.map((loan) => ({
+                  key: `employee-loan-${loan.id}`,
+                  source: loan,
+                  values: [
+                    loan.employeeName || "-",
+                    money(loan.originalAmount),
+                    money(loan.remainingBalance),
+                    money(loan.installmentAmount),
+                    loan.status || "-",
+                    loan.notes || "-"
+                  ]
+                }))}
+              />
+            </section>
+          )}
+
+          <section className="panel audit-log-panel payroll-adjustments-panel">
+            <div className="section-toolbar">
+              <div>
+                <span className="eyebrow">Manual payroll</span>
+                <h3>{isAdmin ? "Adjustments" : "Pay Breakdown"}</h3>
+              </div>
+            </div>
+            <div className="payroll-record-cards">
+              {records.length === 0 ? (
+                <div className="empty-state payroll-slot-empty">
+                  <span className="brand-mark"><CircleDollarSign size={18} /></span>
+                  <strong>No payroll records.</strong>
+                </div>
+              ) : (
+                records.map((record) => {
+                  const editable = isAdmin && record.status === "PENDING";
+                  const draft = adjustmentDrafts[record.id] || defaultAdjustmentDraft();
+                  const loanOptions = activeLoansForRecord(loans, record);
+
+                  return (
+                    <article className="payroll-record-card" key={`payroll-adjustment-card-${record.id}`}>
+                      <div className="payroll-record-card-head">
+                        <div>
+                          <strong>{record.employeeName || "Payroll record"}</strong>
+                          <span>{record.periodStartDate || "-"} to {record.periodEndDate || "-"}</span>
+                        </div>
+                        <StatusBadge value={record.status || "PENDING"} />
+                      </div>
+                      <div className="payroll-breakdown-grid">
+                        <span>Gross <strong>{money(record.grossPay)}</strong></span>
+                        <span>Bonus <strong>{money(record.bonusAmount)}</strong></span>
+                        <span>Reimbursement <strong>{money(record.reimbursementAmount)}</strong></span>
+                        <span>Deductions <strong>{money(record.totalDeductions)}</strong></span>
+                        <span>Net <strong>{money(record.netPay)}</strong></span>
+                        <span>Accounting <strong>{record.accountingSynced ? "Synced" : "-"}</strong></span>
+                      </div>
+
+                      <div className="payroll-adjustment-list">
+                        {(record.adjustments || []).length === 0 ? (
+                          <span className="empty-note">No adjustments.</span>
+                        ) : (
+                          record.adjustments.map((adjustment) => (
+                            <div className="payroll-adjustment-line" key={adjustment.id}>
+                              <span>{adjustmentTypeLabel(adjustment.type)}</span>
+                              <strong>{money(adjustment.amount)}</strong>
+                              <em>{adjustment.notes || "-"}</em>
+                              {editable && (
+                                <button className="danger-button" disabled={isWorking} onClick={() => removeAdjustment(record.id, adjustment.id)} type="button">Remove</button>
+                              )}
+                            </div>
+                          ))
+                        )}
+                      </div>
+
+                      {isAdmin && (
+                        <div className="payroll-record-notes">
+                          <label>
+                            <span>Notes</span>
+                            <textarea disabled={!editable} rows="2" value={recordNotes[record.id] ?? ""} onChange={(event) => setRecordNotes((current) => ({ ...current, [record.id]: event.target.value }))} />
+                          </label>
+                          <button className="ghost-button" disabled={isWorking || !editable} onClick={() => saveRecordNotes(record.id)} type="button">Save Notes</button>
+                        </div>
+                      )}
+
+                      {editable && (
+                        <form className="payroll-adjustment-form" onSubmit={(event) => submitAdjustment(record.id, event)}>
+                          <label>
+                            <span>Type</span>
+                            <select value={draft.type} onChange={(event) => {
+                              const nextType = event.target.value;
+                              updateAdjustmentDraft(record.id, "type", nextType);
+                              if (nextType !== "LOAN_DEDUCTION") {
+                                updateAdjustmentDraft(record.id, "employeeLoanId", "");
+                              }
+                            }}>
+                              {payrollAdjustmentTypes.map((type) => (
+                                <option key={type} value={type}>{adjustmentTypeLabel(type)}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <Input label="Amount" min="0.01" required step="0.01" type="number" value={draft.amount} onChange={(amount) => updateAdjustmentDraft(record.id, "amount", amount)} />
+                          <label>
+                            <span>Loan</span>
+                            <select disabled={draft.type !== "LOAN_DEDUCTION"} value={draft.employeeLoanId || ""} onChange={(event) => updateAdjustmentDraft(record.id, "employeeLoanId", event.target.value)}>
+                              <option value="">No linked loan</option>
+                              {loanOptions.map((loan) => (
+                                <option key={loan.id} value={loan.id}>
+                                  #{loan.id} / {money(loan.remainingBalance)} left
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <Input label="Notes" value={draft.notes} onChange={(notes) => updateAdjustmentDraft(record.id, "notes", notes)} />
+                          <button className="primary-button" disabled={isWorking} type="submit">Add</button>
+                        </form>
+                      )}
+                    </article>
+                  );
+                })
+              )}
+            </div>
           </section>
 
           {isAdmin && (
@@ -6296,12 +8506,48 @@ function payrollSummary(records) {
     const status = String(record.status || "PENDING").toUpperCase();
     summary.totalRecords += 1;
     summary.grossPay += Number(record.grossPay || 0);
+    summary.deductions += Number(record.totalDeductions || 0);
+    summary.netPay += Number(record.netPay || 0);
     if (status === "PENDING") summary.pending += 1;
     if (status === "APPROVED") summary.approved += 1;
     if (status === "PAID") summary.paid += 1;
     if (status === "CANCELLED") summary.cancelled += 1;
     return summary;
-  }, { totalRecords: 0, pending: 0, approved: 0, paid: 0, cancelled: 0, grossPay: 0 });
+  }, { totalRecords: 0, pending: 0, approved: 0, paid: 0, cancelled: 0, grossPay: 0, deductions: 0, netPay: 0 });
+}
+
+function defaultAdjustmentDraft() {
+  return { type: "BONUS", amount: "", notes: "", employeeLoanId: "" };
+}
+
+function makeAdjustmentDrafts(records) {
+  return (records || []).reduce((drafts, record) => {
+    drafts[record.id] = defaultAdjustmentDraft();
+    return drafts;
+  }, {});
+}
+
+function makeRecordNotes(records) {
+  return (records || []).reduce((notes, record) => {
+    notes[record.id] = record.notes || "";
+    return notes;
+  }, {});
+}
+
+function adjustmentTypeLabel(type) {
+  return String(type || "")
+    .toLowerCase()
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function activeLoansForRecord(loans, record) {
+  return (loans || []).filter((loan) =>
+    loan.status === "ACTIVE"
+    && String(loan.employeeId) === String(record.employeeId)
+    && Number(loan.remainingBalance || 0) > 0
+  );
 }
 
 function ShiftSlotBoard({ employees, isAdmin, isWorking, onAssign, onCancel, onDelete, onRemoveSignup, onSignup, slots }) {
@@ -6569,15 +8815,15 @@ function CustomersPage({ customers, onSendNotice }) {
     const dueText = customer.nextPaymentDueDate ? ` by ${customer.nextPaymentDueDate}` : "";
     updateDraft(customer.id, "title", customer.hasOverdueBalance ? "Payment overdue" : "Payment due soon");
     updateDraft(customer.id, "type", "PAYMENT_DUE");
-    updateDraft(customer.id, "message", `Invoice #${customer.nextUnpaidInvoiceId || ""} has an outstanding balance of ${money(nextInvoice?.total ?? customer.outstandingBalance)}${dueText}. Please pay it through your TireTrack account.`);
+    updateDraft(customer.id, "message", `Invoice #${customer.nextUnpaidInvoiceId || ""} has an outstanding balance of ${money(nextInvoice?.balanceDue ?? customer.outstandingBalance)}${dueText}. Please pay it through your TireTrack account.`);
   }
 
   function suggestInvoiceNotice(customer, invoice) {
-    const status = String(invoice.status || "UNPAID").toUpperCase();
+    const status = invoiceStatusKey(invoice.status);
     const dueText = invoice.dueDate ? ` due by ${invoice.dueDate}` : "";
-    updateDraft(customer.id, "title", status === "PARTIAL" ? "Partial payment balance" : "Invoice payment due");
+    updateDraft(customer.id, "title", status === "PARTIALLY_PAID" ? "Partial payment balance" : "Invoice payment due");
     updateDraft(customer.id, "type", "PAYMENT_DUE");
-    updateDraft(customer.id, "message", `Invoice #${invoice.id} is ${status.toLowerCase()} with ${money(invoice.total)} outstanding${dueText}. Please pay it through your TireTrack account.`);
+    updateDraft(customer.id, "message", `Invoice #${invoice.id} is ${status.toLowerCase().replaceAll("_", " ")} with ${money(invoice.balanceDue ?? invoice.total)} outstanding${dueText}. Please pay it through your TireTrack account.`);
   }
 
   function suggestAppointmentNotice(customer) {
@@ -6661,8 +8907,8 @@ function CustomersPage({ customers, onSendNotice }) {
 function CustomerDetail({ customer, noticeDrafts, noticeMessage, onSendNotice, onSuggestAppointment, onSuggestInvoice, onSuggestPayment, onUpdateDraft }) {
   const draft = noticeDrafts[customer.id] || { title: "Account notice", type: "NOTICE", message: "" };
   const unpaidInvoices = [...(customer.unpaidInvoices || [])].sort((first, second) => {
-    const firstPartial = String(first.status || "").toUpperCase() === "PARTIAL";
-    const secondPartial = String(second.status || "").toUpperCase() === "PARTIAL";
+    const firstPartial = invoiceStatusKey(first.status) === "PARTIALLY_PAID";
+    const secondPartial = invoiceStatusKey(second.status) === "PARTIALLY_PAID";
 
     if (firstPartial !== secondPartial) {
       return firstPartial ? -1 : 1;
@@ -6700,10 +8946,10 @@ function CustomerDetail({ customer, noticeDrafts, noticeMessage, onSendNotice, o
             <div className="customer-unpaid-invoice" key={invoice.id}>
               <div>
                 <strong>Invoice #{invoice.id}</strong>
-                <small>{String(invoice.status || "UNPAID").toUpperCase()} - {money(invoice.total)} - Due {invoice.dueDate || "-"}</small>
+                <small>{invoiceStatusKey(invoice.status)} - {money(invoice.balanceDue ?? invoice.total)} due - Due {invoice.dueDate || "-"}</small>
                 <small>{invoice.vehicle || "No vehicle"}</small>
               </div>
-              <button className={String(invoice.status || "").toUpperCase() === "PARTIAL" ? "primary-button" : "ghost-button"} onClick={() => onSuggestInvoice(customer, invoice)} type="button">
+              <button className={invoiceStatusKey(invoice.status) === "PARTIALLY_PAID" ? "primary-button" : "ghost-button"} onClick={() => onSuggestInvoice(customer, invoice)} type="button">
                 Notice
               </button>
             </div>
@@ -6744,7 +8990,7 @@ function customerAlertLabel(customer) {
     return "Due";
   }
 
-  if ((customer.unpaidInvoices || []).some((invoice) => String(invoice.status || "").toUpperCase() === "PARTIAL")) {
+  if ((customer.unpaidInvoices || []).some((invoice) => invoiceStatusKey(invoice.status) === "PARTIALLY_PAID")) {
     return "Partial";
   }
 

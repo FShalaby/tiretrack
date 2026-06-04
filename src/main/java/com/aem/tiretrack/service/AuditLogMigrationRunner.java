@@ -2,12 +2,14 @@ package com.aem.tiretrack.service;
 
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.aem.tiretrack.repository.AuditLogRepository;
 
 @Component
+@ConditionalOnProperty(name = {"app.backfill.enabled", "app.backfill.audit-log-migration.enabled"}, havingValue = "true")
 public class AuditLogMigrationRunner implements ApplicationRunner {
     private final AuditLogRepository auditLogRepository;
 

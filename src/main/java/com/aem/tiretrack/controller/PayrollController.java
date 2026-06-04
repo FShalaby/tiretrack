@@ -12,8 +12,13 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.aem.tiretrack.dto.EmployeePayrollSettingsRequest;
+import com.aem.tiretrack.dto.EmployeeLoanRequest;
+import com.aem.tiretrack.dto.EmployeeLoanResponse;
+import com.aem.tiretrack.dto.PayrollAdjustmentRequest;
+import com.aem.tiretrack.dto.PayrollGenerationResponse;
 import com.aem.tiretrack.dto.PayrollPeriodRequest;
 import com.aem.tiretrack.dto.PayrollPeriodResponse;
+import com.aem.tiretrack.dto.PayrollRecordNotesRequest;
 import com.aem.tiretrack.dto.PayrollRecordResponse;
 import com.aem.tiretrack.dto.UserResponse;
 import com.aem.tiretrack.service.PayrollService;
@@ -58,8 +63,8 @@ public class PayrollController {
     }
 
     @PostMapping("/periods/{id}/generate")
-    public List<PayrollRecordResponse> generatePayroll(@PathVariable long id) {
-        return payrollService.generatePayrollForPeriod(id).stream().map(PayrollRecordResponse::new).toList();
+    public PayrollGenerationResponse generatePayroll(@PathVariable long id) {
+        return payrollService.generatePayrollForPeriod(id);
     }
 
     @GetMapping("/periods/{id}/records")
@@ -94,8 +99,49 @@ public class PayrollController {
         return new PayrollRecordResponse(payrollService.payRecord(id));
     }
 
+    @PutMapping("/records/{id}/notes")
+    public PayrollRecordResponse updatePayrollRecordNotes(
+            @PathVariable long id,
+            @RequestBody PayrollRecordNotesRequest request) {
+        return new PayrollRecordResponse(payrollService.updateRecordNotes(id, request));
+    }
+
+    @PostMapping("/records/{id}/adjustments")
+    public PayrollRecordResponse addPayrollAdjustment(
+            @PathVariable long id,
+            @RequestBody PayrollAdjustmentRequest request) {
+        return new PayrollRecordResponse(payrollService.addAdjustment(id, request));
+    }
+
+    @DeleteMapping("/records/{recordId}/adjustments/{adjustmentId}")
+    public PayrollRecordResponse deletePayrollAdjustment(
+            @PathVariable long recordId,
+            @PathVariable long adjustmentId) {
+        return new PayrollRecordResponse(payrollService.deleteAdjustment(recordId, adjustmentId));
+    }
+
     @PostMapping("/records/{id}/cancel")
     public PayrollRecordResponse cancelPayrollRecord(@PathVariable long id) {
         return new PayrollRecordResponse(payrollService.cancelRecord(id));
+    }
+
+    @GetMapping("/loans")
+    public List<EmployeeLoanResponse> getEmployeeLoans() {
+        return payrollService.getLoans().stream().map(EmployeeLoanResponse::new).toList();
+    }
+
+    @GetMapping("/employees/{employeeId}/loans")
+    public List<EmployeeLoanResponse> getEmployeeLoansForEmployee(@PathVariable long employeeId) {
+        return payrollService.getEmployeeLoans(employeeId).stream().map(EmployeeLoanResponse::new).toList();
+    }
+
+    @PostMapping("/loans")
+    public EmployeeLoanResponse createEmployeeLoan(@RequestBody EmployeeLoanRequest request) {
+        return new EmployeeLoanResponse(payrollService.createLoan(request));
+    }
+
+    @PostMapping("/loans/{id}/cancel")
+    public EmployeeLoanResponse cancelEmployeeLoan(@PathVariable long id) {
+        return new EmployeeLoanResponse(payrollService.cancelLoan(id));
     }
 }

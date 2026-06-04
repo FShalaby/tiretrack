@@ -8,15 +8,33 @@ public class DashboardSummary {
     private int lowStockCount;
     private long totalInvoices;
     private BigDecimal totalRevenue;
+    private BigDecimal totalInvoiced;
+    private BigDecimal totalCollected;
+    private BigDecimal outstandingBalance;
+    private long partiallyPaidInvoices;
     private long todayAppointments;
+    private long pendingWorkOrders;
+    private long inProgressWorkOrders;
+    private long vehicleReadyWorkOrders;
+    private long completedWorkOrdersToday;
 
     public DashboardSummary(int totalTiresInStock, int lowStockCount, long totalInvoices,
-            BigDecimal totalRevenue, long todayAppointments) {
+            BigDecimal totalRevenue, BigDecimal totalInvoiced, BigDecimal totalCollected,
+            BigDecimal outstandingBalance, long partiallyPaidInvoices, long todayAppointments, long pendingWorkOrders,
+            long inProgressWorkOrders, long vehicleReadyWorkOrders, long completedWorkOrdersToday) {
         this.totalTiresInStock = totalTiresInStock;
         this.lowStockCount = lowStockCount;
         this.totalInvoices = totalInvoices;
         this.totalRevenue = totalRevenue;
+        this.totalInvoiced = totalInvoiced;
+        this.totalCollected = totalCollected;
+        this.outstandingBalance = outstandingBalance;
+        this.partiallyPaidInvoices = partiallyPaidInvoices;
         this.todayAppointments = todayAppointments;
+        this.pendingWorkOrders = pendingWorkOrders;
+        this.inProgressWorkOrders = inProgressWorkOrders;
+        this.vehicleReadyWorkOrders = vehicleReadyWorkOrders;
+        this.completedWorkOrdersToday = completedWorkOrdersToday;
     }
 
     public int getTotalTiresInStock() {
@@ -35,7 +53,39 @@ public class DashboardSummary {
         return totalRevenue;
     }
 
+    public BigDecimal getTotalInvoiced() {
+        return totalInvoiced;
+    }
+
+    public BigDecimal getTotalCollected() {
+        return totalCollected;
+    }
+
+    public BigDecimal getOutstandingBalance() {
+        return outstandingBalance;
+    }
+
+    public long getPartiallyPaidInvoices() {
+        return partiallyPaidInvoices;
+    }
+
     public long getTodayAppointments() {
         return todayAppointments;
+    }
+
+    public long getPendingWorkOrders() {
+        return pendingWorkOrders;
+    }
+
+    public long getInProgressWorkOrders() {
+        return inProgressWorkOrders;
+    }
+
+    public long getVehicleReadyWorkOrders() {
+        return vehicleReadyWorkOrders;
+    }
+
+    public long getCompletedWorkOrdersToday() {
+        return completedWorkOrdersToday;
     }
 }

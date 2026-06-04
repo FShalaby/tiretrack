@@ -36,11 +36,6 @@ public class TireController {
         return tireService.getAllTires().stream().map(TireResponse::new).toList();
     }
 
-    @GetMapping("/barcode/{barcode}")
-    public TireResponse getTireByBarcode(@PathVariable String barcode) {
-        return new TireResponse(tireService.getTireByBarcode(barcode));
-    }
-
     @GetMapping("/{id}")
     public TireResponse getTireById(@PathVariable Long id) {
         return new TireResponse(tireService.getTireById(id));

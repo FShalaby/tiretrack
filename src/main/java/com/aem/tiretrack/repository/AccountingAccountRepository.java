@@ -11,4 +11,7 @@ public interface AccountingAccountRepository extends JpaRepository<AccountingAcc
     Optional<AccountingAccount> findByCode(String code);
     boolean existsByCode(String code);
     List<AccountingAccount> findByActiveTrueOrderByCodeAsc();
+    Optional<AccountingAccount> findByCodeAndShop_Id(String code, Long shopId);
+    boolean existsByCodeAndShop_Id(String code, Long shopId);
+    List<AccountingAccount> findByShop_IdAndActiveTrueOrderByCodeAsc(Long shopId);
 }

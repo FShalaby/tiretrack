@@ -27,7 +27,10 @@ public class CustomerVehicle {
     private User customer;
 
     private String nickname;
+
+    @Column(name = "vehicle_year")
     private String year;
+
     private String make;
     private String model;
 

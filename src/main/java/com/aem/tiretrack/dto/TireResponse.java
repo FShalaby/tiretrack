@@ -4,6 +4,8 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 import com.aem.tiretrack.enums.Condition;
+import com.aem.tiretrack.model.Shop;
+import com.aem.tiretrack.model.ShopLocation;
 import com.aem.tiretrack.model.Tire;
 
 public class TireResponse {
@@ -21,12 +23,17 @@ public class TireResponse {
     private final int availableQuantity;
     private final BigDecimal price;
     private final String location;
-    private final String barcode;
-    private final String batchCode;
+    private final Long shopId;
+    private final String shopName;
+    private final Long locationId;
+    private final String locationName;
     private final LocalDateTime createdAt;
     private final LocalDateTime updatedAt;
 
     public TireResponse(Tire tire) {
+        Shop shop = tire.getShop();
+        ShopLocation shopLocation = tire.getShopLocation();
+
         this.id = tire.getId();
         this.brand = tire.getBrand();
         this.model = tire.getModel();
@@ -41,8 +48,10 @@ public class TireResponse {
         this.availableQuantity = tire.getAvailableQuantity();
         this.price = tire.getPrice();
         this.location = tire.getLocation();
-        this.barcode = tire.getBarcode();
-        this.batchCode = tire.getBatchCode();
+        this.shopId = shop == null ? null : shop.getId();
+        this.shopName = shop == null ? null : shop.getName();
+        this.locationId = shopLocation == null ? null : shopLocation.getId();
+        this.locationName = shopLocation == null ? null : shopLocation.getName();
         this.createdAt = tire.getCreatedAt();
         this.updatedAt = tire.getUpdatedAt();
     }
@@ -61,8 +70,10 @@ public class TireResponse {
     public int getAvailableQuantity() { return availableQuantity; }
     public BigDecimal getPrice() { return price; }
     public String getLocation() { return location; }
-    public String getBarcode() { return barcode; }
-    public String getBatchCode() { return batchCode; }
+    public Long getShopId() { return shopId; }
+    public String getShopName() { return shopName; }
+    public Long getLocationId() { return locationId; }
+    public String getLocationName() { return locationName; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }
 }

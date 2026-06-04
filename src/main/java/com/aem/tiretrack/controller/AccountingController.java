@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.aem.tiretrack.dto.accounting.AccountingReport;
+import com.aem.tiretrack.dto.accounting.DuplicatePaymentDiagnosticResponse;
 import com.aem.tiretrack.dto.accounting.PayExpenseRequest;
 import com.aem.tiretrack.model.AccountingAccount;
 import com.aem.tiretrack.model.Expense;
@@ -70,5 +71,10 @@ public class AccountingController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate start,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate end) {
         return accountingService.getReport(start, end);
+    }
+
+    @GetMapping("/diagnostics/duplicate-invoice-payments")
+    public List<DuplicatePaymentDiagnosticResponse> getDuplicateInvoicePaymentDiagnostics() {
+        return accountingService.findDuplicateInvoicePaymentEntries();
     }
 }

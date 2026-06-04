@@ -9,12 +9,16 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Max;
@@ -66,11 +70,19 @@ public class Tire {
 
     private String location;
 
-    @Column(name = "barcode", unique = true)
-    private String barcode;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "shop_id")
+    private Shop shop;
 
-    @Column(name = "batch_code", unique = true)
-    private String batchCode;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "location_id")
+    private ShopLocation shopLocation;
+
+    @Transient
+    private Long shopId;
+
+    @Transient
+    private Long locationId;
 
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
@@ -185,20 +197,36 @@ public class Tire {
         this.location = location;
     }
 
-    public String getBarcode() {
-        return barcode;
+    public Shop getShop() {
+        return shop;
     }
 
-    public void setBarcode(String barcode) {
-        this.barcode = barcode;
+    public void setShop(Shop shop) {
+        this.shop = shop;
     }
 
-    public String getBatchCode() {
-        return batchCode;
+    public ShopLocation getShopLocation() {
+        return shopLocation;
     }
 
-    public void setBatchCode(String batchCode) {
-        this.batchCode = batchCode;
+    public void setShopLocation(ShopLocation shopLocation) {
+        this.shopLocation = shopLocation;
+    }
+
+    public Long getShopId() {
+        return shopId;
+    }
+
+    public void setShopId(Long shopId) {
+        this.shopId = shopId;
+    }
+
+    public Long getLocationId() {
+        return locationId;
+    }
+
+    public void setLocationId(Long locationId) {
+        this.locationId = locationId;
     }
 
     public LocalDateTime getCreatedAt() {

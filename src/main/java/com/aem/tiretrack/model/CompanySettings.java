@@ -4,8 +4,12 @@ import java.math.BigDecimal;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.PrePersist;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
@@ -14,7 +18,12 @@ import jakarta.validation.constraints.NotBlank;
 @Table(name = "company_settings")
 public class CompanySettings {
     @Id
-    private Long id = 1L;
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "shop_id")
+    private Shop shop;
 
     @NotBlank(message = "Shop name is required")
     @Column(name = "shop_name")
@@ -33,17 +42,20 @@ public class CompanySettings {
     @Column(name = "invoice_terms", length = 1000)
     private String invoiceTerms = "Payment is due upon receipt. Thank you for your business.";
 
-    @PrePersist
-    protected void onCreate() {
-        id = 1L;
-    }
-
     public Long getId() {
         return id;
     }
 
     public void setId(Long id) {
-        this.id = 1L;
+        this.id = id;
+    }
+
+    public Shop getShop() {
+        return shop;
+    }
+
+    public void setShop(Shop shop) {
+        this.shop = shop;
     }
 
     public String getShopName() {

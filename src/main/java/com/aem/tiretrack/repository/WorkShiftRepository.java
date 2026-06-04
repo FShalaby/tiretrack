@@ -28,4 +28,10 @@ public interface  WorkShiftRepository extends JpaRepository<WorkShift, Long>
     @EntityGraph(attributePaths = "employee")
     List<WorkShift> findByShiftDateBetween(LocalDate start, LocalDate end);
 
+    @EntityGraph(attributePaths = "employee")
+    List<WorkShift> findByEmployee_Shop_Id(Long shopId);
+
+    @EntityGraph(attributePaths = "employee")
+    List<WorkShift> findByEmployee_Shop_IdAndShiftDateBetween(Long shopId, LocalDate start, LocalDate end);
+
 }

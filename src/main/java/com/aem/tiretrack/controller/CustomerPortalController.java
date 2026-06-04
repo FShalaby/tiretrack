@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.aem.tiretrack.dto.customer.CustomerAppointmentRequest;
+import com.aem.tiretrack.dto.EstimateResponse;
 import com.aem.tiretrack.dto.customer.CustomerNoticeRequest;
 import com.aem.tiretrack.dto.customer.CustomerPortalResponse;
 import com.aem.tiretrack.dto.customer.CustomerSummary;
@@ -52,6 +53,11 @@ public class CustomerPortalController {
     @PostMapping("/api/customer/invoices/{id}/pay")
     public Invoice payInvoice(@PathVariable Long id) {
         return customerPortalService.payInvoice(id);
+    }
+
+    @PostMapping("/api/customer/estimates/{id}/approve")
+    public EstimateResponse approveEstimate(@PathVariable Long id) {
+        return customerPortalService.approveEstimate(id);
     }
 
     @PutMapping("/api/customer/notifications/{id}/read")

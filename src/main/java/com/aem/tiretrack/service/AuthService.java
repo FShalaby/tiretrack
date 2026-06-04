@@ -2,13 +2,16 @@ package com.aem.tiretrack.service;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.aem.tiretrack.dto.UserResponse;
 import com.aem.tiretrack.dto.auth.LoginRequest;
 import com.aem.tiretrack.dto.auth.LoginResponse;
 import com.aem.tiretrack.dto.auth.RegisterRequest;
@@ -27,16 +30,24 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final AccountValidationService accountValidationService;
+    private final ShopContextService shopContextService;
 
     @Value("${refresh.token.expiration:604800000}")
     private long refreshTokenExpiration;
 
-    public AuthService(UserRepository userRepository, RefreshTokenRepository refreshTokenRepository, PasswordEncoder passwordEncoder, JwtService jwtService, AccountValidationService accountValidationService) {
+    public AuthService(
+            UserRepository userRepository,
+            RefreshTokenRepository refreshTokenRepository,
+            PasswordEncoder passwordEncoder,
+            JwtService jwtService,
+            AccountValidationService accountValidationService,
+            ShopContextService shopContextService) {
         this.userRepository = userRepository;
         this.refreshTokenRepository = refreshTokenRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.accountValidationService = accountValidationService;
+        this.shopContextService = shopContextService;
     }
 
     @Transactional
@@ -61,7 +72,7 @@ public class AuthService {
 
         String token = jwtService.generateToken(savedUser.getEmail());
         String refreshToken = createRefreshToken(savedUser);
-        return new LoginResponse(savedUser.getId(), savedUser.getFullName(), savedUser.getEmail(), savedUser.getRole(), "Registration successful", token, refreshToken);
+        return loginResponse(savedUser, "Registration successful", token, refreshToken);
     }
 
     @Transactional
@@ -76,7 +87,7 @@ public class AuthService {
         }
         String token = jwtService.generateToken(user.getEmail());
         String refreshToken = createRefreshToken(user);
-        return new LoginResponse(user.getId(), user.getFullName(), user.getEmail(), user.getRole(), "Login successful", token, refreshToken);
+        return loginResponse(user, "Login successful", token, refreshToken);
     }
 
     @Transactional
@@ -98,7 +109,22 @@ public class AuthService {
         String refreshToken = createRefreshToken(user);
         refreshTokenRepository.delete(storedToken);
 
-        return new LoginResponse(user.getId(), user.getFullName(), user.getEmail(), user.getRole(), "Token refreshed", token, refreshToken);
+        return loginResponse(user, "Token refreshed", token, refreshToken);
+    }
+
+    public UserResponse currentUser() {
+        String email = SecurityContextHolder.getContext().getAuthentication() == null
+                ? null
+                : SecurityContextHolder.getContext().getAuthentication().getName();
+
+        if (email == null || email.isBlank()) {
+            throw new IllegalArgumentException("Authentication is required");
+        }
+
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+
+        return new UserResponse(user);
     }
 
     private String createRefreshToken(User user) {
@@ -108,5 +134,42 @@ public class AuthService {
         refreshToken.setUser(user);
         refreshToken.setExpiresAt(LocalDateTime.now().plus(Duration.ofMillis(refreshTokenExpiration)));
         return refreshTokenRepository.save(refreshToken).getToken();
+    }
+
+    private LoginResponse loginResponse(User user, String message, String token, String refreshToken) {
+        return new LoginResponse(
+                user.getId(),
+                user.getFullName(),
+                user.getEmail(),
+                user.getRole(),
+                message,
+                token,
+                refreshToken,
+                user.getShop() == null ? null : user.getShop().getId(),
+                user.getShop() == null ? null : user.getShop().getName(),
+                user.getShopLocation() == null ? null : user.getShopLocation().getId(),
+                user.getShopLocation() == null ? null : user.getShopLocation().getName(),
+                shopContextService.getAccessibleLocationIds(user),
+                permissionsFor(user));
+    }
+
+    private List<String> permissionsFor(User user) {
+        if (user.getRole() == UserRole.SUPER_ADMIN) {
+            return List.of("PLATFORM_MANAGE");
+        }
+
+        if (user.getRole() == UserRole.ADMIN && user.getShopLocation() == null) {
+            return List.of("SHOP_OWNER", "ALL_LOCATIONS");
+        }
+
+        if (user.getRole() == UserRole.ADMIN) {
+            return List.of("LOCATION_ADMIN");
+        }
+
+        if (user.getRole() == UserRole.EMPLOYEE) {
+            return List.of("EMPLOYEE_PORTAL");
+        }
+
+        return List.of("CUSTOMER_PORTAL");
     }
 }

@@ -11,6 +11,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import org.springframework.security.core.Authentication;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,33 +19,52 @@ import org.springframework.web.multipart.MultipartFile;
 
 import com.aem.tiretrack.dto.TireImportResponse;
 import com.aem.tiretrack.enums.Condition;
+import com.aem.tiretrack.model.Shop;
+import com.aem.tiretrack.model.ShopLocation;
 import com.aem.tiretrack.model.Tire;
+import com.aem.tiretrack.repository.ShopLocationRepository;
+import com.aem.tiretrack.repository.ShopRepository;
 import com.aem.tiretrack.repository.TireRepository;
 
 @Service
 public class TireService
 {
     private final TireRepository tireRepository;
+    private final ShopRepository shopRepository;
+    private final ShopLocationRepository shopLocationRepository;
     private final AuditLogService auditLogService;
+    private final ShopContextService shopContextService;
 
-    public TireService(TireRepository tireRepository, AuditLogService auditLogService) {
+    public TireService(
+            TireRepository tireRepository,
+            ShopRepository shopRepository,
+            ShopLocationRepository shopLocationRepository,
+            AuditLogService auditLogService,
+            ShopContextService shopContextService) {
         this.tireRepository = tireRepository;
+        this.shopRepository = shopRepository;
+        this.shopLocationRepository = shopLocationRepository;
         this.auditLogService = auditLogService;
+        this.shopContextService = shopContextService;
     }
 
     public List<Tire> getAllTires() {
-        return tireRepository.findAll();
+        return tireRepository.findAll().stream()
+                .filter(this::canAccessTire)
+                .toList();
     }
 
     public Tire getTireById(Long id) {
-        return tireRepository.findById(id)
+        Tire tire = tireRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Tire not found"));
+        ensureTireAccess(tire);
+        return tire;
     }
 
     @Transactional
     public Tire saveTire(Tire tire) {
+        applyOptionalShopAssignment(tire, tire);
         Tire savedTire = tireRepository.save(tire);
-        ensureBatchCodes(savedTire);
         auditLogService.record("INVENTORY_CREATED", "Tire", savedTire.getId(), "Created tire " + savedTire.getBrand() + " " + savedTire.getTireSize(), getCurrentUsername());
         return savedTire;
     }
@@ -64,48 +84,59 @@ public class TireService
         existingTire.setQuantity(updatedTire.getQuantity());
         existingTire.setPrice(updatedTire.getPrice());
         existingTire.setLocation(updatedTire.getLocation());
+        applyOptionalShopAssignment(existingTire, updatedTire);
 
         Tire savedTire = tireRepository.save(existingTire);
-        ensureBatchCodes(savedTire);
         auditLogService.record("INVENTORY_UPDATED", "Tire", savedTire.getId(), "Updated tire " + savedTire.getBrand() + " " + savedTire.getTireSize(), getCurrentUsername());
         return savedTire;
     }
 
-    public Tire getTireByBarcode(String barcode) {
-        String normalizedBarcode = barcode == null ? "" : barcode.trim();
-
-        if (normalizedBarcode.isBlank()) {
-            throw new RuntimeException("Enter a barcode to search");
-        }
-
-        return tireRepository.findByBarcodeIgnoreCase(normalizedBarcode)
-                .or(() -> tireRepository.findByBatchCodeIgnoreCase(normalizedBarcode))
-                .or(() -> findExistingBatchByGeneratedCode(normalizedBarcode))
-                .orElseThrow(() -> new RuntimeException("Barcode not found: " + normalizedBarcode));
-    }
-
     public List<Tire> searchByBrand(String brand) {
-        return tireRepository.findByBrandContainingIgnoreCase(brand);
+        return tireRepository.findByBrandContainingIgnoreCase(brand).stream()
+                .filter(this::canAccessTire)
+                .toList();
     }
 
     public List<Tire> searchBySize(int width, int aspectRatio, int rimSize) {
-        return tireRepository.findByWidthAndAspectRatioAndRimSize(width, aspectRatio, rimSize);
+        return tireRepository.findByWidthAndAspectRatioAndRimSize(width, aspectRatio, rimSize).stream()
+                .filter(this::canAccessTire)
+                .toList();
     }
 
     public List<Tire> searchByCondition(Condition condition) {
-        return tireRepository.findByCondition(condition);
+        return tireRepository.findByCondition(condition).stream()
+                .filter(this::canAccessTire)
+                .toList();
     }
 
     public List<Tire> searchBySeason(String season) {
-        return tireRepository.findBySeasonContainingIgnoreCase(season);
+        return tireRepository.findBySeasonContainingIgnoreCase(season).stream()
+                .filter(this::canAccessTire)
+                .toList();
     }
 
     public List<Tire> searchByLocation(String location) {
-        return tireRepository.findByLocationContainingIgnoreCase(location);
+        return tireRepository.findByLocationContainingIgnoreCase(location).stream()
+                .filter(this::canAccessTire)
+                .toList();
     }
 
     public List<Tire> getLowStockTires(int threshold) {
-        return tireRepository.findByAvailableQuantityLessThanEqual(threshold);
+        return tireRepository.findByAvailableQuantityLessThanEqual(threshold).stream()
+                .filter(this::canAccessTire)
+                .toList();
+    }
+
+    public List<Tire> getTiresByShop(Long shopId) {
+        return tireRepository.findByShop_Id(shopId);
+    }
+
+    public List<Tire> getTiresByLocation(Long locationId) {
+        return tireRepository.findByShopLocation_Id(locationId);
+    }
+
+    public List<Tire> getTiresByShopAndLocation(Long shopId, Long locationId) {
+        return tireRepository.findByShop_IdAndShopLocation_Id(shopId, locationId);
     }
 
     @Transactional
@@ -136,6 +167,7 @@ public class TireService
 
             try {
                 Tire importTire = tireFromCsvRow(headers, row, rowNumber);
+            applyCurrentTenantContextIfMissing(importTire);
                 Optional<Tire> existingMatch = findCsvImportMatch(headers, row, importTire);
 
                 if (existingMatch.isPresent()) {
@@ -164,11 +196,9 @@ public class TireService
                     }
 
                     Tire savedTire = tireRepository.save(existingTire);
-                    ensureBatchCodes(savedTire);
                     updatedCount += 1;
                 } else {
-                    Tire savedTire = tireRepository.save(importTire);
-                    ensureBatchCodes(savedTire);
+                    tireRepository.save(importTire);
                     createdCount += 1;
                 }
             } catch (IllegalArgumentException exception) {
@@ -193,43 +223,81 @@ public class TireService
         auditLogService.record("INVENTORY_DELETED", "Tire", id, "Deleted tire " + tire.getBrand() + " " + tire.getTireSize(), getCurrentUsername());
     }
 
-    private void ensureBatchCodes(Tire tire) {
-        if (tire.getId() == null || hasBatchCodes(tire)) {
+    private void applyOptionalShopAssignment(Tire target, Tire request) {
+        Long shopId = request.getShopId();
+        Long locationId = request.getLocationId();
+
+        if (shopId == null && locationId == null) {
+            applyCurrentTenantContextIfMissing(target);
             return;
         }
 
-        String paddedId = String.format("%06d", tire.getId());
-        tire.setBatchCode("BATCH-" + paddedId);
-        tire.setBarcode("TT-BATCH-" + paddedId);
-        tireRepository.save(tire);
-    }
+        Shop shop = null;
+        ShopLocation location = null;
 
-    private java.util.Optional<Tire> findExistingBatchByGeneratedCode(String code) {
-        String normalizedCode = code.toUpperCase();
-        String prefix = normalizedCode.startsWith("TT-BATCH-")
-                ? "TT-BATCH-"
-                : normalizedCode.startsWith("BATCH-")
-                        ? "BATCH-"
-                        : normalizedCode.startsWith("TTBATCH") ? "TTBATCH" : "";
+        if (locationId != null) {
+            location = shopLocationRepository.findById(locationId)
+                    .orElseThrow(() -> new IllegalArgumentException("Shop location not found with id: " + locationId));
 
-        if (prefix.isBlank()) {
-            return java.util.Optional.empty();
+            if (!location.isActive()) {
+                throw new IllegalArgumentException("Cannot assign inventory to an inactive location");
+            }
+
+            shop = location.getShop();
         }
 
-        try {
-            Long id = Long.valueOf(normalizedCode.substring(prefix.length()));
-            return tireRepository.findById(id).map(tire -> {
-                ensureBatchCodes(tire);
-                return tire;
-            });
-        } catch (NumberFormatException exception) {
-            return java.util.Optional.empty();
+        if (shopId != null) {
+            Shop requestedShop = shopRepository.findById(shopId)
+                    .orElseThrow(() -> new IllegalArgumentException("Shop not found with id: " + shopId));
+
+            if (!requestedShop.isActive()) {
+                throw new IllegalArgumentException("Cannot assign inventory to an inactive shop");
+            }
+
+            if (shop != null && !shop.getId().equals(requestedShop.getId())) {
+                throw new IllegalArgumentException("Location does not belong to the selected shop");
+            }
+
+            shop = requestedShop;
+        }
+
+        target.setShop(shop);
+        if (location == null && shop != null) {
+            Shop resolvedShop = shop;
+            location = shopContextService.getCurrentTenantLocation()
+                    .filter(currentLocation -> currentLocation.getShop() != null
+                            && currentLocation.getShop().getId().equals(resolvedShop.getId()))
+                    .orElse(null);
+        }
+        target.setShopLocation(location);
+        if (shop != null) {
+            shopContextService.requireShopAccess(shop.getId());
         }
     }
 
-    private boolean hasBatchCodes(Tire tire) {
-        return tire.getBarcode() != null && !tire.getBarcode().isBlank()
-                && tire.getBatchCode() != null && !tire.getBatchCode().isBlank();
+    private void applyCurrentTenantContextIfMissing(Tire target) {
+        if (target.getShop() != null) {
+            if (target.getShopLocation() == null) {
+                shopContextService.getCurrentTenantLocation()
+                        .filter(location -> location.getShop() != null
+                                && location.getShop().getId().equals(target.getShop().getId()))
+                        .ifPresent(target::setShopLocation);
+            }
+            return;
+        }
+
+        shopContextService.getCurrentTenantShop().ifPresent(target::setShop);
+        shopContextService.getCurrentTenantLocation().ifPresent(target::setShopLocation);
+    }
+
+    private void ensureTireAccess(Tire tire) {
+        if (!canAccessTire(tire)) {
+            throw new AccessDeniedException("You do not have permission to access this resource.");
+        }
+    }
+
+    private boolean canAccessTire(Tire tire) {
+        return shopContextService.canAccessTenantResource(tire.getShop(), tire.getShopLocation());
     }
 
     private List<List<String>> parseCsv(MultipartFile file) {
@@ -375,41 +443,14 @@ public class TireService
     }
 
     private Optional<Tire> findCsvImportMatch(Map<String, Integer> headers, List<String> row, Tire importTire) {
-        String barcode = firstOptionalText(headers, row,
-                "barcode",
-                "bar code",
-                "upc",
-                "tiretrackbarcode");
-        String batchCode = firstOptionalText(headers, row,
-                "batchcode",
-                "batch",
-                "batchid",
-                "tiretrackbatch");
+        List<Tire> sizeMatches = tireRepository.findByWidthAndAspectRatioAndRimSize(
+                importTire.getWidth(),
+                importTire.getAspectRatio(),
+                importTire.getRimSize());
 
-        if (!barcode.isBlank()) {
-            Optional<Tire> barcodeMatch = tireRepository.findByBarcodeIgnoreCase(barcode)
-                    .or(() -> findExistingBatchByGeneratedCode(barcode));
-
-            if (barcodeMatch.isPresent()) {
-                return barcodeMatch;
-            }
-        }
-
-        if (!batchCode.isBlank()) {
-            Optional<Tire> batchMatch = tireRepository.findByBatchCodeIgnoreCase(batchCode)
-                    .or(() -> findExistingBatchByGeneratedCode(batchCode));
-
-            if (batchMatch.isPresent()) {
-                return batchMatch;
-            }
-        }
-
-        return tireRepository
-                .findByWidthAndAspectRatioAndRimSize(
-                        importTire.getWidth(),
-                        importTire.getAspectRatio(),
-                        importTire.getRimSize())
+        return sizeMatches
                 .stream()
+                .filter(this::canAccessTire)
                 .filter(tire -> sameText(tire.getBrand(), importTire.getBrand()))
                 .filter(tire -> tire.getCondition() == importTire.getCondition())
                 .filter(tire -> importTire.getModel().isBlank() || sameText(tire.getModel(), importTire.getModel()))

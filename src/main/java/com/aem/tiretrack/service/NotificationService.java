@@ -15,15 +15,30 @@ import com.aem.tiretrack.repository.UserRepository;
 public class NotificationService {
     private final AppNotificationRepository notificationRepository;
     private final UserRepository userRepository;
+    private final ShopContextService shopContextService;
 
-    public NotificationService(AppNotificationRepository notificationRepository, UserRepository userRepository) {
+    public NotificationService(AppNotificationRepository notificationRepository, UserRepository userRepository, ShopContextService shopContextService) {
         this.notificationRepository = notificationRepository;
         this.userRepository = userRepository;
+        this.shopContextService = shopContextService;
     }
 
     public List<AppNotification> currentNotifications() {
         User user = currentUser();
-        return notificationRepository.findTop30ByRecipientUserIdOrRecipientRoleOrderByCreatedAtDesc(user.getId(), user.getRole());
+        if (shopContextService.isSuperAdmin()) {
+            return notificationRepository.findTop30ByRecipientUserIdOrRecipientRoleOrderByCreatedAtDesc(user.getId(), user.getRole());
+        }
+
+        if (user.getRole() == com.aem.tiretrack.enums.UserRole.ADMIN || user.getRole() == com.aem.tiretrack.enums.UserRole.EMPLOYEE) {
+            return notificationRepository.findTop30ByRecipientUserIdOrRecipientRoleAndShop_IdOrderByCreatedAtDesc(
+                    user.getId(),
+                    user.getRole(),
+                    shopContextService.requireShopForAdminOrEmployee().getId());
+        }
+
+        return notificationRepository.findTop30ByRecipientUserIdOrRecipientRoleOrderByCreatedAtDesc(user.getId(), user.getRole()).stream()
+                .filter(notification -> notification.getRecipientUserId() != null && notification.getRecipientUserId().equals(user.getId()))
+                .toList();
     }
 
     public AppNotification createForCurrentUser(NotificationRequest request) {
@@ -35,6 +50,7 @@ public class NotificationService {
         notification.setMessage(blankDefault(request.getMessage(), notification.getTitle()));
         notification.setType(blankDefault(request.getType(), "INFO"));
         notification.setTargetTab(blankDefault(request.getTargetTab(), "Dashboard"));
+        notification.setShop(user.getShop());
         return notificationRepository.save(notification);
     }
 

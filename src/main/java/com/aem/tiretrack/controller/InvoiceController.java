@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.aem.tiretrack.dto.InvoiceStatusUpdateRequest;
 import com.aem.tiretrack.model.Invoice;
 import com.aem.tiretrack.service.InvoiceService;
 
@@ -49,7 +50,7 @@ public class InvoiceController {
     }
 
     @PutMapping("/{id}/status")
-    public Invoice updateInvoiceStatus(@PathVariable Long id, @RequestBody java.util.Map<String, String> payload) {
-        return invoiceService.updateInvoiceStatus(id, payload.getOrDefault("status", "PAID"));
+    public Invoice updateInvoiceStatus(@PathVariable Long id, @RequestBody InvoiceStatusUpdateRequest request) {
+        return invoiceService.updateInvoiceStatus(id, request);
     }
 }

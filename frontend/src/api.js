@@ -138,6 +138,10 @@ export function refreshToken(requestBody) {
   }, true);
 }
 
+export function getCurrentUser() {
+  return request("/api/auth/me");
+}
+
 export function logout() {
   clearAuthSession();
 }
@@ -204,10 +208,6 @@ export function getSalesData(days = 14) {
 
 export function getTires() {
   return request("/api/tires");
-}
-
-export function getTireByBarcode(barcode) {
-  return request(`/api/tires/barcode/${encodeURIComponent(barcode)}`);
 }
 
 export function searchTiresByBrand(brand) {
@@ -293,6 +293,66 @@ export function deleteAppointment(id) {
   });
 }
 
+export function getWorkOrders() {
+  return request("/api/work-orders");
+}
+
+export function createWorkOrder(workOrder) {
+  return request("/api/work-orders", {
+    method: "POST",
+    headers: jsonHeaders,
+    body: JSON.stringify(workOrder)
+  });
+}
+
+export function createWorkOrderFromAppointment(appointmentId) {
+  return request(`/api/work-orders/from-appointment/${encodeURIComponent(appointmentId)}`, {
+    method: "POST"
+  });
+}
+
+export function updateWorkOrder(id, workOrder) {
+  return request(`/api/work-orders/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: jsonHeaders,
+    body: JSON.stringify(workOrder)
+  });
+}
+
+export function startWorkOrder(id) {
+  return request(`/api/work-orders/${encodeURIComponent(id)}/start`, {
+    method: "POST"
+  });
+}
+
+export function markWorkOrderVehicleReady(id) {
+  return request(`/api/work-orders/${encodeURIComponent(id)}/vehicle-ready`, {
+    method: "POST"
+  });
+}
+
+export function completeWorkOrder(id) {
+  return request(`/api/work-orders/${encodeURIComponent(id)}/complete`, {
+    method: "POST"
+  });
+}
+
+export function cancelWorkOrder(id) {
+  return request(`/api/work-orders/${encodeURIComponent(id)}/cancel`, {
+    method: "POST"
+  });
+}
+
+export function convertWorkOrderToInvoice(id) {
+  return request(`/api/work-orders/${encodeURIComponent(id)}/convert-to-invoice`, {
+    method: "POST"
+  });
+}
+
+export function previewWorkOrderInvoice(id) {
+  return request(`/api/work-orders/${encodeURIComponent(id)}/invoice-preview`);
+}
+
 export function getInvoices() {
   return request("/api/invoices");
 }
@@ -316,10 +376,61 @@ export function deleteInvoice(id) {
 }
 
 export function updateInvoiceStatus(id, status) {
+  const payload = typeof status === "object" && status !== null ? status : { status };
   return request(`/api/invoices/${id}/status`, {
     method: "PUT",
     headers: jsonHeaders,
-    body: JSON.stringify({ status })
+    body: JSON.stringify(payload)
+  });
+}
+
+export function getEstimates() {
+  return request("/api/estimates");
+}
+
+export function createEstimate(estimate) {
+  return request("/api/estimates", {
+    method: "POST",
+    headers: jsonHeaders,
+    body: JSON.stringify(estimate)
+  });
+}
+
+export function updateEstimate(id, estimate) {
+  return request(`/api/estimates/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: jsonHeaders,
+    body: JSON.stringify(estimate)
+  });
+}
+
+export function approveEstimate(id) {
+  return request(`/api/estimates/${encodeURIComponent(id)}/approve`, {
+    method: "POST"
+  });
+}
+
+export function declineEstimate(id) {
+  return request(`/api/estimates/${encodeURIComponent(id)}/decline`, {
+    method: "POST"
+  });
+}
+
+export function cancelEstimate(id) {
+  return request(`/api/estimates/${encodeURIComponent(id)}/cancel`, {
+    method: "POST"
+  });
+}
+
+export function sendEstimate(id) {
+  return request(`/api/estimates/${encodeURIComponent(id)}/send`, {
+    method: "POST"
+  });
+}
+
+export function convertEstimateToInvoice(id) {
+  return request(`/api/estimates/${encodeURIComponent(id)}/convert-to-invoice`, {
+    method: "POST"
   });
 }
 
@@ -351,6 +462,12 @@ export function createCustomerAppointment(appointment) {
 
 export function payCustomerInvoice(id) {
   return request(`/api/customer/invoices/${id}/pay`, {
+    method: "POST"
+  });
+}
+
+export function approveCustomerEstimate(id) {
+  return request(`/api/customer/estimates/${id}/approve`, {
     method: "POST"
   });
 }
@@ -472,6 +589,28 @@ export function payPayrollRecord(id) {
   });
 }
 
+export function updatePayrollRecordNotes(id, notes) {
+  return request(`/api/payroll/records/${id}/notes`, {
+    method: "PUT",
+    headers: jsonHeaders,
+    body: JSON.stringify({ notes })
+  });
+}
+
+export function addPayrollAdjustment(id, adjustment) {
+  return request(`/api/payroll/records/${id}/adjustments`, {
+    method: "POST",
+    headers: jsonHeaders,
+    body: JSON.stringify(adjustment)
+  });
+}
+
+export function deletePayrollAdjustment(recordId, adjustmentId) {
+  return request(`/api/payroll/records/${recordId}/adjustments/${adjustmentId}`, {
+    method: "DELETE"
+  });
+}
+
 export function cancelPayrollRecord(id) {
   return request(`/api/payroll/records/${id}/cancel`, {
     method: "POST"
@@ -490,8 +629,185 @@ export function updateEmployeePayrollSettings(employeeId, settings) {
   });
 }
 
+export function getPayrollLoans() {
+  return request("/api/payroll/loans");
+}
+
+export function getEmployeeLoans(employeeId) {
+  return request(`/api/payroll/employees/${employeeId}/loans`);
+}
+
+export function createEmployeeLoan(loan) {
+  return request("/api/payroll/loans", {
+    method: "POST",
+    headers: jsonHeaders,
+    body: JSON.stringify(loan)
+  });
+}
+
+export function cancelEmployeeLoan(id) {
+  return request(`/api/payroll/loans/${id}/cancel`, {
+    method: "POST"
+  });
+}
+
 export function getWorkShifts() {
   return request("/api/shifts");
+}
+
+export function getPlatformShops() {
+  return request("/api/platform/shops");
+}
+
+export function getPlatformUsers() {
+  return request("/api/platform/users");
+}
+
+export function createPlatformUser(user) {
+  return request("/api/platform/users", {
+    method: "POST",
+    headers: jsonHeaders,
+    body: JSON.stringify(user)
+  });
+}
+
+export function activatePlatformUser(id) {
+  return request(`/api/platform/users/${encodeURIComponent(id)}/activate`, {
+    method: "POST"
+  });
+}
+
+export function deactivatePlatformUser(id) {
+  return request(`/api/platform/users/${encodeURIComponent(id)}/deactivate`, {
+    method: "POST"
+  });
+}
+
+export function getPlatformLinks() {
+  return request("/api/platform/links");
+}
+
+export function assignAdminToShop(userId, shopId) {
+  return request(`/api/platform/users/${encodeURIComponent(userId)}/assign-shop/${encodeURIComponent(shopId)}`, {
+    method: "PUT"
+  });
+}
+
+export function assignAdminToLocation(userId, locationId) {
+  return request(`/api/platform/users/${encodeURIComponent(userId)}/assign-location/${encodeURIComponent(locationId)}`, {
+    method: "PUT"
+  });
+}
+
+export function assignPlatformRecord(type, id, assignment) {
+  return request(`/api/platform/links/${encodeURIComponent(type)}/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: jsonHeaders,
+    body: JSON.stringify(assignment)
+  });
+}
+
+export function assignLegacyDataToShop(shopId) {
+  return request(`/api/platform/shops/${encodeURIComponent(shopId)}/assign-legacy-data`, {
+    method: "POST"
+  });
+}
+
+export function createPlatformShop(shop) {
+  return request("/api/platform/shops", {
+    method: "POST",
+    headers: jsonHeaders,
+    body: JSON.stringify(shop)
+  });
+}
+
+export function updatePlatformShop(id, shop) {
+  return request(`/api/platform/shops/${id}`, {
+    method: "PUT",
+    headers: jsonHeaders,
+    body: JSON.stringify(shop)
+  });
+}
+
+export function activatePlatformShop(id) {
+  return request(`/api/platform/shops/${id}/activate`, {
+    method: "POST"
+  });
+}
+
+export function deactivatePlatformShop(id) {
+  return request(`/api/platform/shops/${id}/deactivate`, {
+    method: "POST"
+  });
+}
+
+export function getShopLocations(shopId) {
+  return request(`/api/shop-locations/shop/${encodeURIComponent(shopId)}`);
+}
+
+export function getActiveShopLocations(shopId) {
+  return request(`/api/shop-locations/shop/${encodeURIComponent(shopId)}/active`);
+}
+
+export function createShopLocation(location) {
+  return request("/api/shop-locations", {
+    method: "POST",
+    headers: jsonHeaders,
+    body: JSON.stringify(location)
+  });
+}
+
+export function clockIn() {
+  return request("/api/attendance/clock-in", {
+    method: "POST"
+  });
+}
+
+export function clockOut() {
+  return request("/api/attendance/clock-out", {
+    method: "POST"
+  });
+}
+
+export function getMyTodayAttendance() {
+  return request("/api/attendance/me/today");
+}
+
+export function getMyAttendanceRange(start, end) {
+  const params = new URLSearchParams({ start, end });
+  return request(`/api/attendance/me/range?${params.toString()}`);
+}
+
+export function getAttendanceEmployees() {
+  return request("/api/attendance/employees");
+}
+
+export function getAttendanceByDate(date) {
+  const query = date ? `?date=${encodeURIComponent(date)}` : "";
+  return request(`/api/attendance/day${query}`);
+}
+
+export function getEmployeeAttendanceRange(employeeId, start, end) {
+  const params = new URLSearchParams({ start, end });
+  return request(`/api/attendance/employee/${encodeURIComponent(employeeId)}/range?${params.toString()}`);
+}
+
+export function markEmployeeAbsent(employeeId, date) {
+  return request(`/api/attendance/employee/${encodeURIComponent(employeeId)}/absent?date=${encodeURIComponent(date)}`, {
+    method: "POST"
+  });
+}
+
+export function resolveAbsence(attendanceId, decision, notes) {
+  return request(`/api/attendance/${encodeURIComponent(attendanceId)}/resolve-absence`, {
+    method: "POST",
+    headers: jsonHeaders,
+    body: JSON.stringify({ decision, notes })
+  });
+}
+
+export function getUnresolvedAbsences() {
+  return request("/api/attendance/absences/unresolved");
 }
 
 export function createWorkShift(shift) {

@@ -64,9 +64,12 @@ public class GlobalExceptionHandler {
             AccessDeniedException exception,
             HttpServletRequest request) {
         log.warn("Access denied", exception);
+        String message = exception.getMessage() == null || exception.getMessage().isBlank()
+                ? "You do not have permission to access this resource."
+                : exception.getMessage();
         return buildResponse(
                 HttpStatus.FORBIDDEN,
-                "You do not have permission to access this resource.",
+                message,
                 request);
     }
 

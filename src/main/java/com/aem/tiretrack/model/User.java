@@ -12,9 +12,12 @@ import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import jakarta.validation.constraints.NotNull;
@@ -64,6 +67,15 @@ public class User
     @Convert(converter = EmploymentTypeConverter.class)
     @Column(name = "employment_type")
     private EmploymentType employmentType;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "shop_id")
+    private Shop shop;
+
+    @JsonIgnore
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "location_id")
+    private ShopLocation shopLocation;
 
     @PrePersist
     protected void onCreate() {
@@ -153,5 +165,29 @@ public class User
 
     public void setEmploymentType(EmploymentType employmentType) {
         this.employmentType = employmentType;
+    }
+
+    public Shop getShop() {
+        return shop;
+    }
+
+    public void setShop(Shop shop) {
+        this.shop = shop;
+    }
+
+    public ShopLocation getShopLocation() {
+        return shopLocation;
+    }
+
+    public void setShopLocation(ShopLocation shopLocation) {
+        this.shopLocation = shopLocation;
+    }
+
+    public Long getLocationId() {
+        return shopLocation == null ? null : shopLocation.getId();
+    }
+
+    public String getLocationName() {
+        return shopLocation == null ? null : shopLocation.getName();
     }
 }

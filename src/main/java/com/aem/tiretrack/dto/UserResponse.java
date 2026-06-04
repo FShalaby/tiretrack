@@ -18,6 +18,10 @@ public class UserResponse {
     private BigDecimal hourlyRate;
     private boolean payrollEnabled;
     private EmploymentType employmentType;
+    private Long shopId;
+    private String shopName;
+    private Long locationId;
+    private String locationName;
 
     public UserResponse(User user) {
         this.id = user.getId();
@@ -30,6 +34,10 @@ public class UserResponse {
         this.hourlyRate = user.getHourlyRate();
         this.payrollEnabled = user.isPayrollEnabled();
         this.employmentType = user.getEmploymentType();
+        this.shopId = user.getShop() == null ? null : user.getShop().getId();
+        this.shopName = user.getShop() == null ? null : user.getShop().getName();
+        this.locationId = user.getShopLocation() == null ? null : user.getShopLocation().getId();
+        this.locationName = user.getShopLocation() == null ? null : user.getShopLocation().getName();
     }
 
     public Long getId() { return id; }
@@ -42,4 +50,8 @@ public class UserResponse {
     public BigDecimal getHourlyRate() { return hourlyRate; }
     public boolean isPayrollEnabled() { return payrollEnabled; }
     public EmploymentType getEmploymentType() { return employmentType; }
+    public Long getShopId() { return shopId; }
+    public String getShopName() { return shopName; }
+    public Long getLocationId() { return locationId; }
+    public String getLocationName() { return locationName; }
 }

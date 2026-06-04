@@ -10,6 +10,7 @@ import com.aem.tiretrack.model.AuditLog;
 
 public interface AuditLogRepository extends JpaRepository<AuditLog, Long> {
     List<AuditLog> findTop25ByOrderByCreatedAtDesc();
+    List<AuditLog> findTop25ByShop_IdOrderByCreatedAtDesc(Long shopId);
 
     @Modifying
     @Query("update AuditLog log set log.performedBy = 'legacy-system' where log.performedBy is null or log.performedBy = 'system'")

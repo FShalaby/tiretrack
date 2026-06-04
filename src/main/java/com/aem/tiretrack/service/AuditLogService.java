@@ -12,13 +12,20 @@ import com.aem.tiretrack.repository.AuditLogRepository;
 @Service
 public class AuditLogService {
     private final AuditLogRepository auditLogRepository;
+    private final ShopContextService shopContextService;
 
-    public AuditLogService(AuditLogRepository auditLogRepository) {
+    public AuditLogService(AuditLogRepository auditLogRepository, ShopContextService shopContextService) {
         this.auditLogRepository = auditLogRepository;
+        this.shopContextService = shopContextService;
     }
 
     public List<AuditLog> latest() {
-        return auditLogRepository.findTop25ByOrderByCreatedAtDesc();
+        if (shopContextService.isSuperAdmin()) {
+            return auditLogRepository.findTop25ByOrderByCreatedAtDesc();
+        }
+
+        return auditLogRepository.findTop25ByShop_IdOrderByCreatedAtDesc(
+                shopContextService.requireShopForAdminOrEmployee().getId());
     }
 
     public void record(String action, String entityType, Long entityId, String message) {
@@ -32,6 +39,7 @@ public class AuditLogService {
         log.setEntityId(entityId);
         log.setMessage(message);
         log.setPerformedBy(performedBy);
+        shopContextService.getCurrentTenantShop().ifPresent(log::setShop);
         auditLogRepository.save(log);
     }
 

@@ -51,6 +51,11 @@ public class Vendor {
 
     @JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "shop_id")
+    private Shop shop;
+
+    @JsonIgnore
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "admin_user_id", insertable = false, updatable = false)
     private User adminUser;
 
@@ -82,6 +87,10 @@ public class Vendor {
     public void setNotes(String notes) { this.notes = notes; }
     public Long getAdminUserId() { return adminUserId; }
     public void setAdminUserId(Long adminUserId) { this.adminUserId = adminUserId; }
+    public Shop getShop() { return shop; }
+    public void setShop(Shop shop) { this.shop = shop; }
+    public Long getShopId() { return shop == null ? null : shop.getId(); }
+    public String getShopName() { return shop == null ? null : shop.getName(); }
     public String getCreatedBy() { return createdBy; }
     public void setCreatedBy(String createdBy) { this.createdBy = createdBy; }
     public LocalDateTime getCreatedAt() { return createdAt; }

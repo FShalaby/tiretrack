@@ -3,6 +3,8 @@ package com.aem.tiretrack.dto;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Comparator;
+import java.util.List;
 
 import com.aem.tiretrack.enums.EmploymentType;
 import com.aem.tiretrack.enums.PayrollStatus;
@@ -24,6 +26,19 @@ public class PayrollRecordResponse {
     private BigDecimal overtimeHours;
     private BigDecimal hourlyRate;
     private BigDecimal grossPay;
+    private BigDecimal bonusAmount;
+    private BigDecimal reimbursementAmount;
+    private BigDecimal deductionAmount;
+    private BigDecimal penaltyAmount;
+    private BigDecimal loanDeductionAmount;
+    private BigDecimal taxDeductionAmount;
+    private BigDecimal otherDeductionAmount;
+    private BigDecimal totalDeductions;
+    private BigDecimal netPay;
+    private String notes;
+    private boolean accountingSynced;
+    private Long accountingEntryId;
+    private List<PayrollAdjustmentResponse> adjustments;
     private PayrollStatus status;
     private LocalDateTime paidAt;
     private LocalDateTime createdAt;
@@ -46,6 +61,22 @@ public class PayrollRecordResponse {
         this.overtimeHours = record.getOvertimeHours();
         this.hourlyRate = record.getHourlyRate();
         this.grossPay = record.getGrossPay();
+        this.bonusAmount = record.getBonusAmount();
+        this.reimbursementAmount = record.getReimbursementAmount();
+        this.deductionAmount = record.getDeductionAmount();
+        this.penaltyAmount = record.getPenaltyAmount();
+        this.loanDeductionAmount = record.getLoanDeductionAmount();
+        this.taxDeductionAmount = record.getTaxDeductionAmount();
+        this.otherDeductionAmount = record.getOtherDeductionAmount();
+        this.totalDeductions = record.getTotalDeductions();
+        this.netPay = record.getNetPay();
+        this.notes = record.getNotes();
+        this.accountingSynced = record.isAccountingSynced();
+        this.accountingEntryId = record.getAccountingEntryId();
+        this.adjustments = record.getAdjustments().stream()
+                .sorted(Comparator.comparing(adjustment -> adjustment.getCreatedAt() == null ? LocalDateTime.MIN : adjustment.getCreatedAt()))
+                .map(PayrollAdjustmentResponse::new)
+                .toList();
         this.status = record.getStatus();
         this.paidAt = record.getPaidAt();
         this.createdAt = record.getCreatedAt();
@@ -65,6 +96,19 @@ public class PayrollRecordResponse {
     public BigDecimal getOvertimeHours() { return overtimeHours; }
     public BigDecimal getHourlyRate() { return hourlyRate; }
     public BigDecimal getGrossPay() { return grossPay; }
+    public BigDecimal getBonusAmount() { return bonusAmount; }
+    public BigDecimal getReimbursementAmount() { return reimbursementAmount; }
+    public BigDecimal getDeductionAmount() { return deductionAmount; }
+    public BigDecimal getPenaltyAmount() { return penaltyAmount; }
+    public BigDecimal getLoanDeductionAmount() { return loanDeductionAmount; }
+    public BigDecimal getTaxDeductionAmount() { return taxDeductionAmount; }
+    public BigDecimal getOtherDeductionAmount() { return otherDeductionAmount; }
+    public BigDecimal getTotalDeductions() { return totalDeductions; }
+    public BigDecimal getNetPay() { return netPay; }
+    public String getNotes() { return notes; }
+    public boolean isAccountingSynced() { return accountingSynced; }
+    public Long getAccountingEntryId() { return accountingEntryId; }
+    public List<PayrollAdjustmentResponse> getAdjustments() { return adjustments; }
     public PayrollStatus getStatus() { return status; }
     public LocalDateTime getPaidAt() { return paidAt; }
     public LocalDateTime getCreatedAt() { return createdAt; }

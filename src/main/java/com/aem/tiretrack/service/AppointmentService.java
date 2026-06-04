@@ -10,13 +10,16 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.springframework.security.core.Authentication;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.aem.tiretrack.enums.AppointmentStatus;
 import com.aem.tiretrack.model.Appointment;
+import com.aem.tiretrack.model.Shop;
 import com.aem.tiretrack.model.Tire;
+import com.aem.tiretrack.model.User;
 import com.aem.tiretrack.repository.AppointmentRepository;
 import com.aem.tiretrack.repository.TireRepository;
 import com.aem.tiretrack.repository.UserRepository;
@@ -31,28 +34,38 @@ public class AppointmentService {
     private final TireRepository tireRepository;
     private final UserRepository userRepository;
     private final AuditLogService auditLogService;
+    private final ShopContextService shopContextService;
 
-    public AppointmentService(AppointmentRepository appointmentRepository, TireRepository tireRepository, UserRepository userRepository, AuditLogService auditLogService) {
+    public AppointmentService(AppointmentRepository appointmentRepository, TireRepository tireRepository, UserRepository userRepository, AuditLogService auditLogService, ShopContextService shopContextService) {
         this.appointmentRepository = appointmentRepository;
         this.tireRepository = tireRepository;
         this.userRepository = userRepository;
         this.auditLogService = auditLogService;
+        this.shopContextService = shopContextService;
     }
 
     public List<Appointment> getAllAppointments() {
-        return appointmentRepository.findAll();
+        return appointmentRepository.findAll().stream()
+                .filter(this::canAccessAppointment)
+                .toList();
     }
 
     public Appointment getAppointmentById(Long id) {
-        return appointmentRepository.findById(id)
+        Appointment appointment = appointmentRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Appointment not found"));
+        ensureAppointmentAccess(appointment);
+        return appointment;
     }
 
     public List<String> getAvailableSlots(LocalDate date) {
         LocalDateTime dayStart = date.atStartOfDay();
         LocalDateTime dayEnd = date.atTime(LocalTime.MAX);
 
-        Set<LocalTime> bookedTimes = appointmentRepository.findByAppointmentDateBetween(dayStart, dayEnd).stream()
+        List<Appointment> appointmentsForDay = appointmentRepository.findByAppointmentDateBetween(dayStart, dayEnd).stream()
+                .filter(this::canAccessAppointment)
+                .toList();
+
+        Set<LocalTime> bookedTimes = appointmentsForDay.stream()
                 .filter(this::shouldReserve)
                 .map(appointment -> appointment.getAppointmentDate().toLocalTime())
                 .collect(Collectors.toSet());
@@ -79,6 +92,7 @@ public class AppointmentService {
 
     @Transactional
     public Appointment saveAppointment(Appointment appointment) {
+        assignCurrentTenantContextIfMissing(appointment);
         validateAppointmentTime(appointment, null);
         linkCustomer(appointment);
         reserveAppointmentTires(appointment);
@@ -91,6 +105,7 @@ public class AppointmentService {
     public Appointment updateAppointment(Long id, Appointment updatedAppointment) {
 
         Appointment existingAppointment = getAppointmentById(id);
+        assignCurrentTenantContextIfMissing(updatedAppointment);
         validateAppointmentTime(updatedAppointment, id);
         releaseAppointmentTires(existingAppointment);
 
@@ -110,6 +125,12 @@ public class AppointmentService {
         existingAppointment.setReminderAt(updatedAppointment.getReminderAt());
         existingAppointment.setConfirmationStatus(updatedAppointment.getConfirmationStatus());
         existingAppointment.setCancelReason(updatedAppointment.getCancelReason());
+        if (existingAppointment.getShop() == null && updatedAppointment.getShop() != null) {
+            existingAppointment.setShop(updatedAppointment.getShop());
+        }
+        if (existingAppointment.getShopLocation() == null && updatedAppointment.getShopLocation() != null) {
+            existingAppointment.setShopLocation(updatedAppointment.getShopLocation());
+        }
 
         if (updatedAppointment.getStatus() != null) {
         existingAppointment.setStatus(updatedAppointment.getStatus());
@@ -173,7 +194,11 @@ public class AppointmentService {
             throw new RuntimeException("Choose a valid appointment slot");
         }
 
-        boolean hasConflict = appointmentRepository.findByAppointmentDate(appointment.getAppointmentDate()).stream()
+        List<Appointment> appointmentsAtTime = appointmentRepository.findByAppointmentDate(appointment.getAppointmentDate()).stream()
+                .filter(this::canAccessAppointment)
+                .toList();
+
+        boolean hasConflict = appointmentsAtTime.stream()
                 .filter(existingAppointment -> ignoredAppointmentId == null || !ignoredAppointmentId.equals(existingAppointment.getId()))
                 .anyMatch(this::shouldReserve);
 
@@ -190,6 +215,10 @@ public class AppointmentService {
         Tire tire = tireRepository.findById(tireId)
                 .orElseThrow(() -> new RuntimeException("Tire not found"));
 
+        if (!shopContextService.canAccessTenantResource(tire.getShop(), tire.getShopLocation())) {
+            throw new AccessDeniedException("You do not have permission to access this resource.");
+        }
+
         if (direction > 0 && tire.getAvailableQuantity() < quantity) {
             throw new RuntimeException("Not enough available tire stock to reserve");
         }
@@ -205,6 +234,7 @@ public class AppointmentService {
 
     private void linkCustomer(Appointment appointment) {
         if (appointment.getCustomerId() != null) {
+            userRepository.findById(appointment.getCustomerId()).ifPresent(user -> assignCustomerShopIfMissing(user, appointment));
             return;
         }
 
@@ -213,6 +243,7 @@ public class AppointmentService {
                 appointment.setCustomerId(user.getId());
                 appointment.setCustomerName(user.getFullName());
                 appointment.setPhone(user.getPhone());
+                assignCustomerShopIfMissing(user, appointment);
             });
         }
 
@@ -221,8 +252,49 @@ public class AppointmentService {
                 appointment.setCustomerId(user.getId());
                 appointment.setCustomerName(user.getFullName());
                 appointment.setEmail(user.getEmail());
+                assignCustomerShopIfMissing(user, appointment);
             });
         }
+    }
+
+    private void assignCurrentTenantContextIfMissing(Appointment appointment) {
+        if (appointment.getShop() == null) {
+            shopContextService.getCurrentTenantShop().ifPresent(appointment::setShop);
+        }
+        if (appointment.getShopLocation() == null) {
+            shopContextService.getCurrentTenantLocation()
+                    .filter(location -> appointment.getShop() == null
+                            || (location.getShop() != null && location.getShop().getId().equals(appointment.getShop().getId())))
+                    .ifPresent(appointment::setShopLocation);
+        }
+    }
+
+    private void assignCustomerShopIfMissing(User user, Appointment appointment) {
+        Shop shop = appointment.getShop();
+
+        if (shop == null) {
+            return;
+        }
+
+        if (user.getShop() == null) {
+            user.setShop(shop);
+            userRepository.save(user);
+            return;
+        }
+
+        if (!shop.getId().equals(user.getShop().getId())) {
+            throw new RuntimeException("Customer belongs to another shop");
+        }
+    }
+
+    private void ensureAppointmentAccess(Appointment appointment) {
+        if (!canAccessAppointment(appointment)) {
+            throw new AccessDeniedException("You do not have permission to access this resource.");
+        }
+    }
+
+    private boolean canAccessAppointment(Appointment appointment) {
+        return shopContextService.canAccessTenantResource(appointment.getShop(), appointment.getShopLocation());
     }
 
     private String getCurrentUsername() {

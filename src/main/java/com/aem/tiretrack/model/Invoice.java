@@ -6,16 +6,21 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonManagedReference;
 
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.PrePersist;
+import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMin;
@@ -40,6 +45,16 @@ public class Invoice {
     @Column(name = "customer_id")
     private Long customerId;
 
+    @JsonIgnore
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "shop_id")
+    private Shop shop;
+
+    @JsonIgnore
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "location_id")
+    private ShopLocation shopLocation;
+
     @Column(name = "appointment_id")
     private Long appointmentId;
 
@@ -56,6 +71,14 @@ public class Invoice {
 
     @DecimalMin(value = "0.0", message = "Total cannot be negative")
     private BigDecimal total = BigDecimal.ZERO;
+
+    @Column(name = "amount_paid")
+    @DecimalMin(value = "0.0", message = "Amount paid cannot be negative")
+    private BigDecimal amountPaid = BigDecimal.ZERO;
+
+    @Column(name = "balance_due")
+    @DecimalMin(value = "0.0", message = "Balance due cannot be negative")
+    private BigDecimal balanceDue = BigDecimal.ZERO;
 
     @Column(name = "payment_method")
     private String paymentMethod;
@@ -95,6 +118,27 @@ public class Invoice {
         if (taxAmount == null) {
             taxAmount = BigDecimal.ZERO;
         }
+
+        normalizePaymentFields();
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        normalizePaymentFields();
+    }
+
+    private void normalizePaymentFields() {
+        if (amountPaid == null) {
+            amountPaid = BigDecimal.ZERO;
+        }
+
+        if (balanceDue == null) {
+            balanceDue = (total == null ? BigDecimal.ZERO : total).subtract(amountPaid);
+        }
+
+        if (balanceDue.compareTo(BigDecimal.ZERO) < 0) {
+            balanceDue = BigDecimal.ZERO;
+        }
     }
 
     public Long getId() {
@@ -133,6 +177,38 @@ public class Invoice {
         this.customerId = customerId;
     }
 
+    public Shop getShop() {
+        return shop;
+    }
+
+    public void setShop(Shop shop) {
+        this.shop = shop;
+    }
+
+    public ShopLocation getShopLocation() {
+        return shopLocation;
+    }
+
+    public void setShopLocation(ShopLocation shopLocation) {
+        this.shopLocation = shopLocation;
+    }
+
+    public Long getShopId() {
+        return shop == null ? null : shop.getId();
+    }
+
+    public String getShopName() {
+        return shop == null ? null : shop.getName();
+    }
+
+    public Long getLocationId() {
+        return shopLocation == null ? null : shopLocation.getId();
+    }
+
+    public String getLocationName() {
+        return shopLocation == null ? null : shopLocation.getName();
+    }
+
     public Long getAppointmentId() {
         return appointmentId;
     }
@@ -147,6 +223,22 @@ public class Invoice {
 
     public void setTotal(BigDecimal total) {
         this.total = total;
+    }
+
+    public BigDecimal getAmountPaid() {
+        return amountPaid;
+    }
+
+    public void setAmountPaid(BigDecimal amountPaid) {
+        this.amountPaid = amountPaid;
+    }
+
+    public BigDecimal getBalanceDue() {
+        return balanceDue;
+    }
+
+    public void setBalanceDue(BigDecimal balanceDue) {
+        this.balanceDue = balanceDue;
     }
 
     public BigDecimal getSubtotal() {

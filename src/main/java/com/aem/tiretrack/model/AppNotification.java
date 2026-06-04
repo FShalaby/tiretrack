@@ -37,6 +37,11 @@ public class AppNotification {
     @Column(name = "recipient_role")
     private UserRole recipientRole;
 
+    @JsonIgnore
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "shop_id")
+    private Shop shop;
+
     private String title;
 
     @Column(length = 1000)
@@ -63,6 +68,8 @@ public class AppNotification {
     public void setRecipientUserId(Long recipientUserId) { this.recipientUserId = recipientUserId; }
     public UserRole getRecipientRole() { return recipientRole; }
     public void setRecipientRole(UserRole recipientRole) { this.recipientRole = recipientRole; }
+    public Shop getShop() { return shop; }
+    public void setShop(Shop shop) { this.shop = shop; }
     public String getTitle() { return title; }
     public void setTitle(String title) { this.title = title; }
     public String getMessage() { return message; }

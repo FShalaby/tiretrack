@@ -1,0 +1,3 @@
+-- Baseline marker for existing TireTrack databases.
+-- Production should run with spring.jpa.hibernate.ddl-auto=validate.
+-- Follow-up migrations must describe explicit schema changes instead of relying on Hibernate update.

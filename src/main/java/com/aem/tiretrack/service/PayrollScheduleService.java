@@ -26,19 +26,29 @@ public class PayrollScheduleService {
     private final PayrollShiftSignupRepository signupRepository;
     private final PayrollPeriodRepository periodRepository;
     private final UserRepository userRepository;
+    private final ShopContextService shopContextService;
 
-    public PayrollScheduleService(PayrollShiftSlotRepository slotRepository, PayrollShiftSignupRepository signupRepository, PayrollPeriodRepository periodRepository, UserRepository userRepository) {
+    public PayrollScheduleService(PayrollShiftSlotRepository slotRepository, PayrollShiftSignupRepository signupRepository, PayrollPeriodRepository periodRepository, UserRepository userRepository, ShopContextService shopContextService) {
         this.slotRepository = slotRepository;
         this.signupRepository = signupRepository;
         this.periodRepository = periodRepository;
         this.userRepository = userRepository;
+        this.shopContextService = shopContextService;
     }
 
     public List<PayrollShiftSlotResponse> getSlots(Long periodId) {
         User currentUser = currentUser();
-        List<PayrollShiftSlot> slots = periodId == null
-                ? slotRepository.findAllByOrderByShiftDateAscStartTimeAsc()
-                : slotRepository.findByPayrollPeriod_IdOrderByShiftDateAscStartTimeAsc(periodId);
+        Long shopId = shopContextService.isSuperAdmin() ? null : shopContextService.requireShopForAdminOrEmployee().getId();
+        List<PayrollShiftSlot> slots;
+        if (shopId == null) {
+            slots = periodId == null
+                    ? slotRepository.findAllByOrderByShiftDateAscStartTimeAsc()
+                    : slotRepository.findByPayrollPeriod_IdOrderByShiftDateAscStartTimeAsc(periodId);
+        } else {
+            slots = periodId == null
+                    ? slotRepository.findByPayrollPeriod_Shop_IdOrderByShiftDateAscStartTimeAsc(shopId)
+                    : slotRepository.findByPayrollPeriod_Shop_IdAndPayrollPeriod_IdOrderByShiftDateAscStartTimeAsc(shopId, periodId);
+        }
 
         return slots.stream()
                 .map(slot -> toResponse(slot, currentUser))
@@ -49,6 +59,7 @@ public class PayrollScheduleService {
         validateSlotRequest(request);
         PayrollPeriod period = periodRepository.findById(request.getPayrollPeriodId())
                 .orElseThrow(() -> new IllegalArgumentException("Payroll period not found with id: " + request.getPayrollPeriodId()));
+        ensurePeriodAccess(period);
 
         if (request.getShiftDate().isBefore(period.getStartDate()) || request.getShiftDate().isAfter(period.getEndDate())) {
             throw new IllegalArgumentException("Shift date must be inside the payroll period");
@@ -85,10 +96,11 @@ public class PayrollScheduleService {
     @Transactional
     public PayrollShiftSlotResponse cancelSignup(long slotId) {
         User employee = currentUser();
+        PayrollShiftSlot slot = getSlot(slotId);
         PayrollShiftSignup signup = signupRepository.findBySlot_IdAndEmployee_Id(slotId, employee.getId())
                 .orElseThrow(() -> new IllegalArgumentException("Shift signup not found"));
         signupRepository.delete(signup);
-        return toResponse(getSlot(slotId), employee);
+        return toResponse(slot, employee);
     }
 
     @Transactional
@@ -100,6 +112,7 @@ public class PayrollScheduleService {
         if (employee.getRole() != UserRole.EMPLOYEE) {
             throw new IllegalArgumentException("User is not an employee");
         }
+        ensureEmployeeCanUseSlot(employee, slot);
 
         if (signupRepository.existsBySlot_IdAndEmployee_Id(slotId, employeeId)) {
             return toResponse(slot, currentUser());
@@ -124,14 +137,18 @@ public class PayrollScheduleService {
         if (!signup.getSlot().getId().equals(slotId)) {
             throw new IllegalArgumentException("Shift signup does not belong to this slot");
         }
+        ensurePeriodAccess(signup.getSlot().getPayrollPeriod());
+        ensureEmployeeCanUseSlot(signup.getEmployee(), signup.getSlot());
 
         signupRepository.delete(signup);
         return toResponse(getSlot(slotId), currentUser());
     }
 
     private PayrollShiftSlot getSlot(long slotId) {
-        return slotRepository.findById(slotId)
+        PayrollShiftSlot slot = slotRepository.findById(slotId)
                 .orElseThrow(() -> new IllegalArgumentException("Shift slot not found with id: " + slotId));
+        ensurePeriodAccess(slot.getPayrollPeriod());
+        return slot;
     }
 
     private PayrollShiftSlotResponse toResponse(PayrollShiftSlot slot, User currentUser) {
@@ -185,5 +202,25 @@ public class PayrollScheduleService {
         String email = SecurityContextHolder.getContext().getAuthentication().getName();
         return userRepository.findByEmail(email)
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
+    }
+
+    private void ensurePeriodAccess(PayrollPeriod period) {
+        if (!shopContextService.canAccessTenantResource(period.getShop(), period.getShopLocation())) {
+            throw new IllegalArgumentException("Payroll period not found with id: " + period.getId());
+        }
+    }
+
+    private void ensureEmployeeCanUseSlot(User employee, PayrollShiftSlot slot) {
+        Long slotShopId = slot.getPayrollPeriod().getShopId();
+        if (slotShopId == null) {
+            if (shopContextService.isSuperAdmin()) {
+                return;
+            }
+            throw new IllegalArgumentException("Shift slot is not assigned to a shop");
+        }
+
+        if (employee.getShop() == null || !slotShopId.equals(employee.getShop().getId())) {
+            throw new IllegalArgumentException("Employee does not belong to this shop");
+        }
     }
 }

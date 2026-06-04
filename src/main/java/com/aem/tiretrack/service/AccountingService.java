@@ -9,6 +9,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,6 +18,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 
 import com.aem.tiretrack.dto.accounting.AccountBalance;
 import com.aem.tiretrack.dto.accounting.AccountingReport;
+import com.aem.tiretrack.dto.accounting.DuplicatePaymentDiagnosticResponse;
 import com.aem.tiretrack.dto.accounting.PayExpenseRequest;
 import com.aem.tiretrack.enums.AccountingPaymentMethod;
 import com.aem.tiretrack.enums.AccountType;
@@ -28,6 +30,9 @@ import com.aem.tiretrack.model.Expense;
 import com.aem.tiretrack.model.Invoice;
 import com.aem.tiretrack.model.JournalEntry;
 import com.aem.tiretrack.model.JournalEntryLine;
+import com.aem.tiretrack.model.PayrollPeriod;
+import com.aem.tiretrack.model.PayrollRecord;
+import com.aem.tiretrack.model.Shop;
 import com.aem.tiretrack.model.User;
 import com.aem.tiretrack.model.Vendor;
 import com.aem.tiretrack.repository.AccountingAccountRepository;
@@ -52,22 +57,31 @@ public class AccountingService {
     private final ExpenseRepository expenseRepository;
     private final UserRepository userRepository;
     private final VendorRepository vendorRepository;
+    private final ShopContextService shopContextService;
 
-    public AccountingService(AccountingAccountRepository accountRepository, JournalEntryRepository journalEntryRepository, ExpenseRepository expenseRepository, UserRepository userRepository, VendorRepository vendorRepository) {
+    public AccountingService(AccountingAccountRepository accountRepository, JournalEntryRepository journalEntryRepository, ExpenseRepository expenseRepository, UserRepository userRepository, VendorRepository vendorRepository, ShopContextService shopContextService) {
         this.accountRepository = accountRepository;
         this.journalEntryRepository = journalEntryRepository;
         this.expenseRepository = expenseRepository;
         this.userRepository = userRepository;
         this.vendorRepository = vendorRepository;
+        this.shopContextService = shopContextService;
     }
 
     public List<AccountingAccount> getAccounts() {
         ensureDefaultAccounts();
-        return accountRepository.findByActiveTrueOrderByCodeAsc();
+        return accountRepository.findByActiveTrueOrderByCodeAsc().stream()
+                .filter(account -> account.isSystemAccount()
+                        || shopContextService.canAccessTenantShop(account.getShop()))
+                .toList();
     }
 
     public AccountingAccount createAccount(AccountingAccount account) {
-        if (accountRepository.existsByCode(account.getCode())) {
+        Long shopId = shopContextService.getCurrentTenantShopId().orElse(null);
+        boolean duplicateCode = shopId == null
+                ? accountRepository.existsByCode(account.getCode())
+                : accountRepository.existsByCodeAndShop_Id(account.getCode(), shopId);
+        if (duplicateCode) {
             throw new RuntimeException("Account code already exists");
         }
         User admin = currentAdmin();
@@ -76,7 +90,7 @@ public class AccountingService {
     }
 
     public List<Vendor> getVendors() {
-        return vendorRepository.findAllByOrderByNameAsc();
+        return visibleVendors();
     }
 
     public Vendor createVendor(Vendor vendor) {
@@ -87,7 +101,7 @@ public class AccountingService {
     }
 
     public List<Expense> getExpenses() {
-        return expenseRepository.findTop25ByOrderByExpenseDateDescIdDesc();
+        return visibleRecentExpenses();
     }
 
     @Transactional
@@ -102,10 +116,52 @@ public class AccountingService {
     }
 
     @Transactional
+    public Expense recordPayrollCost(PayrollRecord record) {
+        ensureDefaultAccounts();
+        if (record == null || record.getId() == null) {
+            throw new IllegalArgumentException("Payroll record is required");
+        }
+
+        User employee = record.getEmployee();
+        PayrollPeriod period = record.getPayrollPeriod();
+        String employeeName = employee == null ? "Employee" : employee.getFullName();
+        BigDecimal payrollCost = amount(record.getGrossPay());
+
+        Expense expense = new Expense();
+        expense.setVendor("Payroll - " + employeeName);
+        expense.setCategoryKey(ExpenseCategory.PAYROLL);
+        expense.setCategory("Payroll");
+        expense.setExpenseDate(record.getPaidAt() == null ? LocalDate.now() : record.getPaidAt().toLocalDate());
+        expense.setSubtotal(payrollCost);
+        expense.setTaxAmount(BigDecimal.ZERO);
+        expense.setTotal(payrollCost);
+        expense.setStatus("PAID");
+        expense.setPaymentMethod("Payroll");
+        expense.setNotes("Payroll record #" + record.getId()
+                + (period == null ? "" : " / " + period.getStartDate() + " to " + period.getEndDate())
+                + (record.getNotes() == null || record.getNotes().isBlank() ? "" : " / " + record.getNotes()));
+        expense.setShop(resolvePayrollShop(record));
+
+        User currentUser = currentUser();
+        if (currentUser != null) {
+            expense.setAdminUserId(currentUser.getId());
+            expense.setCreatedBy(currentUser.getEmail());
+            if (expense.getShop() == null) {
+                expense.setShop(currentUser.getShop());
+            }
+        }
+
+        Expense savedExpense = expenseRepository.save(expense);
+        recordExpense(savedExpense);
+        return savedExpense;
+    }
+
+    @Transactional
     public Expense payExpense(Long id, PayExpenseRequest request) {
         ensureDefaultAccounts();
         Expense expense = expenseRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Expense not found"));
+        ensureExpenseAccess(expense);
 
         if ("PAID".equalsIgnoreCase(expense.getStatus())) {
             return expense;
@@ -138,6 +194,7 @@ public class AccountingService {
         entry.setReferenceId(invoice.getId());
         entry.setSource("INVOICE_ISSUED");
         applyAdmin(entry, currentAdmin());
+        entry.setShop(invoice.getShop());
         BigDecimal total = amount(invoice.getTotal());
         BigDecimal taxAmount = amount(invoice.getTaxAmount());
         BigDecimal revenue = amount(invoice.getSubtotal());
@@ -155,20 +212,35 @@ public class AccountingService {
 
     @Transactional
     public void recordInvoicePayment(Invoice invoice) {
+        BigDecimal paidAmount = amount(invoice.getAmountPaid()).compareTo(BigDecimal.ZERO) > 0
+                ? amount(invoice.getAmountPaid())
+                : amount(invoice.getTotal());
+        recordInvoicePayment(invoice, paidAmount);
+    }
+
+    @Transactional
+    public void recordInvoicePayment(Invoice invoice, BigDecimal paymentAmount) {
         ensureDefaultAccounts();
-        if (invoice.getId() == null || journalEntryRepository.existsByReferenceTypeAndReferenceIdAndSource("Invoice", invoice.getId(), "INVOICE_PAYMENT")) {
+        BigDecimal paidAmount = amount(paymentAmount);
+        if (invoice.getId() == null || paidAmount.compareTo(BigDecimal.ZERO) <= 0) {
             return;
         }
 
+        long existingPayments = journalEntryRepository.countByReferenceTypeAndReferenceIdAndSourceStartingWith(
+                "Invoice",
+                invoice.getId(),
+                "INVOICE_PAYMENT");
+        String paymentSource = "INVOICE_PAYMENT_" + (existingPayments + 1);
         JournalEntry entry = new JournalEntry();
         entry.setEntryDate(LocalDate.now());
-        entry.setDescription("Payment received for invoice #" + invoice.getId());
+        entry.setDescription("Payment received for invoice #" + invoice.getId() + " - " + paidAmount);
         entry.setReferenceType("Invoice");
         entry.setReferenceId(invoice.getId());
-        entry.setSource("INVOICE_PAYMENT");
+        entry.setSource(paymentSource);
         applyAdmin(entry, currentAdmin());
-        addDebit(entry, CASH, amount(invoice.getTotal()), invoice.getPaymentMethod() == null ? "Payment received" : invoice.getPaymentMethod());
-        addCredit(entry, AR, amount(invoice.getTotal()), "Receivable cleared");
+        entry.setShop(invoice.getShop());
+        addDebit(entry, CASH, paidAmount, invoice.getPaymentMethod() == null ? "Payment received" : invoice.getPaymentMethod());
+        addCredit(entry, AR, paidAmount, "Receivable cleared");
         saveBalanced(entry);
     }
 
@@ -176,7 +248,7 @@ public class AccountingService {
         ensureDefaultAccounts();
         LocalDate rangeStart = start == null ? LocalDate.now().withDayOfMonth(1) : start;
         LocalDate rangeEnd = end == null ? LocalDate.now() : end;
-        List<JournalEntry> entries = journalEntryRepository.findByEntryDateBetweenOrderByEntryDateDescIdDesc(rangeStart, rangeEnd);
+        List<JournalEntry> entries = visibleJournalEntriesInRange(rangeStart, rangeEnd);
         List<AccountBalance> balances = buildBalances(entries);
         List<AccountBalance> profitAndLoss = balances.stream()
                 .filter(balance -> balance.getType() == AccountType.REVENUE || balance.getType() == AccountType.EXPENSE)
@@ -194,9 +266,9 @@ public class AccountingService {
                 balances,
                 profitAndLoss,
                 balanceSheet,
-                expenseRepository.findTop25ByOrderByExpenseDateDescIdDesc(),
+                visibleRecentExpenses(),
                 entries.stream().limit(25).toList(),
-                vendorRepository.findAllByOrderByNameAsc(),
+                visibleVendors(),
                 revenue,
                 expenses,
                 revenue.subtract(expenses),
@@ -204,6 +276,36 @@ public class AccountingService {
                 liabilities,
                 equity
         );
+    }
+
+    public List<DuplicatePaymentDiagnosticResponse> findDuplicateInvoicePaymentEntries() {
+        Map<Long, List<JournalEntry>> paymentsByInvoice = journalEntryRepository.findAll().stream()
+                .filter(entry -> "Invoice".equalsIgnoreCase(entry.getReferenceType()))
+                .filter(entry -> entry.getReferenceId() != null)
+                .filter(entry -> entry.getSource() != null && entry.getSource().startsWith("INVOICE_PAYMENT"))
+                .filter(entry -> shopContextService.canAccessTenantShop(entry.getShop()))
+                .collect(Collectors.groupingBy(
+                        JournalEntry::getReferenceId,
+                        LinkedHashMap::new,
+                        Collectors.toList()));
+
+        return paymentsByInvoice.entrySet().stream()
+                .filter(entry -> entry.getValue().size() > 1)
+                .map(entry -> {
+                    List<JournalEntry> journalEntries = entry.getValue().stream()
+                            .sorted(Comparator.comparing(JournalEntry::getEntryDate).thenComparing(JournalEntry::getId))
+                            .toList();
+                    JournalEntry first = journalEntries.get(0);
+                    Shop shop = first.getShop();
+                    return new DuplicatePaymentDiagnosticResponse(
+                            entry.getKey(),
+                            shop == null ? null : shop.getId(),
+                            shop == null ? null : shop.getName(),
+                            journalEntries.size(),
+                            journalEntries.stream().map(JournalEntry::getId).toList(),
+                            journalEntries.stream().map(JournalEntry::getSource).toList());
+                })
+                .toList();
     }
 
     private synchronized void ensureDefaultAccounts() {
@@ -238,6 +340,7 @@ public class AccountingService {
         entry.setSource("EXPENSE");
         entry.setAdminUserId(expense.getAdminUserId());
         entry.setPostedBy(expense.getCreatedBy());
+        entry.setShop(expense.getShop());
         addDebit(entry, expenseAccountCode(expense), amount(expense.getSubtotal()), expense.getCategory());
         if (amount(expense.getTaxAmount()).compareTo(BigDecimal.ZERO) > 0) {
             addDebit(entry, TAX_RECOVERABLE, amount(expense.getTaxAmount()), "Recoverable tax");
@@ -259,6 +362,7 @@ public class AccountingService {
         entry.setSource("EXPENSE_PAYMENT");
         entry.setAdminUserId(expense.getAdminUserId());
         entry.setPostedBy(expense.getCreatedBy());
+        entry.setShop(expense.getShop());
         addDebit(entry, AP, amount(expense.getTotal()), "Payable cleared");
         addCredit(entry, CASH, amount(expense.getTotal()), expense.getPaymentMethod());
         saveBalanced(entry);
@@ -293,6 +397,7 @@ public class AccountingService {
         expense.setPaymentMethod(resolvePaymentMethod(expense.getPaymentMethodKey(), expense.getCustomPaymentMethod()));
         if (expense.getVendorId() != null) {
             vendorRepository.findById(expense.getVendorId()).ifPresent(vendor -> {
+                ensureVendorAccess(vendor);
                 expense.setVendor(vendor.getName());
                 if (expense.getCustomCategory() == null || expense.getCustomCategory().isBlank()) {
                     expense.setCategoryKey(expense.getCategoryKey() == null ? ExpenseCategory.SUPPLIES : expense.getCategoryKey());
@@ -310,7 +415,7 @@ public class AccountingService {
 
     private List<AccountBalance> buildBalances(List<JournalEntry> entries) {
         Map<Long, RunningBalance> running = new LinkedHashMap<>();
-        for (AccountingAccount account : accountRepository.findByActiveTrueOrderByCodeAsc()) {
+        for (AccountingAccount account : getAccounts()) {
             running.put(account.getId(), new RunningBalance(account));
         }
 
@@ -352,6 +457,13 @@ public class AccountingService {
     }
 
     private AccountingAccount account(String code) {
+        Long shopId = shopContextService.getCurrentTenantShopId().orElse(null);
+        if (shopId != null) {
+            return accountRepository.findByCodeAndShop_Id(code, shopId)
+                    .or(() -> accountRepository.findByCode(code).filter(AccountingAccount::isSystemAccount))
+                    .orElseThrow(() -> new RuntimeException("Accounting account " + code + " is missing"));
+        }
+
         return accountRepository.findByCode(code).orElseThrow(() -> new RuntimeException("Accounting account " + code + " is missing"));
     }
 
@@ -367,6 +479,7 @@ public class AccountingService {
             throw new RuntimeException("Selected account must be an EXPENSE account");
         }
 
+        ensureAccountAccess(account);
         return account.getCode();
     }
 
@@ -418,11 +531,35 @@ public class AccountingService {
     private User currentAdmin() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication != null && authentication.isAuthenticated() && authentication.getName() != null) {
-            return userRepository.findByEmail(authentication.getName())
-                    .filter(user -> user.getRole() == UserRole.ADMIN)
-                    .orElseGet(this::fallbackAdmin);
+            User user = userRepository.findByEmail(authentication.getName()).orElse(null);
+            if (user != null) {
+                if (user.getRole() == UserRole.ADMIN || user.getRole() == UserRole.EMPLOYEE) {
+                    shopContextService.requireShopForAdminOrEmployee();
+                }
+                return user;
+            }
         }
         return fallbackAdmin();
+    }
+
+    private User currentUser() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication != null && authentication.isAuthenticated() && authentication.getName() != null) {
+            return userRepository.findByEmail(authentication.getName()).orElse(null);
+        }
+        return fallbackAdmin();
+    }
+
+    private Shop resolvePayrollShop(PayrollRecord record) {
+        if (record.getPayrollPeriod() != null && record.getPayrollPeriod().getShop() != null) {
+            return record.getPayrollPeriod().getShop();
+        }
+
+        if (record.getEmployee() != null) {
+            return record.getEmployee().getShop();
+        }
+
+        return null;
     }
 
     private User fallbackAdmin() {
@@ -436,6 +573,9 @@ public class AccountingService {
         }
         account.setAdminUserId(admin.getId());
         account.setCreatedBy(admin.getEmail());
+        if (!account.isSystemAccount()) {
+            account.setShop(admin.getShop());
+        }
     }
 
     private void applyAdmin(Expense expense, User admin) {
@@ -444,6 +584,7 @@ public class AccountingService {
         }
         expense.setAdminUserId(admin.getId());
         expense.setCreatedBy(admin.getEmail());
+        expense.setShop(admin.getShop());
     }
 
     private void applyAdmin(JournalEntry entry, User admin) {
@@ -452,6 +593,7 @@ public class AccountingService {
         }
         entry.setAdminUserId(admin.getId());
         entry.setPostedBy(admin.getEmail());
+        entry.setShop(admin.getShop());
     }
 
     private void applyAdmin(Vendor vendor, User admin) {
@@ -460,6 +602,57 @@ public class AccountingService {
         }
         vendor.setAdminUserId(admin.getId());
         vendor.setCreatedBy(admin.getEmail());
+        vendor.setShop(admin.getShop());
+    }
+
+    private void ensureExpenseAccess(Expense expense) {
+        if (!shopContextService.canAccessTenantShop(expense.getShop())) {
+            throw new RuntimeException("Expense not found");
+        }
+    }
+
+    private void ensureVendorAccess(Vendor vendor) {
+        if (!shopContextService.canAccessTenantShop(vendor.getShop())) {
+            throw new RuntimeException("Vendor not found");
+        }
+    }
+
+    private void ensureAccountAccess(AccountingAccount account) {
+        if (!account.isSystemAccount() && !shopContextService.canAccessTenantShop(account.getShop())) {
+            throw new RuntimeException("Accounting account not found");
+        }
+    }
+
+    private List<Expense> visibleRecentExpenses() {
+        return expenseRepository.findAll().stream()
+                .filter(expense -> shopContextService.canAccessTenantShop(expense.getShop()))
+                .sorted(Comparator
+                        .comparing((Expense expense) -> expense.getExpenseDate() == null ? LocalDate.MIN : expense.getExpenseDate())
+                        .reversed()
+                        .thenComparing(expense -> expense.getId() == null ? 0L : expense.getId(), Comparator.reverseOrder()))
+                .limit(25)
+                .toList();
+    }
+
+    private List<Vendor> visibleVendors() {
+        return vendorRepository.findAll().stream()
+                .filter(vendor -> shopContextService.canAccessTenantShop(vendor.getShop()))
+                .sorted(Comparator.comparing(
+                        vendor -> vendor.getName() == null ? "" : vendor.getName(),
+                        String.CASE_INSENSITIVE_ORDER))
+                .toList();
+    }
+
+    private List<JournalEntry> visibleJournalEntriesInRange(LocalDate start, LocalDate end) {
+        return journalEntryRepository.findAll().stream()
+                .filter(entry -> shopContextService.canAccessTenantShop(entry.getShop()))
+                .filter(entry -> entry.getEntryDate() != null)
+                .filter(entry -> !entry.getEntryDate().isBefore(start) && !entry.getEntryDate().isAfter(end))
+                .sorted(Comparator
+                        .comparing(JournalEntry::getEntryDate)
+                        .reversed()
+                        .thenComparing(entry -> entry.getId() == null ? 0L : entry.getId(), Comparator.reverseOrder()))
+                .toList();
     }
 
     private static class RunningBalance {
