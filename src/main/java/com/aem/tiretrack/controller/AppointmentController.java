@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.aem.tiretrack.dto.AppointmentResponse;
 import com.aem.tiretrack.model.Appointment;
 import com.aem.tiretrack.service.AppointmentService;
 
@@ -26,26 +27,26 @@ public class AppointmentController
     }
 
     @GetMapping
-    public List<Appointment> getAllAppointments() {
-        return appointmentService.getAllAppointments();
+    public List<AppointmentResponse> getAllAppointments() {
+        return appointmentService.getAllAppointments().stream().map(AppointmentResponse::new).toList();
     }
 
     @GetMapping("/{id}")
-    public Appointment getAppointmentById(@PathVariable Long id) {
-        return appointmentService.getAppointmentById(id);
+    public AppointmentResponse getAppointmentById(@PathVariable Long id) {
+        return new AppointmentResponse(appointmentService.getAppointmentById(id));
     }
 
     @PostMapping
-    public Appointment createAppointment(@Valid @RequestBody Appointment appointment) {
-        return appointmentService.saveAppointment(appointment);
+    public AppointmentResponse createAppointment(@Valid @RequestBody Appointment appointment) {
+        return new AppointmentResponse(appointmentService.saveAppointment(appointment));
     }
 
     @PutMapping("/{id}")
-    public Appointment updateAppointment(
+    public AppointmentResponse updateAppointment(
             @PathVariable Long id,
            @Valid @RequestBody Appointment updatedAppointment) {
 
-        return appointmentService.updateAppointment(id, updatedAppointment);
+        return new AppointmentResponse(appointmentService.updateAppointment(id, updatedAppointment));
     }
 
     @DeleteMapping("/{id}")

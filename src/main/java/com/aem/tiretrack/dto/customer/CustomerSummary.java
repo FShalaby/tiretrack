@@ -26,7 +26,7 @@ public class CustomerSummary {
     private LocalDateTime nextAppointmentDate;
     private String nextAppointmentVehicle;
     private boolean hasUpcomingAppointment;
-    private List<CustomerVehicle> vehicles;
+    private List<CustomerVehicleResponse> vehicles;
     private List<CustomerInvoiceSummary> unpaidInvoices;
 
     public CustomerSummary(User user, long vehicleCount, long appointmentCount, long invoiceCount, BigDecimal totalSpent, BigDecimal outstandingBalance, Long nextUnpaidInvoiceId, LocalDate nextPaymentDueDate, boolean hasOverdueBalance, boolean hasBalanceDueSoon, Long nextAppointmentId, LocalDateTime nextAppointmentDate, String nextAppointmentVehicle, boolean hasUpcomingAppointment, List<CustomerVehicle> vehicles, List<CustomerInvoiceSummary> unpaidInvoices) {
@@ -47,7 +47,7 @@ public class CustomerSummary {
         this.nextAppointmentDate = nextAppointmentDate;
         this.nextAppointmentVehicle = nextAppointmentVehicle;
         this.hasUpcomingAppointment = hasUpcomingAppointment;
-        this.vehicles = vehicles;
+        this.vehicles = vehicles.stream().map(CustomerVehicleResponse::new).toList();
         this.unpaidInvoices = unpaidInvoices;
     }
 
@@ -68,6 +68,6 @@ public class CustomerSummary {
     public LocalDateTime getNextAppointmentDate() { return nextAppointmentDate; }
     public String getNextAppointmentVehicle() { return nextAppointmentVehicle; }
     public boolean isHasUpcomingAppointment() { return hasUpcomingAppointment; }
-    public List<CustomerVehicle> getVehicles() { return vehicles; }
+    public List<CustomerVehicleResponse> getVehicles() { return vehicles; }
     public List<CustomerInvoiceSummary> getUnpaidInvoices() { return unpaidInvoices; }
 }

@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.aem.tiretrack.dto.InvoiceResponse;
 import com.aem.tiretrack.dto.InvoiceStatusUpdateRequest;
 import com.aem.tiretrack.model.Invoice;
 import com.aem.tiretrack.service.InvoiceService;
@@ -28,20 +29,20 @@ public class InvoiceController {
     }
 
     @GetMapping
-    public List<Invoice> getAllInvoices() {
-        return invoiceService.getAllInvoices();
+    public List<InvoiceResponse> getAllInvoices() {
+        return invoiceService.getAllInvoices().stream().map(InvoiceResponse::new).toList();
     }
 
     @GetMapping("/{id}")
-    public Invoice getInvoiceById(@PathVariable Long id) {
-        return invoiceService.getInvoiceById(id);
+    public InvoiceResponse getInvoiceById(@PathVariable Long id) {
+        return new InvoiceResponse(invoiceService.getInvoiceById(id));
     }
 
     @PostMapping
-    public Invoice createInvoice(
+    public InvoiceResponse createInvoice(
             @Valid @RequestBody Invoice invoice) {
 
-        return invoiceService.saveInvoice(invoice);
+        return new InvoiceResponse(invoiceService.saveInvoice(invoice));
     }
 
     @DeleteMapping("/{id}")
@@ -50,7 +51,7 @@ public class InvoiceController {
     }
 
     @PutMapping("/{id}/status")
-    public Invoice updateInvoiceStatus(@PathVariable Long id, @RequestBody InvoiceStatusUpdateRequest request) {
-        return invoiceService.updateInvoiceStatus(id, request);
+    public InvoiceResponse updateInvoiceStatus(@PathVariable Long id, @RequestBody InvoiceStatusUpdateRequest request) {
+        return new InvoiceResponse(invoiceService.updateInvoiceStatus(id, request));
     }
 }

@@ -12,9 +12,12 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.aem.tiretrack.dto.accounting.AccountingAccountResponse;
 import com.aem.tiretrack.dto.accounting.AccountingReport;
 import com.aem.tiretrack.dto.accounting.DuplicatePaymentDiagnosticResponse;
+import com.aem.tiretrack.dto.accounting.ExpenseResponse;
 import com.aem.tiretrack.dto.accounting.PayExpenseRequest;
+import com.aem.tiretrack.dto.accounting.VendorResponse;
 import com.aem.tiretrack.model.AccountingAccount;
 import com.aem.tiretrack.model.Expense;
 import com.aem.tiretrack.model.Vendor;
@@ -32,38 +35,38 @@ public class AccountingController {
     }
 
     @GetMapping("/accounts")
-    public List<AccountingAccount> getAccounts() {
-        return accountingService.getAccounts();
+    public List<AccountingAccountResponse> getAccounts() {
+        return accountingService.getAccounts().stream().map(AccountingAccountResponse::new).toList();
     }
 
     @PostMapping("/accounts")
-    public AccountingAccount createAccount(@Valid @RequestBody AccountingAccount account) {
-        return accountingService.createAccount(account);
+    public AccountingAccountResponse createAccount(@Valid @RequestBody AccountingAccount account) {
+        return new AccountingAccountResponse(accountingService.createAccount(account));
     }
 
     @GetMapping("/vendors")
-    public List<Vendor> getVendors() {
-        return accountingService.getVendors();
+    public List<VendorResponse> getVendors() {
+        return accountingService.getVendors().stream().map(VendorResponse::new).toList();
     }
 
     @PostMapping("/vendors")
-    public Vendor createVendor(@Valid @RequestBody Vendor vendor) {
-        return accountingService.createVendor(vendor);
+    public VendorResponse createVendor(@Valid @RequestBody Vendor vendor) {
+        return new VendorResponse(accountingService.createVendor(vendor));
     }
 
     @GetMapping("/expenses")
-    public List<Expense> getExpenses() {
-        return accountingService.getExpenses();
+    public List<ExpenseResponse> getExpenses() {
+        return accountingService.getExpenses().stream().map(ExpenseResponse::new).toList();
     }
 
     @PostMapping("/expenses")
-    public Expense createExpense(@Valid @RequestBody Expense expense) {
-        return accountingService.createExpense(expense);
+    public ExpenseResponse createExpense(@Valid @RequestBody Expense expense) {
+        return new ExpenseResponse(accountingService.createExpense(expense));
     }
 
     @PostMapping("/expenses/{id}/pay")
-    public Expense payExpense(@PathVariable Long id, @RequestBody(required = false) PayExpenseRequest request) {
-        return accountingService.payExpense(id, request == null ? new PayExpenseRequest() : request);
+    public ExpenseResponse payExpense(@PathVariable Long id, @RequestBody(required = false) PayExpenseRequest request) {
+        return new ExpenseResponse(accountingService.payExpense(id, request == null ? new PayExpenseRequest() : request));
     }
 
     @GetMapping("/reports")

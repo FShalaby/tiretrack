@@ -13,6 +13,7 @@ import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 
@@ -290,9 +291,23 @@ public class AccountingService {
                         Collectors.toList()));
 
         return paymentsByInvoice.entrySet().stream()
-                .filter(entry -> entry.getValue().size() > 1)
                 .map(entry -> {
-                    List<JournalEntry> journalEntries = entry.getValue().stream()
+                    List<JournalEntry> duplicateEntries = entry.getValue().stream()
+                            .collect(Collectors.groupingBy(
+                                    JournalEntry::getSource,
+                                    LinkedHashMap::new,
+                                    Collectors.toList()))
+                            .values()
+                            .stream()
+                            .filter(journalEntries -> journalEntries.size() > 1)
+                            .flatMap(List::stream)
+                            .toList();
+
+                    if (duplicateEntries.isEmpty()) {
+                        return null;
+                    }
+
+                    List<JournalEntry> journalEntries = duplicateEntries.stream()
                             .sorted(Comparator.comparing(JournalEntry::getEntryDate).thenComparing(JournalEntry::getId))
                             .toList();
                     JournalEntry first = journalEntries.get(0);
@@ -305,6 +320,7 @@ public class AccountingService {
                             journalEntries.stream().map(JournalEntry::getId).toList(),
                             journalEntries.stream().map(JournalEntry::getSource).toList());
                 })
+                .filter(response -> response != null)
                 .toList();
     }
 
@@ -607,19 +623,19 @@ public class AccountingService {
 
     private void ensureExpenseAccess(Expense expense) {
         if (!shopContextService.canAccessTenantShop(expense.getShop())) {
-            throw new RuntimeException("Expense not found");
+            throw new AccessDeniedException("You do not have permission to access this expense.");
         }
     }
 
     private void ensureVendorAccess(Vendor vendor) {
         if (!shopContextService.canAccessTenantShop(vendor.getShop())) {
-            throw new RuntimeException("Vendor not found");
+            throw new AccessDeniedException("You do not have permission to access this vendor.");
         }
     }
 
     private void ensureAccountAccess(AccountingAccount account) {
         if (!account.isSystemAccount() && !shopContextService.canAccessTenantShop(account.getShop())) {
-            throw new RuntimeException("Accounting account not found");
+            throw new AccessDeniedException("You do not have permission to access this accounting account.");
         }
     }
 

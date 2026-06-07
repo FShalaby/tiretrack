@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.aem.tiretrack.dto.EstimateRequest;
 import com.aem.tiretrack.dto.EstimateResponse;
-import com.aem.tiretrack.model.Invoice;
+import com.aem.tiretrack.dto.InvoiceResponse;
 import com.aem.tiretrack.service.EstimateService;
 
 import jakarta.validation.Valid;
@@ -71,7 +71,7 @@ public class EstimateController {
     }
 
     @PostMapping("/{id}/convert-to-invoice")
-    public Invoice convertToInvoice(@PathVariable Long id) {
-        return estimateService.convertToInvoice(id);
+    public InvoiceResponse convertToInvoice(@PathVariable Long id) {
+        return new InvoiceResponse(estimateService.convertToInvoice(id));
     }
 }

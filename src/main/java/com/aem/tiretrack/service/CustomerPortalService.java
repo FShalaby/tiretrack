@@ -7,6 +7,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,6 +22,7 @@ import com.aem.tiretrack.dto.customer.CustomerPortalResponse;
 import com.aem.tiretrack.dto.customer.CustomerSummary;
 import com.aem.tiretrack.enums.AppointmentStatus;
 import com.aem.tiretrack.enums.UserRole;
+import com.aem.tiretrack.exception.ResourceNotFoundException;
 import com.aem.tiretrack.model.Appointment;
 import com.aem.tiretrack.model.CustomerNotification;
 import com.aem.tiretrack.model.CustomerVehicle;
@@ -105,7 +107,7 @@ public class CustomerPortalService {
     public void deleteVehicle(Long id) {
         User customer = currentCustomer();
         CustomerVehicle vehicle = vehicleRepository.findByIdAndCustomer(id, customer)
-                .orElseThrow(() -> new RuntimeException("Vehicle not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Vehicle not found"));
         vehicleRepository.delete(vehicle);
     }
 
@@ -113,7 +115,7 @@ public class CustomerPortalService {
     public Appointment bookAppointment(CustomerAppointmentRequest request) {
         User customer = currentCustomer();
         CustomerVehicle vehicle = vehicleRepository.findByIdAndCustomer(request.getVehicleId(), customer)
-                .orElseThrow(() -> new RuntimeException("Vehicle not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Vehicle not found"));
 
         Appointment appointment = new Appointment();
         appointment.setCustomerId(customer.getId());
@@ -144,7 +146,7 @@ public class CustomerPortalService {
     public Invoice payInvoice(Long invoiceId) {
         User customer = currentCustomer();
         Invoice invoice = invoiceRepository.findById(invoiceId)
-                .orElseThrow(() -> new RuntimeException("Invoice not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Invoice not found"));
 
         boolean ownsInvoice = customer.getId().equals(invoice.getCustomerId())
                 || equalsIgnoreCase(customer.getPhone(), invoice.getPhone())
@@ -153,7 +155,7 @@ public class CustomerPortalService {
                 ? invoice.getShop() == null
                 : invoice.getShop() != null && customer.getShop().getId().equals(invoice.getShop().getId());
         if (!ownsInvoice || !sameShop) {
-            throw new RuntimeException("Invoice not found");
+            throw new ResourceNotFoundException("Invoice not found");
         }
 
         if ("PAID".equalsIgnoreCase(invoice.getStatus())) {
@@ -179,10 +181,10 @@ public class CustomerPortalService {
     public EstimateResponse approveEstimate(Long estimateId) {
         User customer = currentCustomer();
         Estimate estimate = estimateRepository.findById(estimateId)
-                .orElseThrow(() -> new RuntimeException("Estimate not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Estimate not found"));
 
         if (!ownsEstimate(customer, estimate) || !sameShop(customer, estimate)) {
-            throw new RuntimeException("Estimate not found");
+            throw new ResourceNotFoundException("Estimate not found");
         }
 
         Estimate approvedEstimate = estimateService.approveEstimate(estimateId);
@@ -199,7 +201,7 @@ public class CustomerPortalService {
 
     public CustomerNotification sendNotice(Long customerId, CustomerNoticeRequest request) {
         User customer = userRepository.findById(customerId)
-                .orElseThrow(() -> new RuntimeException("Customer not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Customer not found"));
         ensureCustomerAccess(customer);
 
         CustomerNotification notification = new CustomerNotification();
@@ -213,7 +215,7 @@ public class CustomerPortalService {
     public CustomerNotification markNotificationRead(Long id) {
         User customer = currentCustomer();
         CustomerNotification notification = notificationRepository.findByIdAndCustomer(id, customer)
-                .orElseThrow(() -> new RuntimeException("Notification not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Notification not found"));
         notification.setRead(true);
         return notificationRepository.save(notification);
     }
@@ -329,7 +331,7 @@ public class CustomerPortalService {
 
     private void ensureCustomerAccess(User customer) {
         if (!shopContextService.canAccessTenantUser(customer)) {
-            throw new RuntimeException("Customer not found");
+            throw new AccessDeniedException("You do not have permission to access this customer.");
         }
     }
 

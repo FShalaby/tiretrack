@@ -10,9 +10,9 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.aem.tiretrack.dto.InvoiceResponse;
 import com.aem.tiretrack.dto.WorkOrderRequest;
 import com.aem.tiretrack.dto.WorkOrderResponse;
-import com.aem.tiretrack.model.Invoice;
 import com.aem.tiretrack.service.WorkOrderService;
 
 import jakarta.validation.Valid;
@@ -76,12 +76,12 @@ public class WorkOrderController {
     }
 
     @GetMapping("/{id}/invoice-preview")
-    public Invoice previewInvoice(@PathVariable Long id) {
-        return workOrderService.previewInvoice(id);
+    public InvoiceResponse previewInvoice(@PathVariable Long id) {
+        return new InvoiceResponse(workOrderService.previewInvoice(id));
     }
 
     @PostMapping("/{id}/convert-to-invoice")
-    public Invoice convertToInvoice(@PathVariable Long id) {
-        return workOrderService.convertToInvoice(id);
+    public InvoiceResponse convertToInvoice(@PathVariable Long id) {
+        return new InvoiceResponse(workOrderService.convertToInvoice(id));
     }
 }

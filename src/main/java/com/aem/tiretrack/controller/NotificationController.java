@@ -10,8 +10,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.aem.tiretrack.dto.notification.AppNotificationResponse;
 import com.aem.tiretrack.dto.notification.NotificationRequest;
-import com.aem.tiretrack.model.AppNotification;
 import com.aem.tiretrack.service.NotificationService;
 
 @RestController
@@ -24,18 +24,18 @@ public class NotificationController {
     }
 
     @GetMapping
-    public List<AppNotification> notifications() {
-        return notificationService.currentNotifications();
+    public List<AppNotificationResponse> notifications() {
+        return notificationService.currentNotifications().stream().map(AppNotificationResponse::new).toList();
     }
 
     @PostMapping
-    public AppNotification create(@RequestBody NotificationRequest request) {
-        return notificationService.createForCurrentUser(request);
+    public AppNotificationResponse create(@RequestBody NotificationRequest request) {
+        return new AppNotificationResponse(notificationService.createForCurrentUser(request));
     }
 
     @PutMapping("/{id}/read")
-    public AppNotification markRead(@PathVariable Long id) {
-        return notificationService.markRead(id);
+    public AppNotificationResponse markRead(@PathVariable Long id) {
+        return new AppNotificationResponse(notificationService.markRead(id));
     }
 
     @PutMapping("/read-all")

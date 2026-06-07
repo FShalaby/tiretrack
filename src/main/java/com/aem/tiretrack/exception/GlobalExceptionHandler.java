@@ -59,6 +59,14 @@ public class GlobalExceptionHandler {
         return buildResponse(HttpStatus.BAD_REQUEST, safeMessage(rootMessage(exception)), request);
     }
 
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleResourceNotFound(
+            ResourceNotFoundException exception,
+            HttpServletRequest request) {
+        log.warn("Resource not found", exception);
+        return buildResponse(HttpStatus.NOT_FOUND, safeMessage(rootMessage(exception)), request);
+    }
+
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<ErrorResponse> handleAccessDenied(
             AccessDeniedException exception,

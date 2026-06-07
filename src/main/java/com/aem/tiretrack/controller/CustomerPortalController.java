@@ -11,15 +11,16 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.aem.tiretrack.dto.AppointmentResponse;
 import com.aem.tiretrack.dto.customer.CustomerAppointmentRequest;
 import com.aem.tiretrack.dto.EstimateResponse;
+import com.aem.tiretrack.dto.InvoiceResponse;
+import com.aem.tiretrack.dto.customer.CustomerNotificationResponse;
 import com.aem.tiretrack.dto.customer.CustomerNoticeRequest;
 import com.aem.tiretrack.dto.customer.CustomerPortalResponse;
 import com.aem.tiretrack.dto.customer.CustomerSummary;
-import com.aem.tiretrack.model.Appointment;
-import com.aem.tiretrack.model.CustomerNotification;
+import com.aem.tiretrack.dto.customer.CustomerVehicleResponse;
 import com.aem.tiretrack.model.CustomerVehicle;
-import com.aem.tiretrack.model.Invoice;
 import com.aem.tiretrack.service.CustomerPortalService;
 
 @RestController
@@ -36,8 +37,8 @@ public class CustomerPortalController {
     }
 
     @PostMapping("/api/customer/vehicles")
-    public CustomerVehicle saveVehicle(@RequestBody CustomerVehicle vehicle) {
-        return customerPortalService.saveVehicle(vehicle);
+    public CustomerVehicleResponse saveVehicle(@RequestBody CustomerVehicle vehicle) {
+        return new CustomerVehicleResponse(customerPortalService.saveVehicle(vehicle));
     }
 
     @DeleteMapping("/api/customer/vehicles/{id}")
@@ -46,13 +47,13 @@ public class CustomerPortalController {
     }
 
     @PostMapping("/api/customer/appointments")
-    public Appointment bookAppointment(@RequestBody CustomerAppointmentRequest request) {
-        return customerPortalService.bookAppointment(request);
+    public AppointmentResponse bookAppointment(@RequestBody CustomerAppointmentRequest request) {
+        return new AppointmentResponse(customerPortalService.bookAppointment(request));
     }
 
     @PostMapping("/api/customer/invoices/{id}/pay")
-    public Invoice payInvoice(@PathVariable Long id) {
-        return customerPortalService.payInvoice(id);
+    public InvoiceResponse payInvoice(@PathVariable Long id) {
+        return new InvoiceResponse(customerPortalService.payInvoice(id));
     }
 
     @PostMapping("/api/customer/estimates/{id}/approve")
@@ -61,8 +62,8 @@ public class CustomerPortalController {
     }
 
     @PutMapping("/api/customer/notifications/{id}/read")
-    public CustomerNotification markNotificationRead(@PathVariable Long id) {
-        return customerPortalService.markNotificationRead(id);
+    public CustomerNotificationResponse markNotificationRead(@PathVariable Long id) {
+        return new CustomerNotificationResponse(customerPortalService.markNotificationRead(id));
     }
 
     @GetMapping("/api/customers")
@@ -71,7 +72,7 @@ public class CustomerPortalController {
     }
 
     @PostMapping("/api/customers/{id}/notices")
-    public CustomerNotification sendNotice(@PathVariable Long id, @RequestBody CustomerNoticeRequest request) {
-        return customerPortalService.sendNotice(id, request);
+    public CustomerNotificationResponse sendNotice(@PathVariable Long id, @RequestBody CustomerNoticeRequest request) {
+        return new CustomerNotificationResponse(customerPortalService.sendNotice(id, request));
     }
 }

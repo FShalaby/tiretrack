@@ -6,6 +6,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import com.aem.tiretrack.dto.notification.NotificationRequest;
+import com.aem.tiretrack.exception.ResourceNotFoundException;
 import com.aem.tiretrack.model.AppNotification;
 import com.aem.tiretrack.model.User;
 import com.aem.tiretrack.repository.AppNotificationRepository;
@@ -57,7 +58,7 @@ public class NotificationService {
     public AppNotification markRead(Long id) {
         User user = currentUser();
         AppNotification notification = notificationRepository.findByIdAndRecipientUserId(id, user.getId())
-                .orElseThrow(() -> new RuntimeException("Notification not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Notification not found"));
         notification.setRead(true);
         return notificationRepository.save(notification);
     }

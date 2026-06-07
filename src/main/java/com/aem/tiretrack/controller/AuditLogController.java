@@ -6,7 +6,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.aem.tiretrack.model.AuditLog;
+import com.aem.tiretrack.dto.AuditLogResponse;
 import com.aem.tiretrack.service.AuditLogService;
 
 @RestController
@@ -19,7 +19,7 @@ public class AuditLogController {
     }
 
     @GetMapping
-    public List<AuditLog> latest() {
-        return auditLogService.latest();
+    public List<AuditLogResponse> latest() {
+        return auditLogService.latest().stream().map(AuditLogResponse::new).toList();
     }
 }
