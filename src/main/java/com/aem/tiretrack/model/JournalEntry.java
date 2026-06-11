@@ -59,6 +59,11 @@ public class JournalEntry {
 
     @JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "location_id")
+    private ShopLocation shopLocation;
+
+    @JsonIgnore
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "admin_user_id", insertable = false, updatable = false)
     private User adminUser;
 
@@ -107,6 +112,10 @@ public class JournalEntry {
     public Shop getShop() { return shop; }
     public void setShop(Shop shop) { this.shop = shop; }
     public Long getShopId() { return shop == null ? null : shop.getId(); }
+    public ShopLocation getShopLocation() { return shopLocation; }
+    public void setShopLocation(ShopLocation shopLocation) { this.shopLocation = shopLocation; }
+    public Long getLocationId() { return shopLocation == null ? null : shopLocation.getId(); }
+    public String getLocationName() { return shopLocation == null ? null : shopLocation.getName(); }
     public String getPostedBy() { return postedBy; }
     public void setPostedBy(String postedBy) { this.postedBy = postedBy; }
     public LocalDateTime getCreatedAt() { return createdAt; }

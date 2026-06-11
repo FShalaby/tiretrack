@@ -12,7 +12,9 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.aem.tiretrack.dto.AppointmentResponse;
 import com.aem.tiretrack.model.Appointment;
+import com.aem.tiretrack.model.ShopLocation;
 import com.aem.tiretrack.service.AppointmentService;
+import com.aem.tiretrack.service.ShopContextService;
 
 import jakarta.validation.Valid;
 
@@ -21,14 +23,20 @@ import jakarta.validation.Valid;
 public class AppointmentController 
 {
     private final AppointmentService appointmentService;
+    private final ShopContextService shopContextService;
 
-    public AppointmentController(AppointmentService appointmentService) {
+    public AppointmentController(AppointmentService appointmentService, ShopContextService shopContextService) {
         this.appointmentService = appointmentService;
+        this.shopContextService = shopContextService;
     }
 
     @GetMapping
-    public List<AppointmentResponse> getAllAppointments() {
-        return appointmentService.getAllAppointments().stream().map(AppointmentResponse::new).toList();
+    public List<AppointmentResponse> getAllAppointments(@org.springframework.web.bind.annotation.RequestParam(required = false) Long locationId) {
+        ShopLocation location = shopContextService.resolveAccessibleLocation(locationId, null, false).orElse(null);
+        return appointmentService.getAllAppointments().stream()
+                .filter(appointment -> matchesLocation(appointment.getShopLocation(), location))
+                .map(AppointmentResponse::new)
+                .toList();
     }
 
     @GetMapping("/{id}")
@@ -52,6 +60,14 @@ public class AppointmentController
     @DeleteMapping("/{id}")
     public void deleteAppointment(@PathVariable Long id) {
         appointmentService.deleteAppointment(id);
+    }
+
+    private boolean matchesLocation(ShopLocation resourceLocation, ShopLocation requestedLocation) {
+        if (requestedLocation == null) {
+            return true;
+        }
+
+        return resourceLocation != null && requestedLocation.getId().equals(resourceLocation.getId());
     }
 
 }

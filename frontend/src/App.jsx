@@ -5,6 +5,7 @@ import {
   Bell,
   BriefcaseBusiness,
   CalendarDays,
+  ChevronDown,
   CheckCircle2,
   CircleDollarSign,
   Clock3,
@@ -14,10 +15,13 @@ import {
   FileText,
   Gauge,
   LogIn,
+  MapPin,
   Package,
   RefreshCw,
   Search,
   Settings as SettingsIcon,
+  Moon,
+  Sun,
   Upload,
   UserCircle,
   ShieldCheck
@@ -110,6 +114,8 @@ import {
   getPayrollRecordsForEmployee,
   getPayrollRecordsForPeriod,
   getPayrollShiftSlots,
+  getPublicShopLocations,
+  getPublicShops,
   getWorkOrders,
   getWorkShifts,
   importTiresCsv,
@@ -179,21 +185,6 @@ const tabIcons = {
   "Audit Logs": ClipboardList,
   Settings: SettingsIcon
 };
-const metricIcons = {
-  "Tires in stock": Package,
-  "Low stock": AlertTriangle,
-  Invoices: FileText,
-  Revenue: CircleDollarSign,
-  Collected: CircleDollarSign,
-  Invoiced: FileText,
-  Outstanding: AlertTriangle,
-  "Today appointments": CalendarDays,
-  "Pending jobs": ClipboardList,
-  "In progress": RefreshCw,
-  "Vehicle ready": CheckCircle2,
-  "Completed today": CheckCircle2,
-  "Customer alerts": UserCircle
-};
 const statusClassMap = {
   BOOKED: "blue",
   COMPLETED: "green",
@@ -222,6 +213,22 @@ const statusClassMap = {
 };
 const chartColors = ["#18d3b2", "#7c8cff", "#ef4444", "#f59e0b"];
 const appointmentTimes = buildAppointmentTimes();
+const dashboardWidgetCatalog = [
+  { id: "keyMetrics", label: "Key Metrics", icon: Gauge },
+  { id: "today", label: "Today", icon: CalendarDays },
+  { id: "revenue", label: "Revenue Trend", icon: CircleDollarSign },
+  { id: "workOrders", label: "Work Orders", icon: ClipboardList },
+  { id: "inventoryMovement", label: "Inventory Movement", icon: Package },
+  { id: "followUps", label: "Customer Follow Ups", icon: Bell },
+  { id: "latestInvoices", label: "Latest Invoices", icon: FileText },
+  { id: "locationBreakdown", label: "Location Breakdown", icon: ShieldCheck },
+  { id: "conditionMix", label: "Tire Condition Mix", icon: ShieldCheck },
+  { id: "topInventory", label: "Top Inventory", icon: Package },
+  { id: "lowStock", label: "Low Stock", icon: AlertTriangle },
+  { id: "inventoryHealth", label: "Inventory Health", icon: Gauge },
+  { id: "activity", label: "Recent Actions", icon: Bell }
+];
+const defaultDashboardWidgetIds = ["keyMetrics", "today", "revenue", "workOrders", "inventoryMovement", "followUps"];
 const accountingTabs = ["Dashboard", "Expenses", "Vendors", "Accounts", "Reports", "Ledger"];
 const accountingTabMeta = {
   Dashboard: {
@@ -295,10 +302,10 @@ const vendorCategoryOptions = [
 ];
 const accountingPaymentOptions = ["CASH", "DEBIT", "CREDIT_CARD", "BANK_TRANSFER", "CHEQUE", "OTHER"];
 const tooltipStyle = {
-  background: "#17171d",
-  border: "1px solid rgba(255,255,255,0.08)",
+  background: "var(--tooltip-bg)",
+  border: "1px solid var(--tooltip-border)",
   borderRadius: 10,
-  color: "#d7d9e0"
+  color: "var(--tooltip-text)"
 };
 
 const emptyTire = {
@@ -342,6 +349,7 @@ const emptyAppointment = {
   rearQuantity: 2,
   rearTireSize: "",
   appointmentDate: "",
+  locationId: "",
   serviceType: "INSTALLATION",
   notes: "",
   reminderStatus: "NOT_SET",
@@ -367,7 +375,8 @@ const emptyExpense = {
   paymentMethod: "Cash",
   paymentMethodKey: "CASH",
   customPaymentMethod: "",
-  notes: ""
+  notes: "",
+  locationId: ""
 };
 
 const emptyAccount = {
@@ -388,6 +397,12 @@ const emptyVendor = {
   notes: ""
 };
 
+const defaultAccountingRange = {
+  mode: "lifetime",
+  start: "",
+  end: ""
+};
+
 const emptyInvoice = {
   companyName: "Your Shop Name",
   customerName: "",
@@ -398,6 +413,8 @@ const emptyInvoice = {
   amountPaid: "",
   dueDate: "",
   appointmentId: "",
+  estimateId: "",
+  locationId: "",
   items: [makeInvoiceItem()]
 };
 
@@ -409,6 +426,7 @@ const emptyWorkOrder = {
   phone: "",
   vehicle: "",
   assignedEmployeeId: "",
+  locationId: "",
   serviceType: "INSTALLATION",
   notes: ""
 };
@@ -419,6 +437,7 @@ const emptyEstimate = {
   email: "",
   phone: "",
   vehicle: "",
+  locationId: "",
   taxRate: "13",
   notes: "",
   validUntil: "",
@@ -444,6 +463,25 @@ function money(value) {
 function invoiceStatusKey(status) {
   const normalized = String(status || "UNPAID").toUpperCase();
   return normalized === "PARTIAL" ? "PARTIALLY_PAID" : normalized;
+}
+
+function invoiceNumber(invoice) {
+  const value = invoice?.invoiceNumber || invoice?.id;
+  return value ? String(value).startsWith("INV-") ? String(value) : `INV-${String(value).padStart(6, "0")}` : "-";
+}
+
+function statusLabel(value) {
+  const normalized = String(value || "").toUpperCase();
+  const labels = {
+    PARTIALLY_PAID: "Partially paid",
+    IN_PROGRESS: "In progress",
+    VEHICLE_READY: "Vehicle ready",
+    PAID_OFF: "Paid off",
+    DUE_SOON: "Due soon",
+    NOT_SET: "Not set"
+  };
+
+  return labels[normalized] || normalized.toLowerCase().replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function invoiceCollectedAmount(invoice) {
@@ -478,6 +516,34 @@ function dateTime(value) {
   return new Date(value).toLocaleString();
 }
 
+function toDateTimeLocalValue(value) {
+  return value ? String(value).slice(0, 16) : "";
+}
+
+function reminderStatusLabel(value) {
+  switch (String(value || "NOT_SET").toUpperCase()) {
+    case "SCHEDULED":
+      return "Reminder scheduled";
+    case "SENT":
+      return "Reminder sent";
+    case "NOT_SET":
+    default:
+      return "No reminder";
+  }
+}
+
+function confirmationStatusLabel(value) {
+  switch (String(value || "PENDING").toUpperCase()) {
+    case "CONFIRMED":
+      return "Confirmed";
+    case "NO_SHOW":
+      return "No-show";
+    case "PENDING":
+    default:
+      return "Awaiting confirmation";
+  }
+}
+
 function splitAppointmentDate(value) {
   const [date = "", rawTime = ""] = (value || "").split("T");
   const time = rawTime.slice(0, 5);
@@ -505,6 +571,45 @@ function buildAppointmentTimes() {
 
 function todayDateKey() {
   return toDateKey(new Date());
+}
+
+function locationScopeText(summary) {
+  if (!summary) {
+    return "No records";
+  }
+
+  return `${summary.tireUnits} tires - ${summary.todayAppointments} today - ${summary.openJobs} open jobs`;
+}
+
+function buildLocationScopeSummaries(locations, tires, appointments, workOrders) {
+  const activeLocations = (locations || []).filter((location) => location.active !== false);
+
+  function summarize(locationId) {
+    const scopedTires = filterRecordsByLocation(tires, locationId);
+    const scopedAppointments = filterRecordsByLocation(appointments, locationId);
+    const scopedWorkOrders = filterRecordsByLocation(workOrders, locationId);
+
+    return {
+      tireUnits: scopedTires.reduce((total, tire) => total + Number(tire.quantity || 0), 0),
+      todayAppointments: scopedAppointments.filter((appointment) =>
+        appointmentDateKey(appointment.appointmentDate) === todayDateKey()
+        && appointment.status !== "CANCELLED"
+      ).length,
+      openJobs: scopedWorkOrders.filter((workOrder) =>
+        ["PENDING", "IN_PROGRESS", "VEHICLE_READY"].includes(String(workOrder.status || "").toUpperCase())
+      ).length
+    };
+  }
+
+  return [
+    { id: "", name: "All Locations", type: "Shop-wide", ...summarize("") },
+    ...activeLocations.map((location) => ({
+      id: String(location.id),
+      name: location.name || "Location",
+      type: location.type || "Location",
+      ...summarize(location.id)
+    }))
+  ];
 }
 
 function appointmentDateKey(value) {
@@ -561,6 +666,36 @@ function loadCompanySettings() {
   }
 }
 
+function loadThemeMode() {
+  try {
+    return localStorage.getItem("tiretrack-theme") || "dark";
+  } catch {
+    return "dark";
+  }
+}
+
+function dashboardWidgetStorageKey(auth) {
+  return `tiretrack-dashboard-widgets-${auth?.id || auth?.email || "default"}`;
+}
+
+function validDashboardWidgetIds(ids) {
+  const validIds = new Set(dashboardWidgetCatalog.map((widget) => widget.id));
+  return (ids || []).filter((id) => validIds.has(id));
+}
+
+function loadDashboardWidgets(storageKey) {
+  try {
+    const storedWidgets = JSON.parse(localStorage.getItem(storageKey) || "null");
+    if (Array.isArray(storedWidgets)) {
+      return validDashboardWidgetIds(storedWidgets);
+    }
+  } catch {
+    // Ignore invalid local preferences and fall back to the default workspace.
+  }
+
+  return defaultDashboardWidgetIds;
+}
+
 function makeInvoiceForm(settings) {
   return {
     ...emptyInvoice,
@@ -595,6 +730,13 @@ function scrollPageToTop() {
   });
 }
 
+function scrollToSelector(selector) {
+  window.requestAnimationFrame(() => {
+    const target = document.querySelector(selector);
+    target?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+  });
+}
+
 function defaultTabForRole(role) {
   if (role === "SUPER_ADMIN") {
     return "Platform";
@@ -625,11 +767,11 @@ function canAccessTab(role, tab) {
   }
 
   if (tab === "Attendance") {
-    return role === "ADMIN";
+    return isShopManagerRole(role);
   }
 
   if (tab === "Payroll") {
-    return role === "ADMIN";
+    return isShopManagerRole(role);
   }
 
   if (tab === "My Payroll") {
@@ -639,8 +781,20 @@ function canAccessTab(role, tab) {
   return role !== "EMPLOYEE" || !employeeHiddenTabs.includes(tab);
 }
 
+function isShopManagerRole(role) {
+  return role === "OWNER" || role === "ADMIN";
+}
+
+function isShopOwnerAccount(auth) {
+  return auth?.role === "OWNER" || Boolean(auth?.shopOwner);
+}
+
+function canUseMultiLocationScope(auth) {
+  return isShopOwnerAccount(auth) && Boolean(auth?.multiLocationAllowed);
+}
+
 function requiresShopAssignment(role) {
-  return role === "ADMIN" || role === "EMPLOYEE";
+  return role === "OWNER" || role === "ADMIN" || role === "EMPLOYEE";
 }
 
 function downloadTextFile(filename, content, type = "text/plain") {
@@ -709,6 +863,49 @@ function getRangeStart(range, customStart) {
   return toDateKey(date);
 }
 
+function accountingDatesForRange(range = defaultAccountingRange) {
+  const mode = range.mode || "lifetime";
+
+  if (mode === "today") {
+    const today = todayDateKey();
+    return { start: today, end: today };
+  }
+
+  if (mode === "month") {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    return { start: toDateKey(start), end: todayDateKey() };
+  }
+
+  if (mode === "custom") {
+    return {
+      start: range.start || todayDateKey(),
+      end: range.end || range.start || todayDateKey()
+    };
+  }
+
+  return { start: null, end: null };
+}
+
+function accountingRangeLabel(range = defaultAccountingRange) {
+  const mode = range.mode || "lifetime";
+
+  if (mode === "today") {
+    return "Today";
+  }
+
+  if (mode === "month") {
+    return "This month";
+  }
+
+  if (mode === "custom") {
+    const dates = accountingDatesForRange(range);
+    return `${dates.start} to ${dates.end}`;
+  }
+
+  return "Lifetime";
+}
+
 function buildTireSize(form) {
   if (form.serviceType !== "INSTALLATION") {
     return "";
@@ -757,11 +954,14 @@ function App() {
   const [loginForm, setLoginForm] = useState({ email: "", password: "" });
   const [loginError, setLoginError] = useState("");
   const [loginSubmitting, setLoginSubmitting] = useState(false);
-  const [signupForm, setSignupForm] = useState({ fullName: "", email: "", phone: "", password: "" });
+  const [signupForm, setSignupForm] = useState({ fullName: "", email: "", phone: "", password: "", shopId: "", locationId: "" });
   const [signupError, setSignupError] = useState("");
   const [signupSubmitting, setSignupSubmitting] = useState(false);
+  const [themeMode, setThemeMode] = useState(loadThemeMode);
   const [activeTab, setActiveTab] = useState(() => defaultTabForRole(loadStoredAuth()?.role));
   const [activeAccountingTab, setActiveAccountingTab] = useState("Dashboard");
+  const [accountingRange, setAccountingRange] = useState(defaultAccountingRange);
+  const [accountingLoading, setAccountingLoading] = useState(false);
   const [globalQuery, setGlobalQuery] = useState("");
   const [showNotifications, setShowNotifications] = useState(false);
   const [appNotifications, setAppNotifications] = useState([]);
@@ -792,6 +992,7 @@ function App() {
   const [platformLinkRecords, setPlatformLinkRecords] = useState([]);
   const [platformLinkLocations, setPlatformLinkLocations] = useState([]);
   const [shopLocations, setShopLocations] = useState([]);
+  const [selectedLocationId, setSelectedLocationId] = useState("");
   const [expenseForm, setExpenseForm] = useState(emptyExpense);
   const [accountForm, setAccountForm] = useState(emptyAccount);
   const [vendorForm, setVendorForm] = useState(emptyVendor);
@@ -817,6 +1018,15 @@ function App() {
     scrollToFeedback();
   }
 
+  async function loadAccountingReportForRange(locationId = selectedLocationId, range = accountingRange) {
+    const dates = accountingDatesForRange(range);
+    return getAccountingReport(dates.start, dates.end, locationId);
+  }
+
+  function toggleThemeMode() {
+    setThemeMode((current) => current === "light" ? "dark" : "light");
+  }
+
   async function loadData(currentAuth = auth) {
     setLoading(true);
     setError("");
@@ -836,6 +1046,9 @@ function App() {
             role: currentProfile.role,
             shopId: currentProfile.shopId,
             shopName: currentProfile.shopName,
+            subscriptionPlan: currentProfile.subscriptionPlan,
+            multiLocationAllowed: Boolean(currentProfile.multiLocationAllowed),
+            shopOwner: Boolean(currentProfile.shopOwner),
             locationId: currentProfile.locationId,
             locationName: currentProfile.locationName,
             accessibleLocationIds: currentProfile.accessibleLocationIds || currentAuth.accessibleLocationIds || [],
@@ -867,6 +1080,7 @@ function App() {
         setAccountingAccounts([]);
         setVendors([]);
         setShopLocations([]);
+        setSelectedLocationId("");
         setAppNotifications([]);
         setActivityLog([]);
         setError("No shop assigned to this user. Contact Monarch Solutions.");
@@ -897,35 +1111,43 @@ function App() {
         setAccountingAccounts([]);
         setVendors([]);
         setShopLocations([]);
+        setSelectedLocationId("");
         setAppNotifications([]);
         setActivityLog([]);
         setCompanySettings(loadCompanySettings());
         return;
       }
 
-      if (workingAuth?.role === "ADMIN") {
+      if (isShopManagerRole(workingAuth?.role)) {
+        const multiLocationAllowed = canUseMultiLocationScope(workingAuth);
+        const locationViewId = workingAuth?.locationId ? String(workingAuth.locationId) : multiLocationAllowed ? selectedLocationId : "";
         const [summary, tireList, appointmentList, workOrderList, estimateList, invoiceList, salesList, savedSettings, auditLogs, customerList, accounting, accounts, vendorList, notifications, locations] = await Promise.all([
-          getDashboard(),
+          getDashboard(locationViewId),
           getTires(),
           getAppointments(),
           getWorkOrders().catch(() => []),
           getEstimates().catch(() => []),
           getInvoices(),
-          getSalesData(),
+          getSalesData(14, locationViewId),
           getSettings().catch(() => loadCompanySettings()),
           getAuditLogs().catch(() => []),
           getCustomers().catch(() => []),
-          getAccountingReport().catch(() => null),
+          loadAccountingReportForRange(locationViewId, accountingRange).catch(() => null),
           getAccountingAccounts().catch(() => []),
           getVendors().catch(() => []),
           getNotifications().catch(() => []),
-          workingAuth?.shopId ? getActiveShopLocations(workingAuth.shopId).catch(() => []) : Promise.resolve([])
+          multiLocationAllowed && workingAuth?.shopId ? getActiveShopLocations(workingAuth.shopId).catch(() => []) : Promise.resolve([])
         ]);
 
         const mergedSettings = { ...defaultCompanySettings, ...(savedSettings || {}) };
+        const nextLocationId = workingAuth?.locationId
+          ? String(workingAuth.locationId)
+          : multiLocationAllowed && locationViewId && (locations || []).some((location) => String(location.id) === String(locationViewId))
+            ? String(locationViewId)
+            : "";
         setDashboard(summary);
         setTires(tireList || []);
-        setInventoryTires(tireList || []);
+        setInventoryTires(filterRecordsByLocation(tireList || [], nextLocationId));
         setAppointments(appointmentList || []);
         setWorkOrders(workOrderList || []);
         setEstimates(estimateList || []);
@@ -935,7 +1157,8 @@ function App() {
         setAccountingReport(accounting);
         setAccountingAccounts(accounts || []);
         setVendors(vendorList || []);
-        setShopLocations(locations || []);
+        setShopLocations(multiLocationAllowed ? locations || [] : []);
+        setSelectedLocationId(nextLocationId);
         setAppNotifications(notifications || []);
         setActivityLog((auditLogs || []).map((log) => ({
           id: log.id,
@@ -971,6 +1194,7 @@ function App() {
         setAccountingAccounts([]);
         setVendors([]);
         setShopLocations([]);
+        setSelectedLocationId("");
         setAppNotifications([]);
         setCompanySettings(loadCompanySettings());
       }
@@ -981,6 +1205,11 @@ function App() {
       setLoading(false);
     }
   }
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = themeMode;
+    localStorage.setItem("tiretrack-theme", themeMode);
+  }, [themeMode]);
 
   useEffect(() => {
     async function initializeAuth() {
@@ -1077,7 +1306,12 @@ function App() {
     setSignupSubmitting(true);
 
     try {
-      const response = await registerApi({ ...signupForm, role: "CUSTOMER" });
+      const response = await registerApi({
+        ...signupForm,
+        role: "CUSTOMER",
+        shopId: signupForm.shopId ? Number(signupForm.shopId) : null,
+        locationId: signupForm.locationId ? Number(signupForm.locationId) : null
+      });
       persistStoredAuth(response);
       setAuth(response);
       setActiveTab("Portal");
@@ -1145,13 +1379,36 @@ function App() {
 
   async function refreshAccounting() {
     const [accounting, accounts, vendorList] = await Promise.all([
-      getAccountingReport().catch(() => null),
+      loadAccountingReportForRange(selectedLocationId, accountingRange).catch(() => null),
       getAccountingAccounts().catch(() => []),
       getVendors().catch(() => [])
     ]);
     setAccountingReport(accounting);
     setAccountingAccounts(accounts || []);
     setVendors(vendorList || []);
+  }
+
+  async function changeLocationView(locationId) {
+    const nextLocationId = auth?.locationId ? String(auth.locationId) : String(locationId || "");
+    setSelectedLocationId(nextLocationId);
+    setInventoryTires(filterRecordsByLocation(tires, nextLocationId));
+    setAppointmentForm((current) => ({ ...current, locationId: nextLocationId }));
+    setInvoiceForm((current) => ({ ...current, locationId: nextLocationId }));
+    setExpenseForm((current) => ({ ...current, locationId: nextLocationId }));
+
+    try {
+      const [summary, salesList, accounting] = await Promise.all([
+        getDashboard(nextLocationId),
+        getSalesData(14, nextLocationId),
+        loadAccountingReportForRange(nextLocationId, accountingRange).catch(() => null)
+      ]);
+      setDashboard(summary);
+      setSalesData(salesList || []);
+      setAccountingReport(accounting);
+    } catch (err) {
+      setError(err.message);
+      scrollToFeedback();
+    }
   }
 
   async function refreshNotifications() {
@@ -1186,6 +1443,7 @@ function App() {
       ...expenseForm,
       vendorId: expenseForm.vendorId || null,
       expenseAccountId: expenseForm.expenseAccountId || null,
+      locationId: expenseForm.locationId ? Number(expenseForm.locationId) : selectedLocationId ? Number(selectedLocationId) : null,
       category: resolveAccountingLabel(expenseForm.categoryKey, expenseForm.customCategory),
       paymentMethod: resolveAccountingLabel(expenseForm.paymentMethodKey, expenseForm.customPaymentMethod),
       subtotal: Number(expenseForm.subtotal || 0),
@@ -1236,11 +1494,35 @@ function App() {
     await refreshAccounting();
   }
 
-  function jumpToResult(result) {
+  async function changeAccountingRange(nextRange) {
+    setAccountingRange(nextRange);
+    setAccountingLoading(true);
+    setAccountingMessage("");
+
+    try {
+      const accounting = await loadAccountingReportForRange(selectedLocationId, nextRange);
+      setAccountingReport(accounting);
+    } catch (err) {
+      setError(err.message || "Accounting report could not be loaded.");
+      scrollToFeedback();
+    } finally {
+      setAccountingLoading(false);
+    }
+  }
+
+  async function jumpToResult(result) {
     setActiveTab(result.tab);
     setGlobalQuery("");
     setHighlightedRow(result.id);
     window.setTimeout(() => setHighlightedRow(null), 2200);
+
+    if (result.tab === "Invoices") {
+      try {
+        await previewInvoice(invoices.find((invoice) => Number(invoice.id) === Number(result.entityId)) || { id: result.entityId });
+      } catch (err) {
+        setError(err.message || "Invoice preview could not be loaded.");
+      }
+    }
   }
 
   function logActivity(label, tab) {
@@ -1273,25 +1555,35 @@ function App() {
     scrollToFeedback();
   }
 
+  const visibleTires = useMemo(() => filterRecordsByLocation(tires, selectedLocationId), [tires, selectedLocationId]);
+  const visibleAppointments = useMemo(() => filterRecordsByLocation(appointments, selectedLocationId), [appointments, selectedLocationId]);
+  const visibleWorkOrders = useMemo(() => filterRecordsByLocation(workOrders, selectedLocationId), [workOrders, selectedLocationId]);
+  const visibleEstimates = useMemo(() => filterRecordsByLocation(estimates, selectedLocationId), [estimates, selectedLocationId]);
+  const visibleInvoices = useMemo(() => filterRecordsByLocation(invoices, selectedLocationId), [invoices, selectedLocationId]);
+  const visibleCustomers = useMemo(() => filterRecordsByLocation(customers, selectedLocationId), [customers, selectedLocationId]);
+  const locationScopeSummaries = useMemo(
+    () => buildLocationScopeSummaries(shopLocations, tires, appointments, workOrders),
+    [shopLocations, tires, appointments, workOrders]
+  );
   const lowStockTires = useMemo(
-    () => tires.filter((tire) => Number(tire.quantity) <= 5),
-    [tires]
+    () => visibleTires.filter((tire) => Number(tire.quantity) <= 5),
+    [visibleTires]
   );
   const activeAppointments = useMemo(
     () => {
       const paidAppointmentIds = new Set(
-        invoices
+        visibleInvoices
           .filter((invoice) => invoiceStatusKey(invoice.status) === "PAID" && invoice.appointmentId)
           .map((invoice) => Number(invoice.appointmentId))
       );
 
-      return appointments.filter((appointment) =>
+      return visibleAppointments.filter((appointment) =>
         appointment.status !== "COMPLETED"
         && appointment.status !== "CANCELLED"
         && !paidAppointmentIds.has(Number(appointment.id))
       );
     },
-    [appointments, invoices]
+    [visibleAppointments, visibleInvoices]
   );
   const globalSearchResults = useMemo(() => {
     const query = globalQuery.trim().toLowerCase();
@@ -1393,18 +1685,22 @@ function App() {
       }));
     const invoiceMatches = invoices
       .filter((invoice) => [
+        invoiceNumber(invoice),
+        invoice.invoiceNumber,
+        invoice.id,
         invoice.customerName,
         invoice.phone,
         invoice.vehicle,
         invoice.status,
+        statusLabel(invoiceDisplayStatus(invoice)),
         invoice.paymentMethod
       ].join(" ").toLowerCase().includes(query))
       .slice(0, 4)
       .map((invoice) => ({
         id: `invoice-${invoice.id}`,
         entityId: invoice.id,
-        label: invoice.customerName,
-        meta: `${money(invoice.total)} · ${invoice.status || "UNPAID"}`,
+        label: invoiceNumber(invoice),
+        meta: `${invoice.customerName} - ${money(invoice.total)} - ${statusLabel(invoiceDisplayStatus(invoice))}`,
         tab: "Invoices"
       }));
 
@@ -1497,6 +1793,10 @@ function App() {
   async function createInventoryLocation(location) {
     if (!auth?.shopId) {
       throw new Error("Your account is not assigned to a shop yet.");
+    }
+
+    if (!canUseMultiLocationScope(auth)) {
+      throw new Error("Multi-location support requires a Premium plan and a shop owner account.");
     }
 
     await createShopLocation({
@@ -1663,6 +1963,17 @@ function App() {
     setError("");
     setSuccessMessage("");
 
+    if (appointmentForm.reminderStatus === "SCHEDULED" && !appointmentForm.reminderAt) {
+      setError("Choose a reminder date and time, or set Reminder to No reminder.");
+      scrollToFeedback();
+      return;
+    }
+
+    const reminderAt = appointmentForm.reminderAt || null;
+    const reminderStatus = reminderAt
+      ? appointmentForm.reminderStatus === "SENT" ? "SENT" : "SCHEDULED"
+      : "NOT_SET";
+
     const appointment = {
       customerId: appointmentForm.customerId ? Number(appointmentForm.customerId) : null,
       customerName: appointmentForm.customerName,
@@ -1675,10 +1986,11 @@ function App() {
       rearTireId: appointmentForm.serviceType === "INSTALLATION" && appointmentForm.tireSetup === "staggered" && appointmentForm.rearTireId ? Number(appointmentForm.rearTireId) : null,
       rearQuantity: appointmentForm.serviceType === "INSTALLATION" && appointmentForm.tireSetup === "staggered" ? Number(appointmentForm.rearQuantity || 0) : 0,
       appointmentDate: appointmentForm.appointmentDate,
+      locationId: appointmentForm.locationId ? Number(appointmentForm.locationId) : selectedLocationId ? Number(selectedLocationId) : null,
       serviceType: appointmentForm.serviceType,
       notes: appointmentForm.notes,
-      reminderStatus: appointmentForm.reminderStatus,
-      reminderAt: appointmentForm.reminderAt || null,
+      reminderStatus,
+      reminderAt,
       confirmationStatus: appointmentForm.confirmationStatus,
       cancelReason: appointmentForm.cancelReason,
       status: appointmentForm.status
@@ -1708,6 +2020,7 @@ function App() {
     const matchingAppointment = appointments.find((existingAppointment) =>
       Number(existingAppointment.id) !== Number(editingAppointmentId)
       && isBookableAppointment(existingAppointment)
+      && sameLocationValue(existingAppointment.locationId, appointment.locationId)
       && appointmentDateKey(existingAppointment.appointmentDate) === selectedDate
       && appointmentTimeKey(existingAppointment.appointmentDate) === selectedTime
     );
@@ -1754,10 +2067,11 @@ function App() {
       rearTireId: appointment.rearTireId ? String(appointment.rearTireId) : "",
       rearQuantity: appointment.rearQuantity || 0,
       appointmentDate: appointment.appointmentDate || "",
+      locationId: appointment.locationId ? String(appointment.locationId) : selectedLocationId,
       serviceType: appointment.serviceType || "INSTALLATION",
       notes: appointment.notes || "",
       reminderStatus: appointment.reminderStatus || "NOT_SET",
-      reminderAt: appointment.reminderAt || "",
+      reminderAt: toDateTimeLocalValue(appointment.reminderAt),
       confirmationStatus: appointment.confirmationStatus || "PENDING",
       cancelReason: appointment.cancelReason || "",
       status: appointment.status || "BOOKED"
@@ -1790,21 +2104,32 @@ function App() {
     }
 
     try {
-      const savedInvoice = await createInvoice({
+      if (invoiceStatusKey(invoiceForm.status) === "PARTIALLY_PAID" && !invoiceForm.dueDate) {
+        setError("Choose a due date for the remaining partial-payment balance.");
+        scrollToFeedback();
+        return;
+      }
+
+      const invoicePayload = {
         ...invoiceForm,
         companyName: undefined,
+        estimateId: undefined,
         taxRate: Number(companySettings.taxRate || 13),
         amountPaid: invoiceForm.amountPaid === "" ? null : Number(invoiceForm.amountPaid || 0),
         dueDate: invoiceForm.dueDate || null,
         appointmentId: invoiceForm.appointmentId ? Number(invoiceForm.appointmentId) : null,
+        locationId: invoiceForm.locationId ? Number(invoiceForm.locationId) : selectedLocationId ? Number(selectedLocationId) : null,
         items
-      });
+      };
+      const savedInvoice = invoiceForm.estimateId
+        ? await convertEstimateToInvoice(invoiceForm.estimateId, invoicePayload)
+        : await createInvoice(invoicePayload);
       const printableInvoice = savedInvoice?.id ? await getInvoice(savedInvoice.id) : savedInvoice;
 
       setGeneratedInvoice(printableInvoice);
-      logActivity(`Created invoice for ${invoiceForm.customerName}`, "Invoices");
+      logActivity(`${invoiceForm.estimateId ? "Converted estimate into" : "Created"} invoice for ${invoiceForm.customerName}`, "Invoices");
       setInvoiceForm(makeInvoiceForm(companySettings));
-      notifySuccess(`Invoice created for ${invoiceForm.customerName}.`);
+      notifySuccess(`Invoice ${invoiceNumber(printableInvoice)} created for ${invoiceForm.customerName}.`);
       await loadData();
     } catch (err) {
       setError(err.message);
@@ -1875,8 +2200,8 @@ function App() {
       status: "PAID",
       paymentMethod: invoice.paymentMethod || "Manual"
     });
-    logActivity(`Marked invoice #${invoice.id} paid`, "Invoices");
-    notifySuccess(`Invoice #${invoice.id} marked paid.`);
+    logActivity(`Marked invoice ${invoiceNumber(invoice)} paid`, "Invoices");
+    notifySuccess(`Invoice ${invoiceNumber(invoice)} marked paid.`);
     await loadData();
   }
 
@@ -1904,18 +2229,30 @@ function App() {
 
       payload.amountPaid = Number(paidInput || 0);
 
-      const dueInput = window.prompt("Remaining balance due date (YYYY-MM-DD)", invoice.dueDate || todayDateKey());
-      if (dueInput !== null && dueInput.trim()) {
-        payload.dueDate = dueInput.trim();
+      const dueInput = window.prompt("Remaining balance due date (YYYY-MM-DD)", invoice.dueDate || "");
+      if (dueInput === null) {
+        return;
       }
 
+      if (!dueInput.trim()) {
+        setError("Choose a due date for the remaining partial-payment balance.");
+        scrollToFeedback();
+        return;
+      }
+
+      payload.dueDate = dueInput.trim();
       payload.paymentMethod = invoice.paymentMethod || "Manual";
     }
 
-    await updateInvoiceStatus(invoice.id, payload);
-    logActivity(`Marked invoice #${invoice.id} ${status}`, "Invoices");
-    notifySuccess(`Invoice #${invoice.id} marked ${status}.`);
-    await loadData();
+    try {
+      await updateInvoiceStatus(invoice.id, payload);
+      logActivity(`Marked invoice ${invoiceNumber(invoice)} ${statusLabel(status)}`, "Invoices");
+      notifySuccess(`Invoice ${invoiceNumber(invoice)} marked ${statusLabel(status)}.`);
+      await loadData();
+    } catch (err) {
+      setError(err.message);
+      scrollToFeedback();
+    }
   }
 
   function startInvoiceFromAppointment(appointment) {
@@ -1949,13 +2286,37 @@ function App() {
     setActiveTab("Invoices");
   }
 
+  function startInvoiceFromEstimate(estimate) {
+    const nextInvoiceForm = makeInvoiceForm(companySettings);
+    setGeneratedInvoice(null);
+    setInvoiceForm({
+      ...nextInvoiceForm,
+      estimateId: String(estimate.id),
+      customerName: estimate.customerName || "",
+      phone: estimate.phone || "",
+      vehicle: estimate.vehicle || "",
+      locationId: estimate.locationId ? String(estimate.locationId) : selectedLocationId,
+      status: "UNPAID",
+      paymentMethod: "Cash",
+      items: (estimate.items || []).length ? estimate.items.map((item) => ({
+        tireId: item.tireId ? String(item.tireId) : "",
+        itemType: item.itemType || "SERVICE",
+        itemName: item.itemName || "",
+        quantity: item.quantity || 1,
+        unitPrice: String(item.unitPrice ?? "0.00")
+      })) : nextInvoiceForm.items
+    });
+    setActiveTab("Invoices");
+    notifySuccess(`Estimate ${estimate.estimateNumber || `#${estimate.id}`} loaded into the invoice editor.`);
+  }
+
   if (isPublicBooking && loadStoredAuth()?.role === "SUPER_ADMIN") {
     window.location.href = "/";
     return null;
   }
 
   if (isPublicBooking) {
-    return <PublicBookingPage />;
+    return <PublicBookingPage onToggleTheme={toggleThemeMode} themeMode={themeMode} />;
   }
 
   if (isCustomerSignupRoute) {
@@ -1964,8 +2325,10 @@ function App() {
         error={signupError}
         form={signupForm}
         isSubmitting={signupSubmitting}
+        onToggleTheme={toggleThemeMode}
         onSubmit={handleCustomerSignup}
         setForm={setSignupForm}
+        themeMode={themeMode}
       />
     );
   }
@@ -1978,6 +2341,8 @@ function App() {
         setLoginForm={setLoginForm}
         error={loginError}
         isSubmitting={loginSubmitting}
+        onToggleTheme={toggleThemeMode}
+        themeMode={themeMode}
       />
     );
   }
@@ -1985,6 +2350,7 @@ function App() {
   if (authLoading) {
     return (
       <main className="login-shell">
+        <ThemeToggleButton className="theme-floating-toggle" onToggle={toggleThemeMode} themeMode={themeMode} />
         <motion.section
           animate={{ opacity: 1, y: 0 }}
           className="login-panel"
@@ -2005,6 +2371,8 @@ function App() {
         setLoginForm={setLoginForm}
         error={loginError}
         isSubmitting={loginSubmitting}
+        onToggleTheme={toggleThemeMode}
+        themeMode={themeMode}
       />
     );
   }
@@ -2021,7 +2389,9 @@ function App() {
         onPayInvoice={payInvoiceFromPortal}
         onRefresh={refreshCustomerPortal}
         onSaveVehicle={saveCustomerVehicle}
+        onToggleTheme={toggleThemeMode}
         portal={customerPortal}
+        themeMode={themeMode}
       />
     );
   }
@@ -2159,6 +2529,7 @@ function App() {
               <RefreshCw size={16} />
               Refresh
             </button>
+            <ThemeToggleButton onToggle={toggleThemeMode} themeMode={themeMode} />
             {auth?.role !== "SUPER_ADMIN" && (
               <button className="ghost-button with-icon" onClick={() => { window.location.href = "/booking"; }} type="button">
                 <CalendarDays size={16} />
@@ -2180,6 +2551,16 @@ function App() {
         {loading ? <DashboardSkeleton /> : null}
 
         {!loading && tenantBlocked && <TenantAssignmentWarning auth={auth} />}
+
+        {!tenantBlocked && !loading && canUseMultiLocationScope(auth) && (
+          <LocationScopeBar
+            auth={auth}
+            locations={shopLocations}
+            summaries={locationScopeSummaries}
+            onChange={changeLocationView}
+            value={selectedLocationId}
+          />
+        )}
 
         {!tenantBlocked && !loading && activeTab === "Platform" && auth?.role === "SUPER_ADMIN" && (
           <PlatformPage
@@ -2205,12 +2586,13 @@ function App() {
 
         {!tenantBlocked && !loading && activeTab === "Dashboard" && (
           <Dashboard
+            auth={auth}
             appointments={activeAppointments}
-            customers={customers}
+            customers={visibleCustomers}
             dashboard={dashboard}
-            invoices={invoices}
-            workOrders={workOrders}
-            tires={tires}
+            invoices={visibleInvoices}
+            workOrders={visibleWorkOrders}
+            tires={visibleTires}
             lowStockTires={lowStockTires}
             onCancelAppointment={cancelAppointment}
             onDeleteAppointment={removeAppointment}
@@ -2238,14 +2620,14 @@ function App() {
             onSubmit={submitTire}
             highlightedRow={highlightedRow}
             shopLocations={shopLocations}
-            tires={inventoryTires}
+            tires={filterRecordsByLocation(inventoryTires, selectedLocationId)}
           />
         )}
 
         {!tenantBlocked && !loading && activeTab === "Appointments" && (
           <Appointments
-            appointments={appointments}
-            customers={customers}
+            appointments={visibleAppointments}
+            customers={visibleCustomers}
             editingId={editingAppointmentId}
             form={appointmentForm}
             onChange={setAppointmentForm}
@@ -2254,32 +2636,38 @@ function App() {
             onEdit={editAppointment}
             onSubmit={submitAppointment}
             highlightedRow={highlightedRow}
-            tires={tires}
+            selectedLocationId={selectedLocationId}
+            shopLocations={shopLocations}
+            tires={visibleTires}
           />
         )}
 
         {!tenantBlocked && !loading && activeTab === "Work Orders" && (
           <WorkOrdersPage
             appointments={activeAppointments}
-            customers={customers}
+            customers={visibleCustomers}
             onInvoiceCreated={openGeneratedInvoice}
             onNotify={notifySuccess}
             onRefresh={() => loadData(auth)}
+            selectedLocationId={selectedLocationId}
             setError={setError}
-            workOrders={workOrders}
+            shopLocations={shopLocations}
+            workOrders={visibleWorkOrders}
           />
         )}
 
         {!tenantBlocked && !loading && activeTab === "Estimates" && (
           <EstimatesPage
-            customers={customers}
-            estimates={estimates}
-            onInvoiceCreated={openGeneratedInvoice}
+            customers={visibleCustomers}
+            estimates={visibleEstimates}
+            onStartInvoice={startInvoiceFromEstimate}
             onNotify={notifySuccess}
             onRefresh={() => loadData(auth)}
+            selectedLocationId={selectedLocationId}
             settings={companySettings}
             setError={setError}
-            tires={tires}
+            shopLocations={shopLocations}
+            tires={visibleTires}
           />
         )}
 
@@ -2288,7 +2676,7 @@ function App() {
             form={invoiceForm}
             generatedInvoice={generatedInvoice}
             settings={companySettings}
-            invoices={invoices}
+            invoices={visibleInvoices}
             onChange={setInvoiceForm}
             onDelete={removeInvoice}
             onMarkPaid={markInvoicePaid}
@@ -2297,12 +2685,14 @@ function App() {
             onSubmit={submitInvoice}
             highlightedRow={highlightedRow}
             appointments={activeAppointments}
-            tires={tires}
+            selectedLocationId={selectedLocationId}
+            shopLocations={shopLocations}
+            tires={visibleTires}
           />
         )}
 
         {!tenantBlocked && !loading && activeTab === "Customers" && (
-          <CustomersPage customers={customers} onSendNotice={sendNoticeToCustomer} />
+          <CustomersPage customers={visibleCustomers} onSendNotice={sendNoticeToCustomer} />
         )}
 
         {!tenantBlocked && !loading && activeTab === "Accounting" && (
@@ -2319,19 +2709,24 @@ function App() {
             onSubmitVendor={submitVendor}
             onPayExpense={payAccountingExpense}
             onTabChange={setActiveAccountingTab}
+            onRangeChange={changeAccountingRange}
             onVendorChange={setVendorForm}
             report={accountingReport}
+            reportLoading={accountingLoading}
+            reportRange={accountingRange}
+            selectedLocationId={selectedLocationId}
+            shopLocations={shopLocations}
             vendorForm={vendorForm}
             vendors={vendors}
           />
         )}
 
-        {!tenantBlocked && !loading && activeTab === "Attendance" && auth?.role === "ADMIN" && (
-          <AttendancePage auth={auth} />
+        {!tenantBlocked && !loading && activeTab === "Attendance" && isShopManagerRole(auth?.role) && (
+          <AttendancePage auth={auth} selectedLocationId={selectedLocationId} />
         )}
 
-        {!tenantBlocked && !loading && activeTab === "Payroll" && auth?.role === "ADMIN" && (
-          <PayrollPage auth={auth} mode="admin" />
+        {!tenantBlocked && !loading && activeTab === "Payroll" && isShopManagerRole(auth?.role) && (
+          <PayrollPage auth={auth} mode="admin" selectedLocationId={selectedLocationId} shopLocations={shopLocations} />
         )}
 
         {!tenantBlocked && !loading && activeTab === "My Payroll" && auth?.role === "EMPLOYEE" && (
@@ -2368,26 +2763,105 @@ function TenantAssignmentWarning({ auth }) {
   );
 }
 
+function LocationScopeBar({ auth, locations, onChange, summaries = [], value }) {
+  const [open, setOpen] = useState(false);
+  const lockedLocation = Boolean(auth?.locationId);
+  const activeLocations = locations.filter((location) => location.active !== false);
+  const selectedId = lockedLocation ? String(auth.locationId) : String(value || "");
+  const selectedLocation = activeLocations.find((location) => String(location.id) === selectedId);
+  const selectedSummary = summaries.find((summary) => String(summary.id || "") === selectedId) || summaries[0];
+  const options = summaries.filter((summary) => summary.id === "" || activeLocations.some((location) => String(location.id) === String(summary.id)));
+  const canChooseLocation = !lockedLocation && activeLocations.length > 0;
+  const selectedName = selectedId ? selectedLocation?.name || auth?.locationName || selectedSummary?.name || "Selected Location" : "All Locations";
+  const selectedType = selectedId
+    ? selectedLocation?.type || selectedSummary?.type || "Location"
+    : activeLocations.length > 0 ? "Shop-wide view" : "No locations set up";
+
+  function chooseLocation(locationId) {
+    setOpen(false);
+    onChange(locationId);
+  }
+
+  return (
+    <section
+      className={`location-scope-bar ${open ? "open" : ""} ${lockedLocation ? "locked" : ""}`}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) {
+          setOpen(false);
+        }
+      }}
+    >
+      <button
+        aria-expanded={open}
+        className="location-scope-trigger"
+        disabled={!canChooseLocation}
+        onClick={() => setOpen((current) => !current)}
+        type="button"
+      >
+        <span className="location-scope-icon"><MapPin size={17} /></span>
+        <span className="location-scope-copy">
+          <span>Viewing</span>
+          <strong>{selectedName}</strong>
+        </span>
+        <span className="location-scope-meta">
+          <b>{selectedType}</b>
+          <small>{locationScopeText(selectedSummary)}</small>
+        </span>
+        {canChooseLocation && <ChevronDown className="location-scope-chevron" size={17} />}
+      </button>
+
+      {canChooseLocation && open && (
+        <div className="location-scope-menu" role="listbox">
+          {options.map((option) => {
+            const isSelected = String(option.id || "") === selectedId;
+
+            return (
+              <button
+                className={isSelected ? "selected" : ""}
+                key={option.id || "all-locations"}
+                onClick={() => chooseLocation(option.id || "")}
+                type="button"
+              >
+                <span>
+                  <strong>{option.name}</strong>
+                  <small>{option.type}</small>
+                </span>
+                <span>{locationScopeText(option)}</span>
+                {isSelected && <CheckCircle2 size={16} />}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function Dashboard({
-  appointments,
-  customers,
+  auth,
+  appointments = [],
+  customers = [],
   dashboard,
-  invoices,
+  invoices = [],
   workOrders = [],
-  lowStockTires,
+  lowStockTires = [],
   onCancelAppointment,
   onDeleteAppointment,
   onEditAppointment,
   onInvoiceAppointment,
-  activityLog,
+  activityLog = [],
   onJumpActivity,
-  salesData,
-  tires
+  salesData = [],
+  tires = []
 }) {
   const [range, setRange] = useState("month");
   const [customRange, setCustomRange] = useState({ start: todayDateKey(), end: todayDateKey() });
+  const [showWidgetPicker, setShowWidgetPicker] = useState(false);
+  const widgetStorageKey = dashboardWidgetStorageKey(auth);
+  const [selectedWidgetIds, setSelectedWidgetIds] = useState(null);
   const rangeStart = getRangeStart(range, customRange.start);
   const rangeEnd = range === "custom" ? customRange.end : todayDateKey();
+  const activeWidgetIds = validDashboardWidgetIds(selectedWidgetIds ?? defaultDashboardWidgetIds);
   const filteredInvoices = invoices.filter((invoice) => {
     const date = appointmentDateKey(invoice.createdAt || invoice.invoiceDate);
     return date && date >= rangeStart && date <= rangeEnd;
@@ -2411,10 +2885,6 @@ function Dashboard({
   const followUpCustomers = [...paymentAlertCustomers, ...appointmentReminderCustomers]
     .filter((customer, index, list) => list.findIndex((entry) => entry.id === customer.id) === index)
     .sort((first, second) => followUpPriority(first) - followUpPriority(second));
-  const upcomingAppointments = [...appointments]
-    .filter((appointment) => new Date(appointment.appointmentDate) >= new Date(new Date().setHours(0, 0, 0, 0)))
-    .sort((first, second) => new Date(first.appointmentDate) - new Date(second.appointmentDate))
-    .slice(0, 5);
   const latestInvoices = [...invoices]
     .sort((first, second) => new Date(second.createdAt || second.invoiceDate || 0) - new Date(first.createdAt || first.invoiceDate || 0))
     .slice(0, 5);
@@ -2436,242 +2906,395 @@ function Dashboard({
       size: `${tire.width}/${tire.aspectRatio}R${tire.rimSize}`,
       units: Number(tire.quantity || 0)
     }));
-  const cards = [
-    ["Tires in stock", dashboard?.totalTiresInStock ?? 0],
-    ["Low stock", dashboard?.lowStockCount ?? 0],
-    ["Invoices", dashboard?.totalInvoices ?? 0],
-    ["Collected", money(dashboard?.totalCollected ?? dashboard?.totalRevenue)],
-    ["Invoiced", money(dashboard?.totalInvoiced)],
-    ["Outstanding", money(dashboard?.outstandingBalance)],
-    ["Today appointments", dashboard?.todayAppointments ?? 0],
-    ["Pending jobs", dashboard?.pendingWorkOrders ?? workOrders.filter((workOrder) => workOrder.status === "PENDING").length],
-    ["In progress", dashboard?.inProgressWorkOrders ?? workOrders.filter((workOrder) => workOrder.status === "IN_PROGRESS").length],
-    ["Vehicle ready", dashboard?.vehicleReadyWorkOrders ?? workOrders.filter((workOrder) => workOrder.status === "VEHICLE_READY").length],
-    ["Completed today", dashboard?.completedWorkOrdersToday ?? workOrders.filter((workOrder) => workOrder.status === "COMPLETED" && appointmentDateKey(workOrder.completedAt) === today).length]
+  const workOrderStats = [
+    { label: "Pending", value: dashboard?.pendingWorkOrders ?? workOrders.filter((workOrder) => workOrder.status === "PENDING").length, tone: "warning" },
+    { label: "In progress", value: dashboard?.inProgressWorkOrders ?? workOrders.filter((workOrder) => workOrder.status === "IN_PROGRESS").length, tone: "info" },
+    { label: "Vehicle ready", value: dashboard?.vehicleReadyWorkOrders ?? workOrders.filter((workOrder) => workOrder.status === "VEHICLE_READY").length, tone: "good" },
+    { label: "Completed today", value: dashboard?.completedWorkOrdersToday ?? workOrders.filter((workOrder) => workOrder.status === "COMPLETED" && appointmentDateKey(workOrder.completedAt) === today).length, tone: "neutral" }
+  ];
+  const maxWorkOrderStat = Math.max(...workOrderStats.map((stat) => Number(stat.value || 0)), 1);
+  const keyMetrics = [
+    {
+      detail: `${filteredInvoices.length} invoices in range`,
+      icon: CircleDollarSign,
+      label: "Collected",
+      tone: "good",
+      value: money(dashboard?.totalCollected ?? dashboard?.totalRevenue)
+    },
+    {
+      detail: `${paymentAlertCustomers.length} customers with balances`,
+      icon: AlertTriangle,
+      label: "Outstanding",
+      tone: Number(dashboard?.outstandingBalance || 0) > 0 ? "warning" : "neutral",
+      value: money(dashboard?.outstandingBalance)
+    },
+    {
+      detail: `${todayAppointments.length} scheduled today`,
+      icon: CalendarDays,
+      label: "Appointments",
+      tone: "info",
+      value: dashboard?.todayAppointments ?? todayAppointments.length
+    },
+    {
+      detail: `${urgentRestock.length} urgent restocks`,
+      icon: Package,
+      label: "Inventory units",
+      tone: urgentRestock.length ? "warning" : "good",
+      value: dashboard?.totalTiresInStock ?? totalUnits
+    },
+    {
+      detail: `${dashboard?.totalCustomers ?? customers.length} customers`,
+      icon: UserCircle,
+      label: "Customers",
+      tone: "neutral",
+      value: dashboard?.totalCustomers ?? customers.length
+    },
+    {
+      detail: `${workOrderStats[2].value} ready for pickup`,
+      icon: CheckCircle2,
+      label: "Work orders",
+      tone: workOrderStats[2].value ? "good" : "neutral",
+      value: workOrders.length
+    }
   ];
 
-  return (
-    <>
-      <section className="metric-grid">
-        {cards.map(([label, value]) => (
-          <motion.article
-            animate={{ opacity: 1, y: 0 }}
-            className="metric-card"
-            initial={{ opacity: 0, y: 10 }}
-            key={label}
-            transition={{ duration: 0.32 }}
-            whileHover={{ y: -4 }}
-          >
-            <div className="metric-icon">
-              {(() => {
-                const Icon = metricIcons[label] || Gauge;
-                return <Icon size={20} />;
-              })()}
+  useEffect(() => {
+    setSelectedWidgetIds(loadDashboardWidgets(widgetStorageKey));
+  }, [widgetStorageKey]);
+
+  useEffect(() => {
+    if (selectedWidgetIds !== null) {
+      localStorage.setItem(widgetStorageKey, JSON.stringify(validDashboardWidgetIds(selectedWidgetIds)));
+    }
+  }, [selectedWidgetIds, widgetStorageKey]);
+
+  function toggleWidget(id) {
+    setSelectedWidgetIds((current) => {
+      const currentIds = validDashboardWidgetIds(current ?? defaultDashboardWidgetIds);
+      return currentIds.includes(id)
+        ? currentIds.filter((widgetId) => widgetId !== id)
+        : [...currentIds, id];
+    });
+  }
+
+  function resetWidgets() {
+    setSelectedWidgetIds(defaultDashboardWidgetIds);
+  }
+
+  function renderWidget(id) {
+    switch (id) {
+      case "keyMetrics":
+        return (
+          <section className="dashboard-kpi-strip dashboard-widget-wide" key={id}>
+            {keyMetrics.map((metric) => (
+              <DashboardMetricTile key={metric.label} metric={metric} />
+            ))}
+          </section>
+        );
+      case "today":
+        return (
+          <DashboardWidgetPanel eyebrow="Today" icon={CalendarDays} key={id} title="Daily Operations" wide>
+            <div className="today-stats">
+              <div><span>Appointments</span><strong>{todayAppointments.length}</strong></div>
+              <div><span>Invoices</span><strong>{todayInvoices.length}</strong></div>
+              <div><span>Collected</span><strong>{money(todayRevenue)}</strong></div>
+              <div><span>Low stock actions</span><strong>{urgentRestock.length}</strong></div>
             </div>
-            <span>{label}</span>
-            <strong>{value}</strong>
-          </motion.article>
-        ))}
-      </section>
-
-      <section className="dashboard-filters panel">
-        <div>
-          <span className="eyebrow">Dashboard range</span>
-          <h3>{range === "custom" ? `${rangeStart} to ${rangeEnd}` : `This ${range}`}</h3>
-        </div>
-        <div className="segmented-control">
-          {["today", "week", "month", "custom"].map((option) => (
-            <button className={range === option ? "active" : ""} key={option} onClick={() => setRange(option)} type="button">
-              {option}
-            </button>
-          ))}
-        </div>
-        {range === "custom" && (
-          <div className="range-inputs">
-            <input type="date" value={customRange.start} onChange={(event) => setCustomRange({ ...customRange, start: event.target.value })} />
-            <input type="date" value={customRange.end} onChange={(event) => setCustomRange({ ...customRange, end: event.target.value })} />
-          </div>
-        )}
-        <strong>{money(rangeRevenue)} revenue</strong>
-      </section>
-
-      <section className="today-panel panel">
-        <div className="today-panel-header">
-          <div>
-            <span className="eyebrow">Today</span>
-            <h3>Daily Operations</h3>
-          </div>
-          <strong>{compactDate(new Date())}</strong>
-        </div>
-        <div className="today-stats">
-          <div><span>Appointments</span><strong>{todayAppointments.length}</strong></div>
-          <div><span>Invoices</span><strong>{todayInvoices.length}</strong></div>
-          <div><span>Collected</span><strong>{money(todayRevenue)}</strong></div>
-          <div><span>Low stock actions</span><strong>{urgentRestock.length}</strong></div>
-        </div>
-        <div className="today-actions">
-          {urgentRestock.slice(0, 3).map((tire) => (
-            <span className="warning-chip danger" key={tire.id}>{tire.brand} {tire.width}/{tire.aspectRatio}R{tire.rimSize}</span>
-          ))}
-          {urgentRestock.length === 0 && <span className="warning-chip good">No urgent restocks</span>}
-        </div>
-      </section>
-
-      <section className="split">
-        <SalesChart salesData={filteredSalesData.length ? filteredSalesData : salesData} />
-        <InventoryBars lowStockTires={lowStockTires} tires={tires} />
-      </section>
-
-      <section className="dashboard-density">
-        <ActivityPanel icon={CalendarDays} title="Upcoming Appointments">
-          {upcomingAppointments.length === 0 ? (
-            <p className="empty-note">No upcoming appointments.</p>
-          ) : (
-            upcomingAppointments.map((appointment) => (
-              <div className="activity-row" key={appointment.id}>
-                <span>{appointment.customerName}</span>
-                <strong>{dateTime(appointment.appointmentDate)}</strong>
-                <StatusBadge value={appointment.status || "BOOKED"} />
-              </div>
-            ))
-          )}
-        </ActivityPanel>
-
-        <ActivityPanel icon={ShieldCheck} title="Tire Condition Mix">
-          <DashboardDonut
-            ariaLabel="Tire condition mix chart"
-            centerLabel="units"
-            segments={conditionTotals}
-          />
-        </ActivityPanel>
-
-        <ActivityPanel icon={Package} title="Top Inventory">
-          <InventoryLeaderBars items={inventoryBars} />
-        </ActivityPanel>
-      </section>
-
-      <section className="split dashboard-secondary">
-        <ActivityPanel className="follow-up" icon={Bell} title="Customer Follow Ups">
-          {followUpCustomers.length === 0 ? (
-            <p className="empty-note">No customer follow ups.</p>
-          ) : (
-            <>
-              <div className="follow-up-summary">
-                <div>
-                  <span>Outstanding</span>
-                  <strong>{money(outstandingCustomerBalance)}</strong>
+            <div className="today-actions">
+              {urgentRestock.slice(0, 3).map((tire) => (
+                <span className="warning-chip danger" key={tire.id}>{tire.brand} {tire.width}/{tire.aspectRatio}R{tire.rimSize}</span>
+              ))}
+              {urgentRestock.length === 0 && <span className="warning-chip good">No urgent restocks</span>}
+            </div>
+          </DashboardWidgetPanel>
+        );
+      case "revenue":
+        return <SalesChart className="dashboard-widget dashboard-widget-wide" key={id} salesData={filteredSalesData.length ? filteredSalesData : salesData} />;
+      case "workOrders":
+        return (
+          <DashboardWidgetPanel eyebrow="Jobs" icon={ClipboardList} key={id} title="Work Order Flow">
+            <div className="dashboard-progress-list">
+              {workOrderStats.map((stat) => (
+                <div className={`dashboard-progress-row ${stat.tone}`} key={stat.label}>
+                  <div>
+                    <span>{stat.label}</span>
+                    <strong>{stat.value}</strong>
+                  </div>
+                  <div className="dashboard-progress-track">
+                    <span style={{ width: `${Math.max((Number(stat.value || 0) / maxWorkOrderStat) * 100, stat.value ? 8 : 0)}%` }} />
+                  </div>
                 </div>
-                <div>
-                  <span>Payment alerts</span>
-                  <strong>{paymentAlertCustomers.length}</strong>
+              ))}
+            </div>
+          </DashboardWidgetPanel>
+        );
+      case "inventoryMovement":
+        return <InventoryBars className="dashboard-widget" key={id} lowStockTires={lowStockTires} tires={tires} />;
+      case "followUps":
+        return (
+          <DashboardWidgetPanel eyebrow="Customers" icon={Bell} key={id} title="Follow Ups">
+            {followUpCustomers.length === 0 ? (
+              <p className="empty-note">No customer follow ups.</p>
+            ) : (
+              <>
+                <div className="follow-up-summary">
+                  <div><span>Outstanding</span><strong>{money(outstandingCustomerBalance)}</strong></div>
+                  <div><span>Payment alerts</span><strong>{paymentAlertCustomers.length}</strong></div>
+                  <div><span>Bookings</span><strong>{appointmentReminderCustomers.length}</strong></div>
                 </div>
-                <div>
-                  <span>Bookings</span>
-                  <strong>{appointmentReminderCustomers.length}</strong>
+                <div className="follow-up-list">
+                  {followUpCustomers.slice(0, 3).map((customer) => (
+                    <button className={`follow-up-card ${followUpTone(customer)}`} key={customer.id} onClick={() => onJumpActivity("Customers")} type="button">
+                      <div>
+                        <span>{followUpLabel(customer)}</span>
+                        <strong>{customer.fullName}</strong>
+                        <small>{followUpDetail(customer)}</small>
+                      </div>
+                      <b>{followUpAction(customer)}</b>
+                    </button>
+                  ))}
                 </div>
-              </div>
-              <div className="follow-up-list">
-                {followUpCustomers.slice(0, 2).map((customer) => (
-                  <button className={`follow-up-card ${followUpTone(customer)}`} key={customer.id} onClick={() => onJumpActivity("Customers")} type="button">
+              </>
+            )}
+          </DashboardWidgetPanel>
+        );
+      case "latestInvoices":
+        return (
+          <DashboardWidgetPanel eyebrow="Invoices" icon={FileText} key={id} title="Latest Invoices">
+            <div className="dashboard-compact-list">
+              {latestInvoices.length === 0 ? (
+                <p className="empty-note">No invoices yet.</p>
+              ) : (
+                latestInvoices.map((invoice) => (
+                  <div className="dashboard-list-row" key={invoice.id}>
                     <div>
-                      <span>{followUpLabel(customer)}</span>
-                      <strong>{customer.fullName}</strong>
-                      <small>{followUpDetail(customer)}</small>
+                      <strong>{invoice.customerName}</strong>
+                      <span>{dateTime(invoice.createdAt || invoice.invoiceDate)}</span>
                     </div>
-                    <b>{followUpAction(customer)}</b>
+                    <div>
+                      <strong>{money(invoice.total)}</strong>
+                      <StatusBadge value={invoiceDisplayStatus(invoice)} />
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </DashboardWidgetPanel>
+        );
+      case "locationBreakdown":
+        return (
+          <DashboardWidgetPanel eyebrow="Locations" icon={ShieldCheck} key={id} title="Location Breakdown" wide>
+            {(dashboard?.locationBreakdowns || []).length === 0 ? (
+              <p className="empty-note">No location activity yet.</p>
+            ) : (
+              <div className="dashboard-location-list">
+                {(dashboard.locationBreakdowns || []).map((location) => (
+                  <article className="dashboard-location-row" key={`location-breakdown-${location.locationId}`}>
+                    <div>
+                      <strong>{location.locationName || "Location"}</strong>
+                      <span>{location.locationType || "Location"}</span>
+                    </div>
+                    <div className="dashboard-location-metrics">
+                      <span><b>{location.inventoryQuantity || 0}</b> units</span>
+                      <span><b>{money(location.revenue)}</b> revenue</span>
+                      <span><b>{location.appointmentCount || 0}</b> appointments</span>
+                      <span><b>{money(location.expenses)}</b> expenses</span>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </DashboardWidgetPanel>
+        );
+      case "conditionMix":
+        return (
+          <DashboardWidgetPanel eyebrow="Inventory" icon={ShieldCheck} key={id} title="Tire Condition Mix">
+            <DashboardDonut ariaLabel="Tire condition mix chart" centerLabel="units" segments={conditionTotals} />
+          </DashboardWidgetPanel>
+        );
+      case "topInventory":
+        return (
+          <DashboardWidgetPanel eyebrow="Inventory" icon={Package} key={id} title="Top Inventory">
+            <InventoryLeaderBars items={inventoryBars} />
+          </DashboardWidgetPanel>
+        );
+      case "lowStock":
+        return (
+          <DashboardWidgetPanel eyebrow="Inventory" icon={AlertTriangle} key={id} title="Low Stock">
+            <div className="dashboard-compact-list">
+              {lowStockTires.length === 0 ? (
+                <p className="empty-note">No low stock tires.</p>
+              ) : (
+                lowStockTires.slice(0, 8).map((tire) => (
+                  <div className={`dashboard-list-row ${tireAvailableQuantity(tire) <= 5 ? "low-stock-pulse" : ""}`} key={tire.id}>
+                    <div>
+                      <strong>{tire.brand} {tire.model}</strong>
+                      <span>{tire.width}/{tire.aspectRatio}R{tire.rimSize} · {displayTireLocation(tire)}</span>
+                    </div>
+                    <div>
+                      <strong className={tireAvailableQuantity(tire) < 3 ? "urgent-stock-text" : ""}>
+                        {tireAvailableQuantity(tire)}
+                      </strong>
+                      <span>qty</span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </DashboardWidgetPanel>
+        );
+      case "inventoryHealth":
+        return (
+          <DashboardWidgetPanel eyebrow="Inventory" icon={Gauge} key={id} title="Inventory Health">
+            <section className="dashboard-health-list">
+              <div className="dashboard-health-row"><span>Total SKUs</span><strong>{tires.length}</strong></div>
+              <div className="dashboard-health-row"><span>Total Units</span><strong>{totalUnits}</strong></div>
+              <div className="dashboard-health-row"><span>Inventory Value</span><strong>{money(inventoryValue)}</strong></div>
+              <div className="dashboard-health-row"><span>Average Units/SKU</span><strong>{averageUnits}</strong></div>
+            </section>
+          </DashboardWidgetPanel>
+        );
+      case "activity":
+        return (
+          <DashboardWidgetPanel eyebrow="Activity" icon={Bell} key={id} title="Recent Actions">
+            {activityLog.length === 0 ? (
+              <p className="empty-note">No activity yet.</p>
+            ) : (
+              <div className="activity-feed-list compact">
+                {activityLog.slice(0, 6).map((activity) => (
+                  <button key={activity.id} onClick={() => onJumpActivity(activity.tab)} type="button">
+                    <strong>{activity.label}</strong>
+                    <span>{dateTime(activity.createdAt)}</span>
                   </button>
                 ))}
               </div>
-              {followUpCustomers.length > 2 ? (
-                <p className="follow-up-more">+{followUpCustomers.length - 2} more customer follow ups</p>
-              ) : null}
-            </>
-          )}
-        </ActivityPanel>
+            )}
+          </DashboardWidgetPanel>
+        );
+      default:
+        return null;
+    }
+  }
 
-        <ActivityPanel icon={FileText} title="Latest Invoices">
-          {latestInvoices.length === 0 ? (
-            <p className="empty-note">No invoices yet.</p>
-          ) : (
-            latestInvoices.map((invoice) => (
-              <div className="activity-row" key={invoice.id}>
-                <span>{invoice.customerName}</span>
-                <strong>{money(invoice.total)}</strong>
-                <StatusBadge value={invoiceDisplayStatus(invoice)} />
-              </div>
-            ))
-          )}
-        </ActivityPanel>
-      </section>
-
-      <section className="panel activity-feed">
+  return (
+    <>
+      <section className="dashboard-command-bar panel">
         <div>
-          <span className="eyebrow">Activity</span>
-          <h3>Recent Actions</h3>
+          <span className="eyebrow">{auth?.shopName || "Dashboard"}</span>
+          <h3>{range === "custom" ? `${rangeStart} to ${rangeEnd}` : `This ${range}`}</h3>
         </div>
-        {activityLog.length === 0 ? (
-          <p className="empty-note">No activity yet.</p>
-        ) : (
-          <div className="activity-feed-list">
-            {activityLog.slice(0, 6).map((activity) => (
-              <button key={activity.id} onClick={() => onJumpActivity(activity.tab)} type="button">
-                <strong>{activity.label}</strong>
-                <span>{dateTime(activity.createdAt)}</span>
+        <div className="dashboard-command-actions">
+          <div className="segmented-control">
+            {["today", "week", "month", "custom"].map((option) => (
+              <button className={range === option ? "active" : ""} key={option} onClick={() => setRange(option)} type="button">
+                {option}
               </button>
             ))}
           </div>
-        )}
-      </section>
-
-      <section className="split">
-        <div>
-          <h3>Low Stock</h3>
-          <DataTable
-            columns={["Brand", "Size", "Qty", "Location"]}
-            emptyText="No low stock tires."
-            rows={lowStockTires.map((tire) => [
-              urgentStockValue(tire, tire.brand),
-              `${tire.width}/${tire.aspectRatio}R${tire.rimSize}`,
-              urgentStockValue(tire, tire.quantity),
-              displayTireLocation(tire)
-            ])}
-          />
-        </div>
-        <div>
-          <h3>Inventory Health</h3>
-          <section className="health-panel">
-            <div className="health-stat">
-              <span>Total SKUs</span>
-              <strong>{tires.length}</strong>
+          {range === "custom" && (
+            <div className="range-inputs">
+              <input type="date" value={customRange.start} onChange={(event) => setCustomRange({ ...customRange, start: event.target.value })} />
+              <input type="date" value={customRange.end} onChange={(event) => setCustomRange({ ...customRange, end: event.target.value })} />
             </div>
-            <div className="health-stat">
-              <span>Total Units</span>
-              <strong>{totalUnits}</strong>
-            </div>
-            <div className="health-stat">
-              <span>Inventory Value</span>
-              <strong>{money(inventoryValue)}</strong>
-            </div>
-            <div className="health-stat">
-              <span>Average Units/SKU</span>
-              <strong>{averageUnits}</strong>
-            </div>
-          </section>
+          )}
+          <strong className="dashboard-range-total">{money(rangeRevenue)} revenue</strong>
+          <button className="ghost-button with-icon" onClick={() => setShowWidgetPicker((open) => !open)} type="button">
+            <SettingsIcon size={16} />
+            Widgets
+          </button>
         </div>
       </section>
 
-      <AppointmentCalendar
-        appointments={appointments}
-        onCancelAppointment={onCancelAppointment}
-        onDeleteAppointment={onDeleteAppointment}
-        onEditAppointment={onEditAppointment}
-        onInvoiceAppointment={onInvoiceAppointment}
-      />
+      {showWidgetPicker && (
+        <section className="dashboard-widget-picker panel">
+          <div>
+            <span className="eyebrow">Visible widgets</span>
+            <h3>Customize Dashboard</h3>
+          </div>
+          <div className="dashboard-widget-options">
+            {dashboardWidgetCatalog.map((widget) => {
+              const Icon = widget.icon;
+              const checked = activeWidgetIds.includes(widget.id);
+
+              return (
+                <label className={`widget-toggle ${checked ? "active" : ""}`} key={widget.id}>
+                  <input checked={checked} onChange={() => toggleWidget(widget.id)} type="checkbox" />
+                  <Icon size={16} />
+                  <span>{widget.label}</span>
+                </label>
+              );
+            })}
+          </div>
+          <button className="ghost-button" onClick={resetWidgets} type="button">Reset</button>
+        </section>
+      )}
+
+      {activeWidgetIds.length === 0 ? (
+        <section className="dashboard-empty panel">
+          <strong>No dashboard widgets selected.</strong>
+          <button className="primary-button" onClick={() => setShowWidgetPicker(true)} type="button">Add Widgets</button>
+        </section>
+      ) : (
+        <section className="dashboard-widget-grid">
+          {activeWidgetIds.map((id) => renderWidget(id))}
+        </section>
+      )}
+
+      <section className="dashboard-calendar-anchor">
+        <div className="dashboard-calendar-title">
+          <div>
+            <span className="eyebrow">Fixed</span>
+            <h3>Appointments Calendar</h3>
+          </div>
+        </div>
+        <AppointmentCalendar
+          appointments={appointments}
+          onCancelAppointment={onCancelAppointment}
+          onDeleteAppointment={onDeleteAppointment}
+          onEditAppointment={onEditAppointment}
+          onInvoiceAppointment={onInvoiceAppointment}
+        />
+      </section>
     </>
   );
 }
 
-function InventoryBars({ lowStockTires, tires }) {
+function DashboardMetricTile({ metric }) {
+  const Icon = metric.icon || Gauge;
+
+  return (
+    <motion.article
+      animate={{ opacity: 1, y: 0 }}
+      className={`dashboard-kpi ${metric.tone || "neutral"}`}
+      initial={{ opacity: 0, y: 8 }}
+      transition={{ duration: 0.28 }}
+    >
+      <span className="dashboard-kpi-icon"><Icon size={18} /></span>
+      <div>
+        <span>{metric.label}</span>
+        <strong>{metric.value}</strong>
+        <small>{metric.detail}</small>
+      </div>
+    </motion.article>
+  );
+}
+
+function DashboardWidgetPanel({ children, className = "", eyebrow, icon: Icon = Gauge, title, wide = false }) {
+  return (
+    <section className={`dashboard-widget panel ${wide ? "dashboard-widget-wide" : ""} ${className}`}>
+      <div className="dashboard-widget-head">
+        <div>
+          <span className="eyebrow">{eyebrow}</span>
+          <h3>{title}</h3>
+        </div>
+        <span className="metric-icon small"><Icon size={17} /></span>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function InventoryBars({ className = "", lowStockTires, tires }) {
   const availableUnits = tires.reduce((total, tire) => total + Number(tire.availableQuantity ?? tire.quantity ?? 0), 0);
   const reservedUnits = tires.reduce((total, tire) => total + Number(tire.reservedQuantity || 0), 0);
   const lowStockCount = lowStockTires.length;
@@ -2682,7 +3305,7 @@ function InventoryBars({ lowStockTires, tires }) {
   ];
 
   return (
-    <section className="analytics-panel panel">
+    <section className={`analytics-panel panel ${className}`}>
       <div>
         <span className="eyebrow">Inventory</span>
         <h3>Stock Movement</h3>
@@ -2849,14 +3472,14 @@ function followUpAction(customer) {
   return "Send reminder";
 }
 
-function SalesChart({ salesData }) {
+function SalesChart({ className = "", salesData }) {
   const points = salesData
     .map((day) => ({ date: day.date, revenue: Number(day.revenue || 0) }))
     .sort((first, second) => new Date(first.date) - new Date(second.date));
   const totalRevenue = points.reduce((total, point) => total + point.revenue, 0);
 
   return (
-    <section className="analytics-panel panel">
+    <section className={`analytics-panel panel ${className}`}>
       <div className="sales-chart-header">
         <div>
           <span className="eyebrow">Sales</span>
@@ -3227,7 +3850,13 @@ const emptyPlatformLocationForm = {
   shopId: "",
   name: "",
   type: "STORE",
-  address: ""
+  address: "",
+  city: "",
+  province: "",
+  postalCode: "",
+  phone: "",
+  email: "",
+  customerFacing: true
 };
 
 const emptyPlatformUserForm = {
@@ -3235,7 +3864,7 @@ const emptyPlatformUserForm = {
   email: "",
   phone: "",
   password: "",
-  role: "ADMIN",
+  role: "OWNER",
   shopId: "",
   locationId: "",
   active: true,
@@ -3293,6 +3922,9 @@ function PlatformPage({
   });
   const linkedCount = linkRecords.filter((record) => record.shopId).length;
   const unlinkedCount = linkRecords.length - linkedCount;
+  const linkMessageTone = /could not|requires|choose|not found|invalid|exists|must|failed|error|\/api/i.test(linkMessage)
+    ? "error"
+    : "found";
 
   useEffect(() => {
     setSelectedLocationId("");
@@ -3375,7 +4007,9 @@ function PlatformPage({
       setUserForm(emptyPlatformUserForm);
       setLinkMessage("User account created.");
     } catch (err) {
-      setLinkMessage(err.message || "Could not create this user.");
+      const message = err.message || "Could not create this user.";
+      setLinkMessage(message);
+      setError(message);
     } finally {
       setIsSaving(false);
     }
@@ -3457,18 +4091,19 @@ function PlatformPage({
     setIsSaving(true);
     setLinkMessage("");
     setError("");
+    const assigningOwner = record.role === "OWNER";
 
     if (!selectedShopId) {
-      setLinkMessage("Choose a shop before assigning an admin.");
+      setLinkMessage(`Choose a shop before assigning ${assigningOwner ? "an owner" : "a legacy admin"}.`);
       setIsSaving(false);
       return;
     }
 
     try {
       const updatedAdmin = await onAssignAdmin(record.id, Number(selectedShopId));
-      setLinkMessage(`${updatedAdmin.fullName} is now admin for ${updatedAdmin.shopName}.`);
+      setLinkMessage(`${updatedAdmin.fullName} is now ${assigningOwner ? "owner" : "legacy admin"} for ${updatedAdmin.shopName}.`);
     } catch (err) {
-      setLinkMessage(err.message || "Could not assign this admin.");
+      setLinkMessage(err.message || `Could not assign this ${assigningOwner ? "owner" : "legacy admin"}.`);
     } finally {
       setIsSaving(false);
     }
@@ -3583,7 +4218,7 @@ function PlatformPage({
             </button>
           </div>
         )}
-        columns={["Shop", "Owner admin", "Plan", "Locations", "Status", "Phone", "Email", "Address", ""]}
+        columns={["Shop", "Owner", "Plan", "Locations", "Status", "Phone", "Email", "Address", ""]}
         emptyText="No shops created yet."
         rows={shops.map((shop) => {
           const locationLimitLabel = Number(shop.locationLimit || 1) > 1000000 ? "Unlimited" : shop.locationLimit || 1;
@@ -3620,8 +4255,12 @@ function PlatformPage({
           <Select
             label="Role"
             value={userForm.role}
-            onChange={(role) => setUserForm({ ...userForm, role })}
-            options={["ADMIN", "EMPLOYEE", "CUSTOMER"]}
+            onChange={(role) => setUserForm({
+              ...userForm,
+              role,
+              locationId: role === "OWNER" || role === "CUSTOMER" ? "" : userForm.locationId
+            })}
+            options={["OWNER", "ADMIN", "EMPLOYEE", "CUSTOMER"]}
           />
           <Select
             label="Shop"
@@ -3633,16 +4272,18 @@ function PlatformPage({
               return shop ? shop.name : "Unassigned";
             }}
           />
-          <Select
-            label="Location"
-            value={userForm.locationId}
-            onChange={(locationId) => setUserForm({ ...userForm, locationId })}
-            options={["", ...userFormLocations.map((location) => String(location.id))]}
-            optionLabel={(value) => {
-              const location = linkLocations.find((entry) => String(entry.id) === String(value));
-              return location ? location.name : "All locations";
-            }}
-          />
+          {["ADMIN", "EMPLOYEE"].includes(userForm.role) && (
+            <Select
+              label="Location"
+              value={userForm.locationId}
+              onChange={(locationId) => setUserForm({ ...userForm, locationId })}
+              options={["", ...userFormLocations.map((location) => String(location.id))]}
+              optionLabel={(value) => {
+                const location = linkLocations.find((entry) => String(entry.id) === String(value));
+                return location ? location.name : userForm.role === "ADMIN" ? "Legacy all locations" : "Unassigned";
+              }}
+            />
+          )}
           {userForm.role === "EMPLOYEE" && (
             <>
               <Input label="Hourly rate" min="0" step="0.01" type="number" value={userForm.hourlyRate} onChange={(hourlyRate) => setUserForm({ ...userForm, hourlyRate })} />
@@ -3675,6 +4316,7 @@ function PlatformPage({
             Create User
           </button>
         </form>
+        {linkMessage && <p className={`mini-status ${linkMessageTone}`}>{linkMessage}</p>}
         <div className="platform-link-controls">
           <Select
             label="Assignment shop"
@@ -3700,13 +4342,18 @@ function PlatformPage({
         <DataTable
           actions={(user) => (
             <div className="table-actions">
+              {user.role === "OWNER" && (
+                <button className="primary-button" disabled={isSaving || !selectedShopId} onClick={() => assignAdmin(user)} type="button">
+                  Assign Owner
+                </button>
+              )}
               {user.role === "ADMIN" && (
                 <>
-                  <button className="primary-button" disabled={isSaving || !selectedShopId} onClick={() => assignAdmin(user)} type="button">
-                    Owner
+                  <button className="ghost-button" disabled={isSaving || !selectedShopId} onClick={() => assignAdmin(user)} type="button">
+                    Legacy Shop Admin
                   </button>
                   <button className="ghost-button" disabled={isSaving || !selectedLocationId} onClick={() => assignLocationAdmin(user)} type="button">
-                    Location
+                    Location Admin
                   </button>
                 </>
               )}
@@ -3725,7 +4372,7 @@ function PlatformPage({
               user.fullName || "-",
               user.role || "-",
               user.shopName || "Unassigned",
-              user.locationName || (user.role === "ADMIN" ? "All locations" : "-"),
+              user.locationName || (user.role === "OWNER" ? "All locations" : user.role === "ADMIN" ? "Legacy all locations" : "-"),
               user.active ? "Active" : "Inactive",
               [user.email, user.phone].filter(Boolean).join(" / ") || "-"
             ]
@@ -3808,13 +4455,26 @@ function PlatformPage({
             label="Type"
             value={locationForm.type}
             onChange={(type) => setLocationForm({ ...locationForm, type })}
-            options={["STORE", "STORAGE", "WAREHOUSE", "MOBILE", "OTHER"]}
+            options={["STORE", "WAREHOUSE", "MOBILE_SERVICE", "OTHER", "STORAGE", "MOBILE"]}
           />
           <Input label="Address" value={locationForm.address} onChange={(address) => setLocationForm({ ...locationForm, address })} />
+          <Input label="City" value={locationForm.city} onChange={(city) => setLocationForm({ ...locationForm, city })} />
+          <Input label="Province / state" value={locationForm.province} onChange={(province) => setLocationForm({ ...locationForm, province })} />
+          <Input label="Postal code" value={locationForm.postalCode} onChange={(postalCode) => setLocationForm({ ...locationForm, postalCode })} />
+          <Input label="Phone" type="tel" value={locationForm.phone} onChange={(phone) => setLocationForm({ ...locationForm, phone })} />
+          <Input label="Email" type="email" value={locationForm.email} onChange={(email) => setLocationForm({ ...locationForm, email })} />
+          <label className="checkbox-line">
+            <input
+              checked={Boolean(locationForm.customerFacing)}
+              onChange={(event) => setLocationForm({ ...locationForm, customerFacing: event.target.checked })}
+              type="checkbox"
+            />
+            <span>Available for customer booking</span>
+          </label>
           <button className="ghost-button" disabled={isSaving || selectedShopAtLocationLimit} type="submit">Add Location</button>
         </form>
         {selectedShopAtLocationLimit && <p className="mini-status">Basic shops can only have one active location. Upgrade to Premium to add more.</p>}
-        {linkMessage && <p className="mini-status">{linkMessage}</p>}
+        {linkMessage && <p className={`mini-status ${linkMessageTone}`}>{linkMessage}</p>}
       </section>
 
       <DataTable
@@ -3875,9 +4535,20 @@ function Tires({
   const [importStatus, setImportStatus] = useState("idle");
   const [importMessage, setImportMessage] = useState("");
   const [importErrors, setImportErrors] = useState([]);
-  const [locationForm, setLocationForm] = useState({ name: "", type: "STORE", address: "" });
+  const [locationForm, setLocationForm] = useState({
+    name: "",
+    type: "STORE",
+    address: "",
+    city: "",
+    province: "",
+    postalCode: "",
+    phone: "",
+    email: "",
+    customerFacing: true
+  });
   const [locationMessage, setLocationMessage] = useState("");
   const importFileInputRef = useRef(null);
+  const canManageLocations = canUseMultiLocationScope(auth);
 
   useEffect(() => {
     if (!auth?.shopId) {
@@ -3952,7 +4623,17 @@ function Tires({
 
     try {
       await onCreateLocation(locationForm);
-      setLocationForm({ name: "", type: "STORE", address: "" });
+      setLocationForm({
+        name: "",
+        type: "STORE",
+        address: "",
+        city: "",
+        province: "",
+        postalCode: "",
+        phone: "",
+        email: "",
+        customerFacing: true
+      });
       setLocationMessage("Location created.");
     } catch (err) {
       setLocationMessage(err.message || "Could not create location.");
@@ -4009,7 +4690,7 @@ function Tires({
         <Input label="Quantity" min="0" type="number" value={form.quantity} onChange={(quantity) => onChange({ ...form, quantity })} />
         <Input label="Price" min="0" required type="number" step="0.01" value={form.price} onChange={(price) => onChange({ ...form, price })} />
         <Input label="Location" value={form.location} onChange={(location) => onChange({ ...form, location })} />
-        {auth?.shopId && shopLocations.length > 0 && (
+        {canManageLocations && shopLocations.length > 0 && (
           <Select
             label="Shop location"
             value={form.locationId || ""}
@@ -4032,7 +4713,7 @@ function Tires({
         <button className="primary-button" type="submit">Add / Refill Tire</button>
       </form>
 
-      {auth?.shopId && (
+      {canManageLocations && (
         <section className="panel location-management-panel">
           <form className="location-management-form" onSubmit={submitLocation}>
             <Input label="Location name" required value={locationForm.name} onChange={(name) => setLocationForm({ ...locationForm, name })} />
@@ -4040,9 +4721,22 @@ function Tires({
               label="Type"
               value={locationForm.type}
               onChange={(type) => setLocationForm({ ...locationForm, type })}
-              options={["STORE", "STORAGE", "WAREHOUSE", "MOBILE", "OTHER"]}
+              options={["STORE", "WAREHOUSE", "MOBILE_SERVICE", "OTHER", "STORAGE", "MOBILE"]}
             />
             <Input label="Address" value={locationForm.address} onChange={(address) => setLocationForm({ ...locationForm, address })} />
+            <Input label="City" value={locationForm.city} onChange={(city) => setLocationForm({ ...locationForm, city })} />
+            <Input label="Province / state" value={locationForm.province} onChange={(province) => setLocationForm({ ...locationForm, province })} />
+            <Input label="Postal code" value={locationForm.postalCode} onChange={(postalCode) => setLocationForm({ ...locationForm, postalCode })} />
+            <Input label="Phone" type="tel" value={locationForm.phone} onChange={(phone) => setLocationForm({ ...locationForm, phone })} />
+            <Input label="Email" type="email" value={locationForm.email} onChange={(email) => setLocationForm({ ...locationForm, email })} />
+            <label className="checkbox-line">
+              <input
+                checked={Boolean(locationForm.customerFacing)}
+                onChange={(event) => setLocationForm({ ...locationForm, customerFacing: event.target.checked })}
+                type="checkbox"
+              />
+              <span>Available for customer booking</span>
+            </label>
             <button className="ghost-button" type="submit">Add Location</button>
           </form>
           {shopLocations.length > 0 && (
@@ -4122,6 +4816,18 @@ function filterLabel(value) {
   return labels[value] || value;
 }
 
+function filterRecordsByLocation(records, locationId) {
+  if (!locationId) {
+    return records || [];
+  }
+
+  return (records || []).filter((record) => String(record.locationId || "") === String(locationId));
+}
+
+function sameLocationValue(first, second) {
+  return String(first || "") === String(second || "");
+}
+
 function Appointments({
   appointments,
   customers,
@@ -4133,6 +4839,8 @@ function Appointments({
   onDelete,
   onEdit,
   onSubmit,
+  selectedLocationId = "",
+  shopLocations = [],
   tires
 }) {
   const matchingCustomers = matchingCustomersForForm(customers, form);
@@ -4145,7 +4853,8 @@ function Appointments({
       customerId: String(customer.id),
       customerName: customer.fullName || "",
       email: customer.email || "",
-      phone: customer.phone || ""
+      phone: customer.phone || "",
+      locationId: customer.locationId ? String(customer.locationId) : form.locationId
     });
   }
 
@@ -4175,6 +4884,7 @@ function Appointments({
       ...form,
       customerVehicleId: String(vehicle.id),
       vehicle: vehicleName(vehicle),
+      locationId: vehicle.locationId ? String(vehicle.locationId) : form.locationId,
       ...tireSetup
     });
   }
@@ -4237,14 +4947,54 @@ function Appointments({
         <AppointmentDatePicker
           appointments={appointments}
           editingId={editingId}
+          locationId={form.locationId || selectedLocationId || ""}
           value={form.appointmentDate}
           onChange={(appointmentDate) => onChange({ ...form, appointmentDate })}
         />
+        {shopLocations.length > 0 && (
+          <Select
+            label="Location"
+            value={form.locationId || selectedLocationId || ""}
+            onChange={(locationId) => onChange({ ...form, locationId })}
+            options={["", ...shopLocations.map((location) => String(location.id))]}
+            optionLabel={(value) => {
+              const location = shopLocations.find((entry) => String(entry.id) === String(value));
+              return location ? location.name : "Unassigned";
+            }}
+          />
+        )}
         <Select label="Service" required value={form.serviceType} onChange={(serviceType) => onChange({ ...form, serviceType })} options={["INSTALLATION", "BALANCING", "ROTATION", "REPAIR"]} />
         <Select label="Status" value={form.status} onChange={(status) => onChange({ ...form, status })} options={["BOOKED", "COMPLETED", "CANCELLED"]} />
-        <Select label="Reminder" value={form.reminderStatus} onChange={(reminderStatus) => onChange({ ...form, reminderStatus })} options={["NOT_SET", "SCHEDULED", "SENT"]} />
-        <Input label="Reminder at" type="datetime-local" value={form.reminderAt || ""} onChange={(reminderAt) => onChange({ ...form, reminderAt })} />
-        <Select label="Confirmation" value={form.confirmationStatus} onChange={(confirmationStatus) => onChange({ ...form, confirmationStatus })} options={["PENDING", "CONFIRMED", "NO_SHOW"]} />
+        <div className="appointment-reminder-row">
+          <Select
+            label="Reminder"
+            value={form.reminderStatus}
+            onChange={(reminderStatus) => onChange({
+              ...form,
+              reminderStatus,
+              reminderAt: reminderStatus === "NOT_SET" ? "" : form.reminderAt
+            })}
+            options={["NOT_SET", "SCHEDULED", "SENT"]}
+            optionLabel={reminderStatusLabel}
+          />
+          <Input
+            label="Reminder date & time"
+            type="datetime-local"
+            value={form.reminderAt || ""}
+            onChange={(reminderAt) => onChange({
+              ...form,
+              reminderAt,
+              reminderStatus: reminderAt ? "SCHEDULED" : "NOT_SET"
+            })}
+          />
+          <Select
+            label="Confirmation"
+            value={form.confirmationStatus}
+            onChange={(confirmationStatus) => onChange({ ...form, confirmationStatus })}
+            options={["PENDING", "CONFIRMED", "NO_SHOW"]}
+            optionLabel={confirmationStatusLabel}
+          />
+        </div>
         <Input label="Cancel / no-show reason" value={form.cancelReason || ""} onChange={(cancelReason) => onChange({ ...form, cancelReason })} />
         <Input label="Notes" value={form.notes} onChange={(notes) => onChange({ ...form, notes })} />
         <button className="primary-button" type="submit">
@@ -4264,7 +5014,7 @@ function Appointments({
             </button>
           </div>
         )}
-        columns={["Customer", "Email", "Phone", "Vehicle", "Tire setup", "Date", "Service", "Reminder", "Confirm", "Status", ""]}
+        columns={["Customer", "Email", "Phone", "Vehicle", "Tire setup", "Location", "Date", "Service", "Reminder", "Confirm", "Status", ""]}
         emptyText="No appointments yet."
         rows={appointments.map((appointment) => {
           const linkedCustomer = customerForAppointment(appointment, customers);
@@ -4281,10 +5031,13 @@ function Appointments({
               linkedCustomer?.email,
               appointment.vehicle,
               appointment.tireSize,
+              appointment.locationName,
               appointment.serviceType,
               appointment.notes,
               appointment.reminderStatus,
+              reminderStatusLabel(appointment.reminderStatus),
               appointment.confirmationStatus,
+              confirmationStatusLabel(appointment.confirmationStatus),
               appointment.status
             ].filter(Boolean).join(" "),
             values: [
@@ -4293,10 +5046,11 @@ function Appointments({
               appointment.phone,
               appointment.vehicle || "-",
               appointment.tireSize || "-",
+              appointment.locationName || "Unassigned",
               dateTime(appointment.appointmentDate),
               appointment.serviceType,
-              appointment.reminderStatus || "NOT_SET",
-              appointment.confirmationStatus || "PENDING",
+              reminderStatusLabel(appointment.reminderStatus),
+              confirmationStatusLabel(appointment.confirmationStatus),
               appointment.status || "-"
             ],
             source: appointment
@@ -4307,7 +5061,7 @@ function Appointments({
   );
 }
 
-function WorkOrdersPage({ appointments, customers, onInvoiceCreated, onNotify, onRefresh, setError, workOrders }) {
+function WorkOrdersPage({ appointments, customers, onInvoiceCreated, onNotify, onRefresh, selectedLocationId = "", setError, shopLocations = [], workOrders }) {
   const [form, setForm] = useState(emptyWorkOrder);
   const [editingId, setEditingId] = useState(null);
   const [invoicePreview, setInvoicePreview] = useState(null);
@@ -4315,8 +5069,15 @@ function WorkOrdersPage({ appointments, customers, onInvoiceCreated, onNotify, o
   const sortedWorkOrders = [...workOrders].sort((first, second) => Number(second.id || 0) - Number(first.id || 0));
   const workOrderAppointmentIds = new Set(workOrders.map((workOrder) => Number(workOrder.appointmentId)).filter(Boolean));
   const availableAppointments = appointments.filter((appointment) => !workOrderAppointmentIds.has(Number(appointment.id)));
+  const selectedAppointment = appointments.find((appointment) => String(appointment.id) === String(form.appointmentId));
   const selectedCustomer = customers.find((customer) => Number(customer.id) === Number(form.customerId));
   const matchingCustomers = matchingCustomersForForm(customers, form, 4);
+
+  useEffect(() => {
+    if (invoicePreview) {
+      scrollToSelector("#work-order-invoice-preview");
+    }
+  }, [invoicePreview]);
 
   function resetForm() {
     setForm(emptyWorkOrder);
@@ -4339,6 +5100,7 @@ function WorkOrdersPage({ appointments, customers, onInvoiceCreated, onNotify, o
       email: appointment.email || "",
       phone: appointment.phone || "",
       vehicle: appointment.vehicle || "",
+      locationId: appointment.locationId ? String(appointment.locationId) : form.locationId,
       serviceType: appointment.serviceType || "INSTALLATION",
       notes: appointment.notes || ""
     });
@@ -4350,7 +5112,8 @@ function WorkOrdersPage({ appointments, customers, onInvoiceCreated, onNotify, o
       customerId: String(customer.id),
       customerName: customer.fullName || "",
       email: customer.email || "",
-      phone: customer.phone || ""
+      phone: customer.phone || "",
+      locationId: customer.locationId ? String(customer.locationId) : form.locationId
     });
   }
 
@@ -4364,6 +5127,7 @@ function WorkOrdersPage({ appointments, customers, onInvoiceCreated, onNotify, o
       phone: workOrder.phone || "",
       vehicle: workOrder.vehicle || "",
       assignedEmployeeId: workOrder.assignedEmployeeId ? String(workOrder.assignedEmployeeId) : "",
+      locationId: workOrder.locationId ? String(workOrder.locationId) : "",
       serviceType: workOrder.serviceType || "INSTALLATION",
       notes: workOrder.notes || ""
     });
@@ -4378,6 +5142,7 @@ function WorkOrdersPage({ appointments, customers, onInvoiceCreated, onNotify, o
       phone: form.phone,
       vehicle: form.vehicle,
       assignedEmployeeId: form.assignedEmployeeId ? Number(form.assignedEmployeeId) : null,
+      locationId: form.locationId ? Number(form.locationId) : selectedLocationId ? Number(selectedLocationId) : null,
       serviceType: form.serviceType,
       notes: form.notes
     };
@@ -4480,16 +5245,23 @@ function WorkOrdersPage({ appointments, customers, onInvoiceCreated, onNotify, o
             </button>
           </div>
         )}
-        <Select
-          label="Appointment"
-          value={form.appointmentId}
-          onChange={chooseAppointment}
-          options={["", ...appointments.map((appointment) => String(appointment.id))]}
-          optionLabel={(value) => {
-            const appointment = appointments.find((entry) => String(entry.id) === String(value));
-            return appointment ? `${appointment.customerName} - ${dateTime(appointment.appointmentDate)}` : "Manual work order";
-          }}
-        />
+        <div className="invoice-source">
+          <div>
+            <span className="eyebrow">Appointment source</span>
+            <h3>{selectedAppointment ? selectedAppointment.customerName : "Manual work order"}</h3>
+            <p>{selectedAppointment ? `${selectedAppointment.serviceType} - ${dateTime(selectedAppointment.appointmentDate)}` : "Choose an appointment to fill customer, vehicle, and service details."}</p>
+          </div>
+          <Select
+            label="Choose appointment"
+            value={form.appointmentId}
+            onChange={chooseAppointment}
+            options={["", ...appointments.map((appointment) => String(appointment.id))]}
+            optionLabel={(value) => {
+              const appointment = appointments.find((entry) => String(entry.id) === String(value));
+              return appointment ? `${appointment.customerName} - ${dateTime(appointment.appointmentDate)}` : "Manual work order";
+            }}
+          />
+        </div>
         <Input label="Customer" required value={form.customerName} onChange={(customerName) => setForm({ ...form, customerName, customerId: "" })} />
         <Input label="Email" type="email" value={form.email} onChange={(email) => setForm({ ...form, email, customerId: "" })} />
         <Input label="Phone" type="tel" value={form.phone} onChange={(phone) => setForm({ ...form, phone, customerId: "" })} />
@@ -4510,7 +5282,7 @@ function WorkOrdersPage({ appointments, customers, onInvoiceCreated, onNotify, o
             value=""
             onChange={(vehicleId) => {
               const vehicle = selectedCustomer.vehicles.find((entry) => String(entry.id) === String(vehicleId));
-              setForm({ ...form, vehicle: vehicleName(vehicle) });
+              setForm({ ...form, vehicle: vehicleName(vehicle), locationId: vehicle?.locationId ? String(vehicle.locationId) : form.locationId });
             }}
             options={["", ...selectedCustomer.vehicles.map((vehicle) => String(vehicle.id))]}
             optionLabel={(value) => {
@@ -4520,6 +5292,18 @@ function WorkOrdersPage({ appointments, customers, onInvoiceCreated, onNotify, o
           />
         )}
         <Input label="Vehicle" value={form.vehicle} onChange={(vehicle) => setForm({ ...form, vehicle })} />
+        {shopLocations.length > 0 && (
+          <Select
+            label="Location"
+            value={form.locationId || selectedLocationId || ""}
+            onChange={(locationId) => setForm({ ...form, locationId })}
+            options={["", ...shopLocations.map((location) => String(location.id))]}
+            optionLabel={(value) => {
+              const location = shopLocations.find((entry) => String(entry.id) === String(value));
+              return location ? location.name : "Unassigned";
+            }}
+          />
+        )}
         <Select label="Service" required value={form.serviceType} onChange={(serviceType) => setForm({ ...form, serviceType })} options={["INSTALLATION", "BALANCING", "ROTATION", "REPAIR"]} />
         <Input label="Notes" value={form.notes} onChange={(notes) => setForm({ ...form, notes })} />
         <button className="primary-button" type="submit">
@@ -4528,7 +5312,7 @@ function WorkOrdersPage({ appointments, customers, onInvoiceCreated, onNotify, o
       </form>
 
       {invoicePreview && (
-        <section className="panel invoice-conversion-preview">
+        <section className="panel invoice-conversion-preview" id="work-order-invoice-preview">
           <div className="section-toolbar compact">
             <div>
               <span className="eyebrow">Invoice preview</span>
@@ -4567,7 +5351,7 @@ function WorkOrdersPage({ appointments, customers, onInvoiceCreated, onNotify, o
               Create Work Order
             </button>
           )}
-          columns={["Appointment", "Customer", "Vehicle", "Service", ""]}
+          columns={["Appointment", "Customer", "Vehicle", "Location", "Service", ""]}
           emptyText="No appointments waiting for work orders."
           rows={availableAppointments.map((appointment) => ({
             key: `appointment-work-source-${appointment.id}`,
@@ -4575,6 +5359,7 @@ function WorkOrdersPage({ appointments, customers, onInvoiceCreated, onNotify, o
               dateTime(appointment.appointmentDate),
               appointment.customerName,
               appointment.vehicle || "-",
+              appointment.locationName || "Unassigned",
               appointment.serviceType || "-"
             ],
             source: appointment
@@ -4617,14 +5402,15 @@ function WorkOrdersPage({ appointments, customers, onInvoiceCreated, onNotify, o
             )}
           </div>
         )}
-        columns={["Customer", "Vehicle", "Service", "Assigned", "Appointment", "Status", "Invoice", ""]}
+        columns={["Customer", "Vehicle", "Location", "Service", "Assigned", "Appointment", "Status", "Invoice", ""]}
         emptyText="No work orders yet."
         rows={sortedWorkOrders.map((workOrder) => ({
           key: `work-order-${workOrder.id}`,
-          searchText: [workOrder.customerName, workOrder.phone, workOrder.email, workOrder.vehicle, workOrder.status, workOrder.serviceType].join(" "),
+          searchText: [workOrder.customerName, workOrder.phone, workOrder.email, workOrder.vehicle, workOrder.locationName, workOrder.status, workOrder.serviceType].join(" "),
           values: [
             workOrder.customerName,
             workOrder.vehicle || "-",
+            workOrder.locationName || "Unassigned",
             workOrder.serviceType || "-",
             workOrder.assignedEmployeeName || "-",
             dateTime(workOrder.appointmentDate),
@@ -4638,7 +5424,7 @@ function WorkOrdersPage({ appointments, customers, onInvoiceCreated, onNotify, o
   );
 }
 
-function EstimatesPage({ customers, estimates, onInvoiceCreated, onNotify, onRefresh, settings, setError, tires }) {
+function EstimatesPage({ customers, estimates, onNotify, onRefresh, onStartInvoice, selectedLocationId = "", settings, setError, shopLocations = [], tires }) {
   const [form, setForm] = useState(() => ({ ...emptyEstimate, taxRate: settings?.taxRate || "13" }));
   const [editingId, setEditingId] = useState(null);
   const [tireSearch, setTireSearch] = useState("");
@@ -4662,6 +5448,12 @@ function EstimatesPage({ customers, estimates, onInvoiceCreated, onNotify, onRef
     ].filter(Boolean).join(" ").toLowerCase().includes(normalizedTireSearch))
     : tires;
 
+  useEffect(() => {
+    if (previewEstimate) {
+      scrollToSelector("#estimate-preview");
+    }
+  }, [previewEstimate]);
+
   function resetForm() {
     setForm({ ...emptyEstimate, taxRate: settings?.taxRate || "13", items: [makeInvoiceItem()] });
     setEditingId(null);
@@ -4673,7 +5465,8 @@ function EstimatesPage({ customers, estimates, onInvoiceCreated, onNotify, onRef
       customerId: String(customer.id),
       customerName: customer.fullName || "",
       email: customer.email || "",
-      phone: customer.phone || ""
+      phone: customer.phone || "",
+      locationId: customer.locationId ? String(customer.locationId) : form.locationId
     });
   }
 
@@ -4685,6 +5478,7 @@ function EstimatesPage({ customers, estimates, onInvoiceCreated, onNotify, onRef
       email: estimate.email || "",
       phone: estimate.phone || "",
       vehicle: estimate.vehicle || "",
+      locationId: estimate.locationId ? String(estimate.locationId) : "",
       taxRate: String(Number(estimate.taxRate || 0) > 1 ? estimate.taxRate : Number(estimate.taxRate || 0) * 100),
       notes: estimate.notes || "",
       validUntil: estimate.validUntil || "",
@@ -4729,10 +5523,11 @@ function EstimatesPage({ customers, estimates, onInvoiceCreated, onNotify, onRef
     return {
       customerId: form.customerId ? Number(form.customerId) : null,
       customerName: form.customerName,
-      email: form.email,
-      phone: form.phone,
-      vehicle: form.vehicle,
-      taxRate: Number(form.taxRate || 0),
+        email: form.email,
+        phone: form.phone,
+        vehicle: form.vehicle,
+        locationId: form.locationId ? Number(form.locationId) : selectedLocationId ? Number(selectedLocationId) : null,
+        taxRate: Number(form.taxRate || 0),
       notes: form.notes,
       validUntil: form.validUntil || null,
       items: form.items.map((item) => ({
@@ -4776,17 +5571,9 @@ function EstimatesPage({ customers, estimates, onInvoiceCreated, onNotify, onRef
     }
   }
 
-  async function invoiceEstimate(estimate) {
+  function invoiceEstimate(estimate) {
     setError("");
-
-    try {
-      const invoice = await convertEstimateToInvoice(estimate.id);
-      onNotify("Invoice created from estimate.");
-      await onRefresh();
-      await onInvoiceCreated(invoice);
-    } catch (err) {
-      setError(err.message);
-    }
+    onStartInvoice(estimate);
   }
 
   return (
@@ -4832,7 +5619,7 @@ function EstimatesPage({ customers, estimates, onInvoiceCreated, onNotify, onRef
             value=""
             onChange={(vehicleId) => {
               const vehicle = selectedCustomer.vehicles.find((entry) => String(entry.id) === String(vehicleId));
-              setForm({ ...form, vehicle: vehicleName(vehicle) });
+              setForm({ ...form, vehicle: vehicleName(vehicle), locationId: vehicle?.locationId ? String(vehicle.locationId) : form.locationId });
             }}
             options={["", ...selectedCustomer.vehicles.map((vehicle) => String(vehicle.id))]}
             optionLabel={(value) => {
@@ -4842,6 +5629,18 @@ function EstimatesPage({ customers, estimates, onInvoiceCreated, onNotify, onRef
           />
         )}
         <Input label="Vehicle" value={form.vehicle} onChange={(vehicle) => setForm({ ...form, vehicle })} />
+        {shopLocations.length > 0 && (
+          <Select
+            label="Location"
+            value={form.locationId || selectedLocationId || ""}
+            onChange={(locationId) => setForm({ ...form, locationId })}
+            options={["", ...shopLocations.map((location) => String(location.id))]}
+            optionLabel={(value) => {
+              const location = shopLocations.find((entry) => String(entry.id) === String(value));
+              return location ? location.name : "Unassigned";
+            }}
+          />
+        )}
         <Input label="Valid until" type="date" value={form.validUntil} onChange={(validUntil) => setForm({ ...form, validUntil })} />
         <Input label="Tax rate %" min="0" step="0.01" type="number" value={form.taxRate} onChange={(taxRate) => setForm({ ...form, taxRate })} />
         <Input label="Notes" value={form.notes} onChange={(notes) => setForm({ ...form, notes })} />
@@ -4947,15 +5746,16 @@ function EstimatesPage({ customers, estimates, onInvoiceCreated, onNotify, onRef
             )}
           </div>
         )}
-        columns={["Estimate", "Customer", "Vehicle", "Subtotal", "Tax", "Total", "Valid Until", "Status", "Invoice", ""]}
+        columns={["Estimate", "Customer", "Vehicle", "Location", "Subtotal", "Tax", "Total", "Valid Until", "Status", "Invoice", ""]}
         emptyText="No estimates yet."
         rows={sortedEstimates.map((estimate) => ({
           key: `estimate-${estimate.id}`,
-          searchText: [estimate.estimateNumber, estimate.customerName, estimate.phone, estimate.email, estimate.vehicle, estimate.status].join(" "),
+          searchText: [estimate.estimateNumber, estimate.customerName, estimate.phone, estimate.email, estimate.vehicle, estimate.locationName, estimate.status].join(" "),
           values: [
             estimate.estimateNumber || `#${estimate.id}`,
             estimate.customerName,
             estimate.vehicle || "-",
+            estimate.locationName || "Unassigned",
             money(estimate.subtotal),
             money(estimate.taxAmount),
             money(estimate.total),
@@ -5171,7 +5971,7 @@ function TireSetupFields({ disabled, form, onChange, tires }) {
   );
 }
 
-function AppointmentDatePicker({ appointments, editingId, onChange, value }) {
+function AppointmentDatePicker({ appointments, editingId, locationId, onChange, value }) {
   const { date, time } = splitAppointmentDate(value);
   const minDate = todayDateKey();
 
@@ -5179,6 +5979,7 @@ function AppointmentDatePicker({ appointments, editingId, onChange, value }) {
     return appointments.find((appointment) =>
       Number(appointment.id) !== Number(editingId)
       && isBookableAppointment(appointment)
+      && sameLocationValue(appointment.locationId, locationId)
       && appointmentDateKey(appointment.appointmentDate) === date
       && appointmentTimeKey(appointment.appointmentDate) === slot
     );
@@ -5242,6 +6043,7 @@ function AppointmentDatePicker({ appointments, editingId, onChange, value }) {
           <AppointmentDayView
             appointments={appointments}
             editingId={editingId}
+            locationId={locationId}
             selectedValue={value}
             onSelect={onChange}
           />
@@ -5253,7 +6055,7 @@ function AppointmentDatePicker({ appointments, editingId, onChange, value }) {
   );
 }
 
-function AppointmentDayView({ appointments, editingId, onSelect, selectedValue }) {
+function AppointmentDayView({ appointments, editingId, locationId, onSelect, selectedValue }) {
   const { date, time } = splitAppointmentDate(selectedValue);
   const selectedDate = date || todayDateKey();
   const isPastDate = selectedDate < todayDateKey();
@@ -5262,6 +6064,7 @@ function AppointmentDayView({ appointments, editingId, onSelect, selectedValue }
     return appointments.find((appointment) =>
       Number(appointment.id) !== Number(editingId)
       && isBookableAppointment(appointment)
+      && sameLocationValue(appointment.locationId, locationId)
       && appointmentDateKey(appointment.appointmentDate) === selectedDate
       && appointmentTimeKey(appointment.appointmentDate) === slot
     );
@@ -5320,7 +6123,9 @@ function Invoices({
   onPreviewInvoice,
   onUpdateStatus,
   onSubmit,
+  selectedLocationId = "",
   settings,
+  shopLocations = [],
   tires
 }) {
   const displayedInvoices = [...invoices].sort((first, second) => Number(second.id || 0) - Number(first.id || 0));
@@ -5333,10 +6138,17 @@ function Invoices({
   const tax = subtotal * taxRate;
   const total = subtotal + tax;
 
+  useEffect(() => {
+    if (generatedInvoice) {
+      scrollToSelector("#invoice-preview");
+    }
+  }, [generatedInvoice]);
+
   function exportInvoices() {
     const csv = toCsv(
-      ["Customer", "Phone", "Vehicle", "Subtotal", "Tax", "Total", "Paid", "Balance", "Payment", "Status"],
+      ["Invoice", "Customer", "Phone", "Vehicle", "Subtotal", "Tax", "Total", "Paid", "Balance", "Payment", "Status"],
       displayedInvoices.map((invoice) => [
+        invoiceNumber(invoice),
         invoice.customerName,
         invoice.phone,
         invoice.vehicle || "",
@@ -5346,7 +6158,7 @@ function Invoices({
         invoiceCollectedAmount(invoice),
         invoiceBalanceAmount(invoice),
         invoice.paymentMethod || "",
-        invoice.status || ""
+        statusLabel(invoiceDisplayStatus(invoice))
       ])
     );
 
@@ -5372,7 +6184,7 @@ function Invoices({
         <table style="width:100%;border-collapse:collapse;margin-top:24px;">
           <thead><tr><th align="left">Customer</th><th align="left">Status</th><th align="right">Total</th></tr></thead>
           <tbody>
-            ${monthlyInvoices.map((invoice) => `<tr><td>${htmlEscape(invoice.customerName)}</td><td>${htmlEscape(invoice.status || "")}</td><td align="right">${htmlEscape(money(invoiceCollectedAmount(invoice)))}</td></tr>`).join("")}
+            ${monthlyInvoices.map((invoice) => `<tr><td>${htmlEscape(invoice.customerName)}</td><td>${htmlEscape(statusLabel(invoiceDisplayStatus(invoice)))}</td><td align="right">${htmlEscape(money(invoiceCollectedAmount(invoice)))}</td></tr>`).join("")}
           </tbody>
         </table>
         <script>window.print()</script>
@@ -5400,7 +6212,7 @@ function Invoices({
     const appointment = appointments.find((entry) => String(entry.id) === String(appointmentId));
 
     if (!appointment) {
-      onChange({ ...form, appointmentId: "" });
+      onChange({ ...form, appointmentId: "", estimateId: "" });
       return;
     }
 
@@ -5417,9 +6229,11 @@ function Invoices({
     onChange({
       ...form,
       appointmentId,
+      estimateId: "",
       customerName: appointment.customerName || "",
       phone: appointment.phone || "",
       vehicle: appointment.vehicle || "",
+      locationId: appointment.locationId ? String(appointment.locationId) : form.locationId,
       items: items.length ? items : form.items
     });
   }
@@ -5445,9 +6259,9 @@ function Invoices({
       <form className="panel form-grid" onSubmit={onSubmit}>
         <div className="invoice-source">
           <div>
-            <span className="eyebrow">Appointment source</span>
-            <h3>{selectedAppointment ? selectedAppointment.customerName : "Manual invoice"}</h3>
-            <p>{selectedAppointment ? `${selectedAppointment.serviceType} - ${dateTime(selectedAppointment.appointmentDate)}` : "Choose an appointment to fill customer, vehicle, and reserved tires."}</p>
+            <span className="eyebrow">{form.estimateId ? "Estimate source" : "Appointment source"}</span>
+            <h3>{form.estimateId ? "Estimate invoice draft" : selectedAppointment ? selectedAppointment.customerName : "Manual invoice"}</h3>
+            <p>{form.estimateId ? "Review and edit the invoice before saving the estimate conversion." : selectedAppointment ? `${selectedAppointment.serviceType} - ${dateTime(selectedAppointment.appointmentDate)}` : "Choose an appointment to fill customer, vehicle, and reserved tires."}</p>
           </div>
           <Select
             label="Choose appointment"
@@ -5463,14 +6277,32 @@ function Invoices({
         <Input label="Customer" required value={form.customerName} onChange={(customerName) => onChange({ ...form, customerName })} />
         <Input label="Phone" required type="tel" value={form.phone} onChange={(phone) => onChange({ ...form, phone })} />
         <Input label="Vehicle" placeholder="Example: 2020 Toyota Camry" value={form.vehicle} onChange={(vehicle) => onChange({ ...form, vehicle })} />
+        {shopLocations.length > 0 && (
+          <Select
+            label="Location"
+            value={form.locationId || selectedLocationId || ""}
+            onChange={(locationId) => onChange({ ...form, locationId })}
+            options={["", ...shopLocations.map((location) => String(location.id))]}
+            optionLabel={(value) => {
+              const location = shopLocations.find((entry) => String(entry.id) === String(value));
+              return location ? location.name : "Unassigned";
+            }}
+          />
+        )}
         <Input label="Company name" value={settings.shopName} onChange={() => {}} disabled />
         <Select label="Payment" value={form.paymentMethod} onChange={(paymentMethod) => onChange({ ...form, paymentMethod })} options={["Cash", "Debit", "Credit", "E-Transfer"]} />
-        <Select label="Status" value={form.status} onChange={(status) => onChange({ ...form, status })} options={["DRAFT", "SENT", "UNPAID", "PARTIALLY_PAID", "PAID", "VOID"]} />
+        <Select
+          label="Status"
+          value={form.status}
+          onChange={(status) => onChange({ ...form, status })}
+          options={["DRAFT", "SENT", "UNPAID", "PARTIALLY_PAID", "PAID", "VOID"]}
+          optionLabel={statusLabel}
+        />
         {invoiceStatusKey(form.status) === "PARTIALLY_PAID" && (
           <Input label="Amount paid" min="0" step="0.01" type="number" value={form.amountPaid} onChange={(amountPaid) => onChange({ ...form, amountPaid })} />
         )}
         {invoiceStatusKey(form.status) !== "PAID" && invoiceStatusKey(form.status) !== "VOID" && (
-          <Input label="Due date" type="date" value={form.dueDate || ""} onChange={(dueDate) => onChange({ ...form, dueDate })} />
+          <Input label={invoiceStatusKey(form.status) === "PARTIALLY_PAID" ? "Balance due date" : "Due date"} required={invoiceStatusKey(form.status) === "PARTIALLY_PAID"} type="date" value={form.dueDate || ""} onChange={(dueDate) => onChange({ ...form, dueDate })} />
         )}
 
         <fieldset className="invoice-items-editor">
@@ -5514,7 +6346,7 @@ function Invoices({
             {invoiceStatusKey(form.status) === "PARTIALLY_PAID" ? ` - ${money(Math.max(total - Number(form.amountPaid || 0), 0))} balance` : ""}
           </small>
         </div>
-        <button className="primary-button" type="submit">Create Invoice</button>
+        <button className="primary-button" type="submit">{form.estimateId ? "Create Invoice From Estimate" : "Create Invoice"}</button>
       </form>
 
       <DataTable
@@ -5529,7 +6361,7 @@ function Invoices({
             {["SENT", "UNPAID", "PARTIALLY_PAID", "VOID"].map((status) => (
               invoiceStatusKey(invoice.status) !== status && (
                 <button className="ghost-button" key={status} onClick={() => onUpdateStatus(invoice, status)} type="button">
-                  {status}
+                  {statusLabel(status)}
                 </button>
               )
             ))}
@@ -5541,21 +6373,24 @@ function Invoices({
             </button>
           </div>
         )}
-        columns={["Customer", "Phone", "Vehicle", "Subtotal", "HST", "Total", "Paid", "Balance", "Payment", "Status", "Due", "Paid At", ""]}
+        columns={["Invoice", "Customer", "Phone", "Vehicle", "Location", "Subtotal", "HST", "Total", "Paid", "Balance", "Payment", "Status", "Due", "Paid At", ""]}
         emptyText="No invoices yet."
         rows={displayedInvoices.map((invoice) => ({
           key: `invoice-${invoice.id}`,
+          searchText: [invoiceNumber(invoice), invoice.invoiceNumber, invoice.id, invoice.customerName, invoice.phone, invoice.vehicle, invoice.locationName, invoice.status, statusLabel(invoiceDisplayStatus(invoice)), invoice.paymentMethod].join(" "),
           values: [
+            invoiceNumber(invoice),
             invoice.customerName,
             invoice.phone,
             invoice.vehicle || "-",
+            invoice.locationName || "Unassigned",
             money(invoice.subtotal),
             money(invoice.taxAmount),
             money(invoice.total),
             money(invoiceCollectedAmount(invoice)),
             money(invoiceBalanceAmount(invoice)),
             invoice.paymentMethod || "-",
-            invoice.status || "-",
+            invoiceDisplayStatus(invoice),
             invoice.dueDate || "-",
             dateTime(invoice.paidAt)
           ],
@@ -5588,11 +6423,11 @@ function PrintableInvoice({ settings, invoice }) {
   const items = invoice.items || [];
 
   return (
-    <section className="printable-invoice panel">
+    <section className="printable-invoice panel" id="invoice-preview">
       <div className="invoice-toolbar">
         <div>
           <span className="eyebrow">Generated invoice PDF</span>
-          <h3>Invoice #{invoice.id}</h3>
+          <h3>{invoiceNumber(invoice)}</h3>
           <p>Use print to save this invoice as a PDF.</p>
         </div>
         <button className="ghost-button" onClick={() => window.print()} type="button">
@@ -5609,7 +6444,7 @@ function PrintableInvoice({ settings, invoice }) {
             <p>{settings.address}</p>
           </div>
           <div>
-            <strong>Invoice #{invoice.id}</strong>
+            <strong>{invoiceNumber(invoice)}</strong>
             <span>{dateTime(invoice.createdAt)}</span>
           </div>
         </header>
@@ -5622,7 +6457,7 @@ function PrintableInvoice({ settings, invoice }) {
           </div>
           <div>
             <span>Payment</span>
-            <strong>{invoice.status || "-"}</strong>
+            <strong>{statusLabel(invoiceDisplayStatus(invoice))}</strong>
             <p>{invoice.paymentMethod || "-"}</p>
             <p>Paid: {money(invoiceCollectedAmount(invoice))}</p>
             <p>Balance: {money(invoiceBalanceAmount(invoice))}</p>
@@ -5671,7 +6506,7 @@ function PrintableEstimate({ estimate, settings }) {
   const subtotal = estimate.subtotal ?? items.reduce((sum, item) => sum + Number(item.lineTotal ?? Number(item.quantity || 0) * Number(item.unitPrice || 0)), 0);
 
   return (
-    <section className="printable-invoice panel">
+    <section className="printable-invoice panel" id="estimate-preview">
       <div className="invoice-toolbar">
         <div>
           <span className="eyebrow">Estimate document</span>
@@ -5883,17 +6718,20 @@ function emptyCustomerVehicleForm() {
   return { nickname: "", year: "", make: "", model: "", plateNumber: "", tireSetup: "regular", tireSize: "", frontTireSize: "", rearTireSize: "" };
 }
 
-function CustomerPortalShell({ auth, onApproveEstimate, onBookAppointment, onDeleteVehicle, onLogout, onMarkNoticeRead, onPayInvoice, onRefresh, onSaveVehicle, portal }) {
+function CustomerPortalShell({ auth, onApproveEstimate, onBookAppointment, onDeleteVehicle, onLogout, onMarkNoticeRead, onPayInvoice, onRefresh, onSaveVehicle, onToggleTheme, portal, themeMode }) {
   const [vehicleForm, setVehicleForm] = useState(emptyCustomerVehicleForm);
   const [bookingForm, setBookingForm] = useState({
     vehicleId: "",
+    locationId: auth?.locationId ? String(auth.locationId) : "",
     appointmentDate: todayDateKey(),
     appointmentTime: "",
     serviceType: "INSTALLATION",
     notes: ""
   });
   const [slots, setSlots] = useState([]);
+  const [locations, setLocations] = useState([]);
   const [isLoadingSlots, setIsLoadingSlots] = useState(false);
+  const [isLoadingLocations, setIsLoadingLocations] = useState(false);
   const [payingInvoiceId, setPayingInvoiceId] = useState(null);
   const [approvingEstimateId, setApprovingEstimateId] = useState(null);
   const [message, setMessage] = useState("");
@@ -5912,10 +6750,40 @@ function CustomerPortalShell({ auth, onApproveEstimate, onBookAppointment, onDel
   const notifications = portal?.notifications || [];
   const unreadCount = notifications.filter((notification) => !notification.read).length;
   const unpaidInvoices = invoices.filter((invoice) => !["PAID", "VOID"].includes(invoiceStatusKey(invoice.status)));
+  const selectedBookingVehicle = vehicles.find((vehicle) => String(vehicle.id) === String(bookingForm.vehicleId));
+  const bookingLocationId = bookingForm.locationId || selectedBookingVehicle?.locationId || auth?.locationId || "";
+
+  useEffect(() => {
+    async function loadCustomerLocations() {
+      if (!auth?.shopId) {
+        setLocations([]);
+        return;
+      }
+
+      setIsLoadingLocations(true);
+
+      try {
+        const publicLocations = await getPublicShopLocations(auth.shopId);
+        setLocations(publicLocations || []);
+        setBookingForm((current) => ({
+          ...current,
+          locationId: publicLocations?.some((location) => String(location.id) === String(current.locationId))
+            ? current.locationId
+            : auth?.locationId ? String(auth.locationId) : publicLocations?.length === 1 ? String(publicLocations[0].id) : current.locationId
+        }));
+      } catch {
+        setLocations([]);
+      } finally {
+        setIsLoadingLocations(false);
+      }
+    }
+
+    loadCustomerLocations();
+  }, [auth?.shopId, auth?.locationId]);
 
   useEffect(() => {
     async function loadSlots() {
-      if (!bookingForm.appointmentDate) {
+      if (!bookingForm.appointmentDate || (locations.length > 0 && !bookingLocationId)) {
         setSlots([]);
         return;
       }
@@ -5923,7 +6791,7 @@ function CustomerPortalShell({ auth, onApproveEstimate, onBookAppointment, onDel
       setIsLoadingSlots(true);
 
       try {
-        const availableSlots = await getAvailableSlots(bookingForm.appointmentDate);
+        const availableSlots = await getAvailableSlots(bookingForm.appointmentDate, bookingLocationId);
         setSlots(availableSlots || []);
         setBookingForm((current) => ({
           ...current,
@@ -5938,7 +6806,7 @@ function CustomerPortalShell({ auth, onApproveEstimate, onBookAppointment, onDel
     }
 
     loadSlots();
-  }, [bookingForm.appointmentDate]);
+  }, [bookingForm.appointmentDate, bookingLocationId, locations.length]);
 
   useEffect(() => {
     if (!portal) {
@@ -5971,13 +6839,22 @@ function CustomerPortalShell({ auth, onApproveEstimate, onBookAppointment, onDel
     setMessage("");
 
     try {
+      if (!bookingForm.vehicleId) {
+        setError("Add or choose a saved vehicle before booking.");
+        return;
+      }
+
       if (!bookingForm.appointmentTime) {
         setError("Choose an available appointment time.");
         return;
       }
 
-      await onBookAppointment(bookingForm);
-      setBookingForm((current) => ({ ...current, appointmentTime: "", notes: "" }));
+      await onBookAppointment({
+        ...bookingForm,
+        vehicleId: Number(bookingForm.vehicleId),
+        locationId: bookingLocationId ? Number(bookingLocationId) : null
+      });
+      setBookingForm((current) => ({ ...current, appointmentTime: "", locationId: bookingLocationId || current.locationId, notes: "" }));
       setMessage("Appointment booked.");
     } catch (err) {
       setError(err.message || "Appointment could not be booked.");
@@ -6024,6 +6901,7 @@ function CustomerPortalShell({ auth, onApproveEstimate, onBookAppointment, onDel
           <h1>Welcome, {auth.fullName}</h1>
         </div>
         <div className="toolbar-actions">
+          <ThemeToggleButton onToggle={onToggleTheme} themeMode={themeMode} />
           <button className="ghost-button with-icon" onClick={onRefresh} type="button"><RefreshCw size={16} />Refresh</button>
           <button className="ghost-button with-icon" onClick={onLogout} type="button"><UserCircle size={17} />Logout</button>
         </div>
@@ -6106,7 +6984,32 @@ function CustomerPortalShell({ auth, onApproveEstimate, onBookAppointment, onDel
             <span className="brand-mark"><CalendarDays size={20} /></span>
             <div><span className="eyebrow">Booking</span><h3>Book Service</h3></div>
           </div>
-          <Select label="Vehicle" required value={bookingForm.vehicleId} onChange={(vehicleId) => setBookingForm({ ...bookingForm, vehicleId })} options={vehicles.map((vehicle) => String(vehicle.id))} optionLabel={(id) => vehicleName(vehicles.find((vehicle) => String(vehicle.id) === String(id)))} />
+          <Select
+            label="Vehicle"
+            required
+            value={bookingForm.vehicleId}
+            onChange={(vehicleId) => {
+              const vehicle = vehicles.find((entry) => String(entry.id) === String(vehicleId));
+              setBookingForm({ ...bookingForm, vehicleId, locationId: vehicle?.locationId ? String(vehicle.locationId) : bookingForm.locationId });
+            }}
+            options={["", ...vehicles.map((vehicle) => String(vehicle.id))]}
+            optionLabel={(id) => id ? vehicleName(vehicles.find((vehicle) => String(vehicle.id) === String(id))) : "Choose vehicle"}
+          />
+          {vehicles.length === 0 && <span className="empty-note">Add a vehicle first.</span>}
+          {locations.length > 0 && (
+            <Select
+              label="Location"
+              required
+              value={bookingLocationId}
+              onChange={(locationId) => setBookingForm({ ...bookingForm, locationId })}
+              options={["", ...locations.map((location) => String(location.id))]}
+              optionLabel={(value) => {
+                const location = locations.find((entry) => String(entry.id) === String(value));
+                return location ? [location.name, location.city].filter(Boolean).join(" - ") : "Select location";
+              }}
+            />
+          )}
+          {isLoadingLocations && <span className="empty-note">Loading locations...</span>}
           <Select label="Service" required value={bookingForm.serviceType} onChange={(serviceType) => setBookingForm({ ...bookingForm, serviceType })} options={["INSTALLATION", "BALANCING", "ROTATION", "REPAIR"]} />
           <Input label="Date" min={todayDateKey()} required type="date" value={bookingForm.appointmentDate} onChange={(appointmentDate) => setBookingForm({ ...bookingForm, appointmentDate })} />
           <fieldset className="customer-slot-picker">
@@ -6138,14 +7041,14 @@ function CustomerPortalShell({ auth, onApproveEstimate, onBookAppointment, onDel
       <section className="work-area">
         <DataTable
           actions={(vehicle) => <button className="danger-button" onClick={() => onDeleteVehicle(vehicle.id)} type="button">Remove</button>}
-          columns={["Vehicle", "Plate", "Setup", "Tire Size", "Saved", ""]}
+          columns={["Vehicle", "Location", "Plate", "Setup", "Tire Size", "Saved", ""]}
           emptyText="No saved vehicles yet."
-          rows={vehicles.map((vehicle) => ({ key: `vehicle-${vehicle.id}`, source: vehicle, values: [vehicleName(vehicle), vehicle.plateNumber || "-", vehicle.tireSetup || "regular", vehicleTireSize(vehicle), dateTime(vehicle.createdAt)] }))}
+          rows={vehicles.map((vehicle) => ({ key: `vehicle-${vehicle.id}`, source: vehicle, values: [vehicleName(vehicle), vehicle.locationName || "Preferred shop", vehicle.plateNumber || "-", vehicle.tireSetup || "regular", vehicleTireSize(vehicle), dateTime(vehicle.createdAt)] }))}
         />
         <DataTable
-          columns={["Date", "Vehicle", "Service", "Status", "Notes"]}
+          columns={["Date", "Location", "Vehicle", "Service", "Status", "Notes"]}
           emptyText="No appointments yet."
-          rows={appointments.map((appointment) => ({ key: `customer-appt-${appointment.id}`, values: [dateTime(appointment.appointmentDate), appointment.vehicle || "-", appointment.serviceType || "-", appointment.status || "-", appointment.notes || "-"] }))}
+          rows={appointments.map((appointment) => ({ key: `customer-appt-${appointment.id}`, values: [dateTime(appointment.appointmentDate), appointment.locationName || "Preferred shop", appointment.vehicle || "-", appointment.serviceType || "-", appointment.status || "-", appointment.notes || "-"] }))}
         />
         <DataTable
           actions={(estimate) => (
@@ -6181,7 +7084,7 @@ function CustomerPortalShell({ auth, onApproveEstimate, onBookAppointment, onDel
           )}
           columns={["Invoice", "Vehicle", "Total", "Paid", "Balance", "Status", "Due", "Paid At", "Created", ""]}
           emptyText="No invoices yet."
-          rows={invoices.map((invoice) => ({ key: `customer-invoice-${invoice.id}`, source: invoice, values: [`#${invoice.id}`, invoice.vehicle || "-", money(invoice.total), money(invoiceCollectedAmount(invoice)), money(invoiceBalanceAmount(invoice)), invoice.status || "-", invoice.dueDate || "-", dateTime(invoice.paidAt), dateTime(invoice.createdAt)] }))}
+          rows={invoices.map((invoice) => ({ key: `customer-invoice-${invoice.id}`, source: invoice, values: [invoiceNumber(invoice), invoice.vehicle || "-", money(invoice.total), money(invoiceCollectedAmount(invoice)), money(invoiceBalanceAmount(invoice)), invoiceDisplayStatus(invoice), invoice.dueDate || "-", dateTime(invoice.paidAt), dateTime(invoice.createdAt)] }))}
         />
       </section>
       <div className="monarch-footer customer-footer">
@@ -6212,11 +7115,13 @@ function vehicleTireSize(vehicle) {
   return vehicle.tireSize || "-";
 }
 
-function PublicBookingPage() {
+function PublicBookingPage({ onToggleTheme, themeMode }) {
   const [form, setForm] = useState({
     customerName: "",
     email: "",
     phone: "",
+    shopId: "",
+    locationId: "",
     vehicle: "",
     tireSize: "",
     appointmentDate: todayDateKey(),
@@ -6225,7 +7130,10 @@ function PublicBookingPage() {
     notes: ""
   });
   const [slots, setSlots] = useState([]);
+  const [shops, setShops] = useState([]);
+  const [locations, setLocations] = useState([]);
   const [isLoadingSlots, setIsLoadingSlots] = useState(false);
+  const [isLoadingLocations, setIsLoadingLocations] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -6237,8 +7145,53 @@ function PublicBookingPage() {
   }, [message, error]);
 
   useEffect(() => {
+    async function loadPublicShops() {
+      try {
+        const publicShops = await getPublicShops();
+        setShops(publicShops || []);
+        if ((publicShops || []).length === 1) {
+          setForm((current) => ({ ...current, shopId: current.shopId || String(publicShops[0].id) }));
+        }
+      } catch {
+        setShops([]);
+      }
+    }
+
+    loadPublicShops();
+  }, []);
+
+  useEffect(() => {
+    async function loadPublicLocations() {
+      if (!form.shopId) {
+        setLocations([]);
+        return;
+      }
+
+      setIsLoadingLocations(true);
+
+      try {
+        const publicLocations = await getPublicShopLocations(form.shopId);
+        setLocations(publicLocations || []);
+        setForm((current) => ({
+          ...current,
+          locationId: publicLocations?.some((location) => String(location.id) === String(current.locationId))
+            ? current.locationId
+            : publicLocations?.length === 1 ? String(publicLocations[0].id) : ""
+        }));
+      } catch {
+        setLocations([]);
+        setForm((current) => ({ ...current, locationId: "" }));
+      } finally {
+        setIsLoadingLocations(false);
+      }
+    }
+
+    loadPublicLocations();
+  }, [form.shopId]);
+
+  useEffect(() => {
     async function loadSlots() {
-      if (!form.appointmentDate) {
+      if (!form.appointmentDate || (locations.length > 0 && !form.locationId)) {
         setSlots([]);
         return;
       }
@@ -6247,7 +7200,7 @@ function PublicBookingPage() {
       setError("");
 
       try {
-        const availableSlots = await getAvailableSlots(form.appointmentDate);
+        const availableSlots = await getAvailableSlots(form.appointmentDate, form.locationId);
         setSlots(availableSlots || []);
         setForm((current) => ({
           ...current,
@@ -6261,7 +7214,7 @@ function PublicBookingPage() {
     }
 
     loadSlots();
-  }, [form.appointmentDate]);
+  }, [form.appointmentDate, form.locationId, locations.length]);
 
   function update(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -6280,12 +7233,18 @@ function PublicBookingPage() {
     setIsSubmitting(true);
 
     try {
-      await createPublicBooking(form);
+      await createPublicBooking({
+        ...form,
+        shopId: form.shopId ? Number(form.shopId) : null,
+        locationId: form.locationId ? Number(form.locationId) : null
+      });
       setMessage("Booking request confirmed. We will see you at the selected time.");
       setForm({
         customerName: "",
         email: "",
         phone: "",
+        shopId: form.shopId,
+        locationId: form.locationId,
         vehicle: "",
         tireSize: "",
         appointmentDate: form.appointmentDate,
@@ -6293,7 +7252,7 @@ function PublicBookingPage() {
         serviceType: "INSTALLATION",
         notes: ""
       });
-      const availableSlots = await getAvailableSlots(form.appointmentDate);
+      const availableSlots = await getAvailableSlots(form.appointmentDate, form.locationId);
       setSlots(availableSlots || []);
     } catch (err) {
       setError(err.message || "Booking could not be created.");
@@ -6311,6 +7270,7 @@ function PublicBookingPage() {
             <span className="eyebrow">Book tire service</span>
             <h1>TireTrack Booking</h1>
           </div>
+          <ThemeToggleButton onToggle={onToggleTheme} themeMode={themeMode} />
         </div>
 
         {message ? <div className="success-alert">{message}</div> : null}
@@ -6320,6 +7280,30 @@ function PublicBookingPage() {
           <Input label="Name" required value={form.customerName} onChange={(customerName) => update("customerName", customerName)} />
           <Input label="Email" type="email" value={form.email} onChange={(email) => update("email", email)} />
           <Input label="Phone" required value={form.phone} onChange={(phone) => update("phone", phone)} />
+          {shops.length > 0 && (
+            <Select
+              label="Shop"
+              required
+              value={form.shopId}
+              onChange={(shopId) => setForm((current) => ({ ...current, shopId, locationId: "" }))}
+              options={["", ...shops.map((shop) => String(shop.id))]}
+              optionLabel={(value) => shops.find((shop) => String(shop.id) === String(value))?.name || "Select shop"}
+            />
+          )}
+          {locations.length > 0 && (
+            <Select
+              label="Location"
+              required
+              value={form.locationId}
+              onChange={(locationId) => update("locationId", locationId)}
+              options={["", ...locations.map((location) => String(location.id))]}
+              optionLabel={(value) => {
+                const location = locations.find((entry) => String(entry.id) === String(value));
+                return location ? [location.name, location.city].filter(Boolean).join(" - ") : "Select location";
+              }}
+            />
+          )}
+          {isLoadingLocations && <span className="empty-note">Loading locations...</span>}
           <Input label="Vehicle" required value={form.vehicle} onChange={(vehicle) => update("vehicle", vehicle)} />
           <Input label="Tire size" value={form.tireSize} onChange={(tireSize) => update("tireSize", tireSize)} placeholder="225/45R17" />
           <Select
@@ -6377,9 +7361,10 @@ function PublicBookingPage() {
   );
 }
 
-function LoginScreen({ onSubmit, loginForm, setLoginForm, error, isSubmitting }) {
+function LoginScreen({ onSubmit, loginForm, setLoginForm, error, isSubmitting, onToggleTheme, themeMode }) {
   return (
     <main className="login-shell">
+      <ThemeToggleButton className="theme-floating-toggle" onToggle={onToggleTheme} themeMode={themeMode} />
       <motion.section
         animate={{ opacity: 1, y: 0 }}
         className="login-panel"
@@ -6432,9 +7417,59 @@ function LoginScreen({ onSubmit, loginForm, setLoginForm, error, isSubmitting })
   );
 }
 
-function CustomerSignupScreen({ error, form, isSubmitting, onSubmit, setForm }) {
+function CustomerSignupScreen({ error, form, isSubmitting, onSubmit, onToggleTheme, setForm, themeMode }) {
+  const [shops, setShops] = useState([]);
+  const [locations, setLocations] = useState([]);
+  const [isLoadingLocations, setIsLoadingLocations] = useState(false);
+
+  useEffect(() => {
+    async function loadPublicShops() {
+      try {
+        const publicShops = await getPublicShops();
+        setShops(publicShops || []);
+        if ((publicShops || []).length === 1) {
+          setForm((current) => ({ ...current, shopId: current.shopId || String(publicShops[0].id) }));
+        }
+      } catch {
+        setShops([]);
+      }
+    }
+
+    loadPublicShops();
+  }, [setForm]);
+
+  useEffect(() => {
+    async function loadPublicLocations() {
+      if (!form.shopId) {
+        setLocations([]);
+        return;
+      }
+
+      setIsLoadingLocations(true);
+
+      try {
+        const publicLocations = await getPublicShopLocations(form.shopId);
+        setLocations(publicLocations || []);
+        setForm((current) => ({
+          ...current,
+          locationId: publicLocations?.some((location) => String(location.id) === String(current.locationId))
+            ? current.locationId
+            : publicLocations?.length === 1 ? String(publicLocations[0].id) : ""
+        }));
+      } catch {
+        setLocations([]);
+        setForm((current) => ({ ...current, locationId: "" }));
+      } finally {
+        setIsLoadingLocations(false);
+      }
+    }
+
+    loadPublicLocations();
+  }, [form.shopId, setForm]);
+
   return (
     <main className="login-shell">
+      <ThemeToggleButton className="theme-floating-toggle" onToggle={onToggleTheme} themeMode={themeMode} />
       <motion.section
         animate={{ opacity: 1, y: 0 }}
         className="login-panel"
@@ -6468,6 +7503,30 @@ function CustomerSignupScreen({ error, form, isSubmitting, onSubmit, setForm }) 
             Phone
             <input required value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} />
           </label>
+          {shops.length > 0 && (
+            <Select
+              label="Shop"
+              required
+              value={form.shopId || ""}
+              onChange={(shopId) => setForm({ ...form, shopId, locationId: "" })}
+              options={["", ...shops.map((shop) => String(shop.id))]}
+              optionLabel={(value) => shops.find((shop) => String(shop.id) === String(value))?.name || "Select shop"}
+            />
+          )}
+          {locations.length > 0 && (
+            <Select
+              label="Preferred location"
+              required
+              value={form.locationId || ""}
+              onChange={(locationId) => setForm({ ...form, locationId })}
+              options={["", ...locations.map((location) => String(location.id))]}
+              optionLabel={(value) => {
+                const location = locations.find((entry) => String(entry.id) === String(value));
+                return location ? [location.name, location.city].filter(Boolean).join(" - ") : "Select location";
+              }}
+            />
+          )}
+          {isLoadingLocations && <span className="empty-note">Loading locations...</span>}
           <label>
             Password
             <input
@@ -6542,9 +7601,14 @@ function AccountingPage({
   onSubmitExpense,
   onSubmitVendor,
   onPayExpense,
+  onRangeChange,
   onTabChange,
   onVendorChange,
   report,
+  reportLoading = false,
+  reportRange = defaultAccountingRange,
+  selectedLocationId = "",
+  shopLocations = [],
   vendorForm,
   vendors
 }) {
@@ -6603,6 +7667,8 @@ function AccountingPage({
           </div>
         </section>
 
+        <AccountingRangePicker loading={reportLoading} onChange={onRangeChange} range={reportRange} />
+
         <div className="accounting-mobile-nav">
           <select aria-label="Accounting section" value={activeAccountingTab} onChange={(event) => onTabChange(event.target.value)}>
             {accountingTabs.map((tab) => <option key={tab} value={tab}>{tab}</option>)}
@@ -6626,9 +7692,9 @@ function AccountingPage({
               </div>
             </section>
             <section className="accounting-kpis">
-              <AccountingKpi label="Revenue" value={money(report?.revenue)} detail="Posted sales" />
-              <AccountingKpi label="Expenses" value={money(report?.expenses)} detail="Posted costs" />
-              <AccountingKpi label="Net income" value={money(report?.netIncome)} detail="Revenue less expenses" />
+              <AccountingKpi label="Revenue" value={money(report?.revenue)} detail={`${accountingRangeLabel(reportRange)} posted sales`} />
+              <AccountingKpi label="Expenses" value={money(report?.expenses)} detail="Includes payroll costs when payroll is paid" />
+              <AccountingKpi label="Profit / loss" value={money(report?.netIncome)} detail="Revenue less all posted costs" />
             </section>
             <section className="accounting-chart-grid">
               <AccountingFinancialChart report={report} />
@@ -6688,6 +7754,15 @@ function AccountingPage({
                 {expenseAccounts.map((account) => <option key={account.id} value={account.id}>{account.code} - {account.name}</option>)}
               </select>
             </label>
+            {shopLocations.length > 0 && (
+              <label>
+                <span>Location</span>
+                <select value={expenseForm.locationId || selectedLocationId || ""} onChange={(event) => onExpenseChange({ ...expenseForm, locationId: event.target.value })}>
+                  <option value="">Shared / all locations</option>
+                  {shopLocations.map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}
+                </select>
+              </label>
+            )}
             <label>
               <span>Category</span>
               <select value={expenseForm.categoryKey} onChange={(event) => onExpenseChange({ ...expenseForm, categoryKey: event.target.value, category: resolveAccountingLabel(event.target.value, expenseForm.customCategory) })}>
@@ -6734,7 +7809,7 @@ function AccountingPage({
                       </div>
                     ) : null
                   )}
-                  columns={["Date", "Due", "Vendor", "Account", "Category", "Status", "Total", "Paid At", "Admin", ""]}
+                  columns={["Date", "Due", "Vendor", "Location", "Account", "Category", "Status", "Total", "Paid At", "Admin", ""]}
                   emptyText="No expenses recorded."
                   rows={recentExpenses.map((expense) => ({
                     key: `expense-${expense.id}`,
@@ -6743,6 +7818,7 @@ function AccountingPage({
                       expense.expenseDate || "-",
                       expense.dueDate || "-",
                       expense.vendor,
+                      expense.locationName || "Shared",
                       accountName(accounts, expense.expenseAccountId),
                       expense.category || "-",
                       expenseDisplayStatus(expense),
@@ -6962,6 +8038,68 @@ function AccountingPage({
           </section>
         )}
       </main>
+    </section>
+  );
+}
+
+function AccountingRangePicker({ loading, onChange, range }) {
+  const currentRange = range || defaultAccountingRange;
+  const [customRange, setCustomRange] = useState({
+    start: currentRange.start || todayDateKey(),
+    end: currentRange.end || todayDateKey()
+  });
+
+  useEffect(() => {
+    if (currentRange.mode === "custom") {
+      setCustomRange({
+        start: currentRange.start || todayDateKey(),
+        end: currentRange.end || currentRange.start || todayDateKey()
+      });
+    }
+  }, [currentRange.mode, currentRange.start, currentRange.end]);
+
+  function chooseMode(mode) {
+    if (mode === "custom") {
+      onChange?.({ mode: "custom", ...customRange });
+      return;
+    }
+
+    onChange?.({ ...defaultAccountingRange, mode });
+  }
+
+  function applyCustomRange() {
+    onChange?.({ mode: "custom", start: customRange.start, end: customRange.end });
+  }
+
+  return (
+    <section className="accounting-range-panel panel">
+      <div>
+        <span className="eyebrow">Report range</span>
+        <strong>{accountingRangeLabel(currentRange)}</strong>
+      </div>
+      <div className="segmented-control">
+        {["lifetime", "today", "month", "custom"].map((mode) => (
+          <button
+            className={currentRange.mode === mode ? "active" : ""}
+            disabled={loading}
+            key={mode}
+            onClick={() => chooseMode(mode)}
+            type="button"
+          >
+            {mode === "lifetime" ? "Lifetime" : mode === "month" ? "Month" : mode === "custom" ? "Custom" : "Today"}
+          </button>
+        ))}
+      </div>
+      {currentRange.mode === "custom" && (
+        <div className="accounting-custom-range">
+          <Input label="Start" type="date" value={customRange.start} onChange={(start) => setCustomRange({ ...customRange, start })} />
+          <Input label="End" type="date" value={customRange.end} onChange={(end) => setCustomRange({ ...customRange, end })} />
+          <button className="ghost-button" disabled={loading} onClick={applyCustomRange} type="button">
+            Apply
+          </button>
+        </div>
+      )}
+      {loading && <span className="mini-status loading">Loading report...</span>}
     </section>
   );
 }
@@ -7372,7 +8510,7 @@ function EmployeePortal({ auth, onOpenPayroll }) {
   );
 }
 
-function AttendancePage({ auth }) {
+function AttendancePage({ auth, selectedLocationId = "" }) {
   const [employees, setEmployees] = useState([]);
   const [todayRows, setTodayRows] = useState([]);
   const [unresolvedAbsences, setUnresolvedAbsences] = useState([]);
@@ -7392,7 +8530,7 @@ function AttendancePage({ auth }) {
 
   useEffect(() => {
     loadAttendanceAdmin();
-  }, [auth?.role]);
+  }, [auth?.role, selectedLocationId]);
 
   async function loadAttendanceAdmin(nextEmployeeId = selectedEmployeeId) {
     setIsLoading(true);
@@ -7401,7 +8539,7 @@ function AttendancePage({ auth }) {
     try {
       const [employeeList, dayRows, unresolved] = await Promise.all([
         getAttendanceEmployees().catch(() => []),
-        getAttendanceByDate(todayDateKey()).catch(() => []),
+        getAttendanceByDate(todayDateKey(), selectedLocationId).catch(() => []),
         getUnresolvedAbsences().catch(() => [])
       ]);
       const safeEmployees = employeeList || [];
@@ -7410,7 +8548,7 @@ function AttendancePage({ auth }) {
       setTodayRows(dayRows || []);
       setUnresolvedAbsences(unresolved || []);
       setSelectedEmployeeId(resolvedEmployeeId);
-      setEmployeeRows(resolvedEmployeeId ? await getEmployeeAttendanceRange(resolvedEmployeeId, range.start, range.end).catch(() => []) : []);
+      setEmployeeRows(resolvedEmployeeId ? await getEmployeeAttendanceRange(resolvedEmployeeId, range.start, range.end, selectedLocationId).catch(() => []) : []);
     } catch (err) {
       setAttendanceError(err.message || "Attendance data could not be loaded.");
     } finally {
@@ -7430,7 +8568,7 @@ function AttendancePage({ auth }) {
     setAttendanceError("");
 
     try {
-      setEmployeeRows(await getEmployeeAttendanceRange(selectedEmployeeId, range.start, range.end));
+      setEmployeeRows(await getEmployeeAttendanceRange(selectedEmployeeId, range.start, range.end, selectedLocationId));
     } catch (err) {
       setAttendanceError(err.message || "Employee attendance could not be loaded.");
     } finally {
@@ -7658,10 +8796,11 @@ const payrollAdjustmentTypes = [
   "OTHER"
 ];
 
-function PayrollPage({ auth, mode }) {
-  const isAdmin = mode === "admin" && auth?.role === "ADMIN";
+function PayrollPage({ auth, mode, selectedLocationId = "", shopLocations = [] }) {
+  const isAdmin = mode === "admin" && isShopManagerRole(auth?.role);
   const isEmployee = mode === "employee" && auth?.role === "EMPLOYEE";
-  const emptyPeriodForm = { startDate: "", endDate: "", notes: "" };
+  const locationScopeId = auth?.locationId ? String(auth.locationId) : selectedLocationId || "";
+  const emptyPeriodForm = { startDate: "", endDate: "", locationId: locationScopeId, notes: "" };
   const emptyShiftForm = { employeeId: "", shiftDate: "", clockIn: "09:00", clockOut: "17:00", breakMinutes: "30", notes: "" };
   const emptySlotForm = { shiftDate: "", startTime: "09:00", endTime: "17:00", requiredEmployees: "2", notes: "" };
   const emptyLoanForm = { employeeId: "", originalAmount: "", installmentAmount: "", notes: "" };
@@ -7689,7 +8828,7 @@ function PayrollPage({ auth, mode }) {
 
   useEffect(() => {
     loadPayroll();
-  }, [auth?.id, mode]);
+  }, [auth?.id, mode, locationScopeId]);
 
   async function loadPayroll(nextPeriodId = selectedPeriodId) {
     setIsLoading(true);
@@ -7698,10 +8837,10 @@ function PayrollPage({ auth, mode }) {
     try {
       if (isAdmin) {
         const [periodList, employeeList, shiftList, loanList] = await Promise.all([
-          getPayrollPeriods().catch((err) => {
+          getPayrollPeriods(locationScopeId).catch((err) => {
             throw err;
           }),
-          getPayrollEmployees().catch(() => []),
+          getPayrollEmployees(locationScopeId).catch(() => []),
           getWorkShifts().catch(() => []),
           getPayrollLoans().catch(() => [])
         ]);
@@ -7733,6 +8872,7 @@ function PayrollPage({ auth, mode }) {
           ...current,
           employeeId: current.employeeId || safeEmployees[0]?.id || ""
         }));
+        setPeriodForm((current) => editingPeriodId ? current : ({ ...current, locationId: locationScopeId }));
         setRecords(periodRecords || []);
       } else if (isEmployee && auth?.id) {
         const [employeeRecords, slots] = await Promise.all([
@@ -7779,9 +8919,13 @@ function PayrollPage({ auth, mode }) {
 
     try {
       const wasEditing = Boolean(editingPeriodId);
+      const periodPayload = {
+        ...periodForm,
+        locationId: periodForm.locationId ? Number(periodForm.locationId) : locationScopeId ? Number(locationScopeId) : null
+      };
       const saved = wasEditing
-        ? await updatePayrollPeriod(editingPeriodId, periodForm)
-        : await createPayrollPeriod(periodForm);
+        ? await updatePayrollPeriod(editingPeriodId, periodPayload)
+        : await createPayrollPeriod(periodPayload);
       const nextPeriodId = saved?.id || selectedPeriodId;
 
       setEditingPeriodId(null);
@@ -7801,6 +8945,7 @@ function PayrollPage({ auth, mode }) {
     setPeriodForm({
       startDate: period.startDate || "",
       endDate: period.endDate || "",
+      locationId: period.locationId ? String(period.locationId) : "",
       notes: period.notes || ""
     });
     window.requestAnimationFrame(() => {
@@ -8070,6 +9215,15 @@ function PayrollPage({ auth, mode }) {
                 </div>
                 <Input label="Start date" required type="date" value={periodForm.startDate} onChange={(startDate) => setPeriodForm({ ...periodForm, startDate })} />
                 <Input label="End date" required type="date" value={periodForm.endDate} onChange={(endDate) => setPeriodForm({ ...periodForm, endDate })} />
+                {shopLocations.length > 0 && (
+                  <Select
+                    label="Location"
+                    value={periodForm.locationId || locationScopeId || ""}
+                    onChange={(locationId) => setPeriodForm({ ...periodForm, locationId })}
+                    options={["", ...shopLocations.map((location) => String(location.id))]}
+                    optionLabel={(value) => shopLocations.find((location) => String(location.id) === String(value))?.name || "All locations"}
+                  />
+                )}
                 <label className="settings-terms">
                   <span>Notes</span>
                   <textarea rows="3" value={periodForm.notes} onChange={(event) => setPeriodForm({ ...periodForm, notes: event.target.value })} />
@@ -8113,7 +9267,7 @@ function PayrollPage({ auth, mode }) {
                       <button className="danger-button" disabled={isWorking} onClick={() => runPayrollAction(() => deletePayrollPeriod(period.id), () => "Payroll period deleted.")} type="button">Delete</button>
                     </div>
                   )}
-                  columns={["Start", "End", "Status", "Notes", "Created", ""]}
+                  columns={["Start", "End", "Location", "Status", "Notes", "Created", ""]}
                   emptyText="No payroll periods yet."
                   rows={periods.map((period) => ({
                     key: `payroll-period-${period.id}`,
@@ -8121,6 +9275,7 @@ function PayrollPage({ auth, mode }) {
                     values: [
                       period.startDate || "-",
                       period.endDate || "-",
+                      period.locationName || "All locations",
                       period.status || "-",
                       period.notes || "-",
                       dateTime(period.createdAt)
@@ -8815,7 +9970,7 @@ function CustomersPage({ customers, onSendNotice }) {
     const dueText = customer.nextPaymentDueDate ? ` by ${customer.nextPaymentDueDate}` : "";
     updateDraft(customer.id, "title", customer.hasOverdueBalance ? "Payment overdue" : "Payment due soon");
     updateDraft(customer.id, "type", "PAYMENT_DUE");
-    updateDraft(customer.id, "message", `Invoice #${customer.nextUnpaidInvoiceId || ""} has an outstanding balance of ${money(nextInvoice?.balanceDue ?? customer.outstandingBalance)}${dueText}. Please pay it through your TireTrack account.`);
+    updateDraft(customer.id, "message", `Invoice ${nextInvoice ? invoiceNumber(nextInvoice) : `#${customer.nextUnpaidInvoiceId || ""}`} has an outstanding balance of ${money(nextInvoice?.balanceDue ?? customer.outstandingBalance)}${dueText}. Please pay it through your TireTrack account.`);
   }
 
   function suggestInvoiceNotice(customer, invoice) {
@@ -8823,7 +9978,7 @@ function CustomersPage({ customers, onSendNotice }) {
     const dueText = invoice.dueDate ? ` due by ${invoice.dueDate}` : "";
     updateDraft(customer.id, "title", status === "PARTIALLY_PAID" ? "Partial payment balance" : "Invoice payment due");
     updateDraft(customer.id, "type", "PAYMENT_DUE");
-    updateDraft(customer.id, "message", `Invoice #${invoice.id} is ${status.toLowerCase().replaceAll("_", " ")} with ${money(invoice.balanceDue ?? invoice.total)} outstanding${dueText}. Please pay it through your TireTrack account.`);
+    updateDraft(customer.id, "message", `Invoice ${invoiceNumber(invoice)} is ${statusLabel(status).toLowerCase()} with ${money(invoice.balanceDue ?? invoice.total)} outstanding${dueText}. Please pay it through your TireTrack account.`);
   }
 
   function suggestAppointmentNotice(customer) {
@@ -8945,8 +10100,8 @@ function CustomerDetail({ customer, noticeDrafts, noticeMessage, onSendNotice, o
           {unpaidInvoices.map((invoice) => (
             <div className="customer-unpaid-invoice" key={invoice.id}>
               <div>
-                <strong>Invoice #{invoice.id}</strong>
-                <small>{invoiceStatusKey(invoice.status)} - {money(invoice.balanceDue ?? invoice.total)} due - Due {invoice.dueDate || "-"}</small>
+                <strong>{invoiceNumber(invoice)}</strong>
+                <small>{statusLabel(invoiceStatusKey(invoice.status))} - {money(invoice.balanceDue ?? invoice.total)} due - Due {invoice.dueDate || "-"}</small>
                 <small>{invoice.vehicle || "No vehicle"}</small>
               </div>
               <button className={invoiceStatusKey(invoice.status) === "PARTIALLY_PAID" ? "primary-button" : "ghost-button"} onClick={() => onSuggestInvoice(customer, invoice)} type="button">
@@ -9076,9 +10231,13 @@ function inferEntityIdFromMessage(message) {
 }
 
 function SettingsPage({ onSave, settings }) {
-  const [draft, setDraft] = useState(settings);
+  const [draft, setDraft] = useState({ ...defaultCompanySettings, ...(settings || {}) });
   const [saveMessage, setSaveMessage] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    setDraft({ ...defaultCompanySettings, ...(settings || {}) });
+  }, [settings]);
 
   useEffect(() => {
     if (saveMessage) {
@@ -9088,6 +10247,35 @@ function SettingsPage({ onSave, settings }) {
 
   function update(field, value) {
     setDraft((current) => ({ ...current, [field]: value }));
+  }
+
+  function uploadLogo(event) {
+    const file = event.target.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    if (!file.type.startsWith("image/")) {
+      setSaveMessage("Choose an image file for the logo.");
+      event.target.value = "";
+      return;
+    }
+
+    if (file.size > 1024 * 1024) {
+      setSaveMessage("Logo image must be under 1 MB.");
+      event.target.value = "";
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      update("logoUrl", String(reader.result || ""));
+      setSaveMessage("Logo ready. Save settings to keep it.");
+    };
+    reader.onerror = () => setSaveMessage("Logo could not be read.");
+    reader.readAsDataURL(file);
+    event.target.value = "";
   }
 
   async function submit(event) {
@@ -9117,6 +10305,11 @@ function SettingsPage({ onSave, settings }) {
         </div>
         <Input label="Shop name" required value={draft.shopName} onChange={(shopName) => update("shopName", shopName)} />
         <Input label="Logo URL" value={draft.logoUrl} onChange={(logoUrl) => update("logoUrl", logoUrl)} placeholder="https://..." />
+        <label className="logo-upload-control">
+          <span>Upload logo</span>
+          <input accept="image/*" onChange={uploadLogo} type="file" />
+          <strong><Upload size={16} /> Choose image</strong>
+        </label>
         <Input label="Phone" value={draft.phone} onChange={(phone) => update("phone", phone)} />
         <Input label="Address" value={draft.address} onChange={(address) => update("address", address)} />
         <Input label="Tax rate %" min="0" step="0.01" type="number" value={draft.taxRate} onChange={(taxRate) => update("taxRate", taxRate)} />
@@ -9139,11 +10332,22 @@ function SettingsPage({ onSave, settings }) {
   );
 }
 
+function ThemeToggleButton({ className = "", onToggle, themeMode }) {
+  const nextMode = themeMode === "light" ? "dark" : "light";
+
+  return (
+    <button className={`ghost-button with-icon theme-toggle ${className}`.trim()} onClick={onToggle} type="button">
+      {themeMode === "light" ? <Moon size={16} /> : <Sun size={16} />}
+      {nextMode === "light" ? "Light" : "Dark"}
+    </button>
+  );
+}
+
 function StatusBadge({ value }) {
   const normalized = String(value || "").toUpperCase();
   const tone = statusClassMap[normalized] || "gray";
 
-  return <span className={`status-badge ${tone}`}>{normalized || "-"}</span>;
+  return <span className={`status-badge ${tone}`}>{normalized ? statusLabel(normalized) : "-"}</span>;
 }
 
 function renderCellValue(value) {

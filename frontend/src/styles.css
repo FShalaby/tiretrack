@@ -3,6 +3,17 @@
   background: #111114;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: 16px;
+  --tooltip-bg: #17171d;
+  --tooltip-border: rgba(255, 255, 255, 0.08);
+  --tooltip-text: #d7d9e0;
+}
+
+:root[data-theme="light"] {
+  color: #1f2937;
+  background: #f4f6fb;
+  --tooltip-bg: rgba(255, 255, 255, 0.96);
+  --tooltip-border: rgba(15, 23, 42, 0.12);
+  --tooltip-text: #0f172a;
 }
 
 * {
@@ -16,6 +27,212 @@ body {
     radial-gradient(circle at top right, rgba(93, 95, 239, 0.2), transparent 32%),
     radial-gradient(circle at 14% 18%, rgba(24, 211, 178, 0.1), transparent 28%),
     #111114;
+}
+
+:root[data-theme="light"] body {
+  background:
+    radial-gradient(circle at top right, rgba(74, 98, 255, 0.1), transparent 30%),
+    radial-gradient(circle at 12% 14%, rgba(20, 184, 166, 0.08), transparent 28%),
+    #f4f6fb;
+}
+
+:root[data-theme="light"] .sidebar,
+:root[data-theme="light"] .login-panel,
+:root[data-theme="light"] .public-booking-panel,
+:root[data-theme="light"] .customer-portal,
+:root[data-theme="light"] .customer-card-form,
+:root[data-theme="light"] .customer-notice,
+:root[data-theme="light"] .customer-detail-panel,
+:root[data-theme="light"] .metric-card,
+:root[data-theme="light"] .panel,
+:root[data-theme="light"] .global-search,
+:root[data-theme="light"] .profile-chip,
+:root[data-theme="light"] .icon-button,
+:root[data-theme="light"] .global-results,
+:root[data-theme="light"] .notification-menu,
+:root[data-theme="light"] .sidebar-subnav button,
+:root[data-theme="light"] .accounting-mini-ledger div,
+:root[data-theme="light"] .accounting-hero-stat,
+:root[data-theme="light"] .accounting-status-pill,
+:root[data-theme="light"] .customer-match-panel button,
+:root[data-theme="light"] .customer-match-panel,
+:root[data-theme="light"] .tire-search-results button,
+:root[data-theme="light"] .tire-search-result,
+:root[data-theme="light"] .table-wrap,
+:root[data-theme="light"] .table-search,
+:root[data-theme="light"] .invoice-items-editor,
+:root[data-theme="light"] .invoice-item-row,
+:root[data-theme="light"] .date-time-fields label,
+:root[data-theme="light"] .time-slots button,
+:root[data-theme="light"] .drawer-stats div,
+:root[data-theme="light"] .drawer-meta,
+:root[data-theme="light"] .tire-drawer {
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(18px);
+  border-color: rgba(15, 23, 42, 0.1);
+  color: #1f2937;
+}
+
+:root[data-theme="light"] .sidebar {
+  box-shadow: 10px 0 30px rgba(15, 23, 42, 0.05);
+}
+
+:root[data-theme="light"] .sidebar h1,
+:root[data-theme="light"] .login-panel h1,
+:root[data-theme="light"] .public-booking-header h1,
+:root[data-theme="light"] .customer-header h1,
+:root[data-theme="light"] .topbar h2,
+:root[data-theme="light"] h1,
+:root[data-theme="light"] h2,
+:root[data-theme="light"] h3,
+:root[data-theme="light"] .accounting-hero h2,
+:root[data-theme="light"] .accounting-kpi-card strong,
+:root[data-theme="light"] .metric-card strong,
+:root[data-theme="light"] .empty-state strong,
+:root[data-theme="light"] .table-pagination strong,
+:root[data-theme="light"] th,
+:root[data-theme="light"] td,
+:root[data-theme="light"] .drawer-header h3,
+:root[data-theme="light"] .drawer-stats strong,
+:root[data-theme="light"] .drawer-meta strong,
+:root[data-theme="light"] .tire-search-result strong,
+:root[data-theme="light"] .invoice-source h3,
+:root[data-theme="light"] .global-results button,
+:root[data-theme="light"] .notification-menu button {
+  color: #0f172a;
+}
+
+:root[data-theme="light"] .sidebar p,
+:root[data-theme="light"] .login-panel p,
+:root[data-theme="light"] .eyebrow,
+:root[data-theme="light"] .global-search,
+:root[data-theme="light"] .accounting-hero p,
+:root[data-theme="light"] .accounting-kpi-card span,
+:root[data-theme="light"] .accounting-kpi-card small,
+:root[data-theme="light"] .mini-status,
+:root[data-theme="light"] .empty-note,
+:root[data-theme="light"] .table-pagination,
+:root[data-theme="light"] .drawer-header p,
+:root[data-theme="light"] .drawer-stats span,
+:root[data-theme="light"] .drawer-meta span,
+:root[data-theme="light"] .tire-search-result small,
+:root[data-theme="light"] small {
+  color: #64748b;
+}
+
+:root[data-theme="light"] input,
+:root[data-theme="light"] select,
+:root[data-theme="light"] textarea,
+:root[data-theme="light"] .global-search input,
+:root[data-theme="light"] .attendance-range-form input,
+:root[data-theme="light"] .attendance-resolve-actions input,
+:root[data-theme="light"] .attendance-resolve-actions select {
+  background: #f8fafc;
+  border-color: rgba(15, 23, 42, 0.12);
+  color: #0f172a;
+}
+
+:root[data-theme="light"] .tabs button {
+  color: #64748b;
+}
+
+:root[data-theme="light"] .tabs button.active,
+:root[data-theme="light"] .tabs button:hover,
+:root[data-theme="light"] .sidebar-subnav button.active,
+:root[data-theme="light"] .sidebar-subnav button:hover {
+  background: rgba(79, 70, 229, 0.08);
+  border-color: rgba(79, 70, 229, 0.16);
+  color: #111827;
+}
+
+:root[data-theme="light"] .content,
+:root[data-theme="light"] .login-shell,
+:root[data-theme="light"] .public-booking-shell {
+  background: transparent;
+}
+
+:root[data-theme="light"] .ghost-button,
+:root[data-theme="light"] .theme-toggle,
+:root[data-theme="light"] .table-pagination button,
+:root[data-theme="light"] .tire-search-result button,
+:root[data-theme="light"] .result-actions button {
+  background: rgba(255, 255, 255, 0.72);
+  border-color: rgba(15, 23, 42, 0.12);
+  color: #1f2937;
+}
+
+:root[data-theme="light"] .primary-button {
+  background: #0f766e;
+  border-color: #0f766e;
+  color: #ffffff;
+}
+
+:root[data-theme="light"] .danger-button {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(220, 38, 38, 0.22);
+  color: #b91c1c;
+}
+
+:root[data-theme="light"] table {
+  background: transparent;
+}
+
+:root[data-theme="light"] th {
+  background: rgba(241, 245, 249, 0.94);
+  border-bottom-color: rgba(15, 23, 42, 0.08);
+}
+
+:root[data-theme="light"] td {
+  border-bottom-color: rgba(15, 23, 42, 0.07);
+}
+
+:root[data-theme="light"] tr:hover td {
+  background: rgba(20, 184, 166, 0.08);
+  box-shadow: inset 0 1px 0 rgba(20, 184, 166, 0.08), inset 0 -1px 0 rgba(20, 184, 166, 0.08);
+}
+
+:root[data-theme="light"] .sales-line-chart,
+:root[data-theme="light"] .mini-chart,
+:root[data-theme="light"] .accounting-bar-chart,
+:root[data-theme="light"] .bar-chart,
+:root[data-theme="light"] .donut-center {
+  background: rgba(248, 250, 252, 0.78);
+  border-color: rgba(15, 23, 42, 0.08);
+}
+
+:root[data-theme="light"] .invoice-source {
+  background: linear-gradient(135deg, rgba(240, 253, 250, 0.88), rgba(238, 242, 255, 0.88));
+  border-color: rgba(20, 184, 166, 0.24);
+}
+
+:root[data-theme="light"] .invoice-source p,
+:root[data-theme="light"] .condition-pill.new {
+  color: #0f766e;
+}
+
+:root[data-theme="light"] .invoice-items-editor legend {
+  background: #ffffff;
+  border-color: rgba(15, 23, 42, 0.1);
+  color: #334155;
+}
+
+:root[data-theme="light"] .segmented-control {
+  background: #f1f5f9;
+  border-color: rgba(15, 23, 42, 0.1);
+}
+
+:root[data-theme="light"] .segmented-control button {
+  color: #64748b;
+}
+
+:root[data-theme="light"] .segmented-control button.active {
+  background: #ffffff;
+  color: #0f766e;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+}
+
+:root[data-theme="light"] .accounting-range-panel > div:first-child strong {
+  color: #0f172a;
 }
 
 button,
@@ -225,6 +442,17 @@ button {
   flex-wrap: wrap;
   gap: 10px;
   justify-content: flex-end;
+}
+
+.theme-toggle {
+  white-space: nowrap;
+}
+
+.theme-floating-toggle {
+  position: fixed;
+  right: 18px;
+  top: 18px;
+  z-index: 30;
 }
 
 .global-search,
@@ -1040,11 +1268,18 @@ td.customer-cell-blue {
   border: 1px solid rgba(124, 140, 255, 0.2);
   border-radius: 12px;
   color: #ffffff;
-  display: inline-flex;
+  display: inline-grid;
   height: 40px;
   justify-content: center;
+  line-height: 0;
+  place-items: center;
   width: 40px;
   z-index: 1;
+}
+
+.metric-icon svg,
+.dashboard-kpi-icon svg {
+  display: block;
 }
 
 .metric-icon.small {
@@ -1174,6 +1409,554 @@ td.customer-cell-blue {
 
 .dashboard-filters > strong {
   color: #bffcf0;
+  text-align: right;
+}
+
+.dashboard-command-bar {
+  align-items: center;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  padding: 16px;
+}
+
+.dashboard-command-bar h3,
+.dashboard-widget-picker h3,
+.dashboard-widget-head h3,
+.dashboard-calendar-title h3 {
+  color: #ffffff;
+  font-size: 1.08rem;
+  line-height: 1.35;
+  margin: 4px 0 0;
+}
+
+.dashboard-command-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.location-scope-bar {
+  display: flex;
+  justify-content: flex-end;
+  position: relative;
+  z-index: 25;
+}
+
+.location-scope-trigger {
+  align-items: center;
+  background: rgba(31, 31, 39, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: 999px;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.18);
+  color: #ffffff;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 36px minmax(112px, max-content) minmax(170px, 1fr) 18px;
+  min-height: 54px;
+  max-width: min(100%, 640px);
+  padding: 8px 12px 8px 9px;
+  text-align: left;
+  width: auto;
+}
+
+.location-scope-trigger:hover,
+.location-scope-bar.open .location-scope-trigger {
+  border-color: rgba(124, 140, 255, 0.32);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.2), 0 0 0 3px rgba(124, 140, 255, 0.09);
+}
+
+.location-scope-trigger:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
+.location-scope-icon {
+  align-items: center;
+  background: rgba(124, 140, 255, 0.12);
+  border: 1px solid rgba(124, 140, 255, 0.22);
+  border-radius: 999px;
+  color: #dfe2ff;
+  display: grid;
+  height: 36px;
+  justify-content: center;
+  line-height: 0;
+  place-items: center;
+  width: 36px;
+}
+
+.location-scope-copy,
+.location-scope-meta {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.location-scope-copy span {
+  color: #8f95a3;
+  font-size: 0.68rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.location-scope-copy strong {
+  color: #ffffff;
+  font-size: 0.94rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.location-scope-meta {
+  justify-items: end;
+  text-align: right;
+}
+
+.location-scope-meta b {
+  color: #bffcf0;
+  font-size: 0.72rem;
+  font-weight: 900;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.location-scope-meta small {
+  color: #8f95a3;
+  font-size: 0.72rem;
+  font-weight: 800;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.location-scope-chevron {
+  color: #8f95a3;
+  transition: transform 160ms ease;
+}
+
+.location-scope-bar.open .location-scope-chevron {
+  transform: rotate(180deg);
+}
+
+.location-scope-menu {
+  background: #1f1f27;
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: 14px;
+  box-shadow: 0 24px 54px rgba(0, 0, 0, 0.34);
+  display: grid;
+  gap: 6px;
+  min-width: min(100%, 520px);
+  padding: 8px;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+}
+
+.location-scope-menu button {
+  align-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: #cfd3dc;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(130px, 1fr) minmax(160px, auto) 18px;
+  min-height: 48px;
+  padding: 9px 10px;
+  text-align: left;
+}
+
+.location-scope-menu button:hover,
+.location-scope-menu button.selected {
+  background: rgba(124, 140, 255, 0.1);
+  border-color: rgba(124, 140, 255, 0.16);
+}
+
+.location-scope-menu button > span:first-child {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.location-scope-menu strong {
+  color: #ffffff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.location-scope-menu small {
+  color: #8f95a3;
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: capitalize;
+}
+
+.location-scope-menu button > span:nth-child(2) {
+  color: #bffcf0;
+  font-size: 0.76rem;
+  font-weight: 900;
+  justify-self: end;
+  white-space: nowrap;
+}
+
+.location-scope-menu svg {
+  color: #18d3b2;
+}
+
+.dashboard-range-total {
+  color: #bffcf0;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+.dashboard-widget-picker {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+}
+
+.dashboard-widget-options {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+}
+
+.widget-toggle {
+  align-items: center;
+  background: #17171d;
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: 12px;
+  color: #cfd3dc;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 18px 22px minmax(0, 1fr);
+  min-height: 44px;
+  padding: 10px 12px;
+}
+
+.widget-toggle.active {
+  background: rgba(24, 211, 178, 0.09);
+  border-color: rgba(24, 211, 178, 0.28);
+  color: #ffffff;
+}
+
+.widget-toggle input {
+  accent-color: #18d3b2;
+  height: 15px;
+  width: 15px;
+}
+
+.widget-toggle span {
+  font-size: 0.86rem;
+  font-weight: 900;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-widget-grid {
+  align-items: stretch;
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+}
+
+.dashboard-widget {
+  display: grid;
+  gap: 14px;
+  grid-column: span 6;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 292px;
+  padding: 16px;
+}
+
+.dashboard-widget-wide {
+  grid-column: 1 / -1;
+}
+
+.dashboard-widget-head {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.dashboard-kpi-strip {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+}
+
+.dashboard-kpi {
+  align-items: center;
+  background: rgba(31, 31, 39, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: 12px;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: 52px minmax(0, 1fr);
+  min-height: 126px;
+  min-width: 0;
+  overflow: hidden;
+  padding: 16px;
+}
+
+.dashboard-kpi-icon {
+  align-items: center;
+  background: rgba(124, 140, 255, 0.13);
+  border: 1px solid rgba(124, 140, 255, 0.2);
+  border-radius: 12px;
+  color: #ffffff;
+  display: grid;
+  height: 52px;
+  justify-content: center;
+  justify-self: center;
+  line-height: 0;
+  place-items: center;
+  width: 52px;
+}
+
+.dashboard-kpi.good .dashboard-kpi-icon {
+  background: rgba(24, 211, 178, 0.12);
+  border-color: rgba(24, 211, 178, 0.24);
+}
+
+.dashboard-kpi.warning .dashboard-kpi-icon {
+  background: rgba(245, 158, 11, 0.13);
+  border-color: rgba(245, 158, 11, 0.24);
+}
+
+.dashboard-kpi.info .dashboard-kpi-icon {
+  background: rgba(96, 165, 250, 0.13);
+  border-color: rgba(96, 165, 250, 0.24);
+}
+
+.dashboard-kpi > div > span,
+.dashboard-kpi > div > small {
+  color: #8f95a3;
+  display: block;
+  font-size: 0.76rem;
+  font-weight: 900;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dashboard-kpi > div {
+  min-width: 0;
+}
+
+.dashboard-kpi strong {
+  color: #ffffff;
+  display: block;
+  font-size: clamp(1.22rem, 1.8vw, 1.68rem);
+  font-weight: 900;
+  line-height: 1.18;
+  margin: 5px 0 6px;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.dashboard-kpi small {
+  line-height: 1.35;
+  white-space: normal;
+}
+
+.dashboard-progress-list,
+.dashboard-compact-list,
+.dashboard-location-list {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+}
+
+.dashboard-progress-row {
+  display: grid;
+  gap: 7px;
+}
+
+.dashboard-progress-row > div:first-child {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.dashboard-progress-row span,
+.dashboard-list-row span,
+.dashboard-location-row span {
+  color: #8f95a3;
+  font-size: 0.76rem;
+  font-weight: 900;
+}
+
+.dashboard-progress-row strong,
+.dashboard-list-row strong,
+.dashboard-location-row strong {
+  color: #ffffff;
+  font-size: 0.9rem;
+}
+
+.dashboard-progress-track {
+  background: #17171d;
+  border-radius: 999px;
+  height: 8px;
+  overflow: hidden;
+}
+
+.dashboard-progress-track span {
+  background: #7c8cff;
+  border-radius: inherit;
+  display: block;
+  height: 100%;
+}
+
+.dashboard-progress-row.good .dashboard-progress-track span {
+  background: #18d3b2;
+}
+
+.dashboard-progress-row.warning .dashboard-progress-track span {
+  background: #f59e0b;
+}
+
+.dashboard-progress-row.info .dashboard-progress-track span {
+  background: #60a5fa;
+}
+
+.dashboard-list-row,
+.dashboard-location-row {
+  align-items: center;
+  background: #17171d;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 12px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-width: 0;
+  padding: 10px 12px;
+}
+
+.dashboard-compact-list {
+  align-content: start;
+}
+
+.dashboard-list-row > div,
+.dashboard-location-row > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.dashboard-list-row > div:last-child {
+  justify-items: end;
+  min-width: 74px;
+  text-align: right;
+}
+
+.dashboard-list-row strong,
+.dashboard-list-row span,
+.dashboard-location-row strong,
+.dashboard-location-row span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-list-row > div:last-child strong {
+  max-width: 120px;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.dashboard-list-row.low-stock-pulse {
+  animation: softLowStockPulse 2.8s ease-in-out infinite;
+  background: rgba(127, 29, 29, 0.2);
+  border-color: rgba(248, 113, 113, 0.18);
+}
+
+.dashboard-list-row.low-stock-pulse > div:last-child strong {
+  color: #fecaca;
+}
+
+.dashboard-location-metrics {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+}
+
+.dashboard-location-metrics span {
+  background: rgba(255, 255, 255, 0.035);
+  border-radius: 9px;
+  padding: 7px 8px;
+}
+
+.dashboard-location-metrics b {
+  color: #ffffff;
+  display: block;
+}
+
+.dashboard-empty {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 16px;
+}
+
+.dashboard-empty strong {
+  color: #ffffff;
+}
+
+.dashboard-calendar-anchor {
+  display: grid;
+  gap: 10px;
+}
+
+.dashboard-calendar-title {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 0 4px;
+}
+
+.dashboard-health-list {
+  display: grid;
+  gap: 10px;
+}
+
+.dashboard-health-row {
+  align-items: center;
+  background: #17171d;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 12px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-height: 52px;
+  padding: 11px 12px;
+}
+
+.dashboard-health-row span {
+  color: #8f95a3;
+  font-size: 0.84rem;
+  font-weight: 900;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-health-row strong {
+  color: #ffffff;
+  font-size: clamp(1rem, 1.4vw, 1.28rem);
+  font-weight: 900;
+  line-height: 1.18;
+  max-width: 180px;
+  overflow-wrap: anywhere;
   text-align: right;
 }
 
@@ -1337,6 +2120,58 @@ td.customer-cell-blue {
 
 .accounting-mobile-nav select {
   width: 100%;
+}
+
+.accounting-range-panel {
+  align-items: center;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(180px, 0.8fr) minmax(280px, 1fr) auto;
+  padding: 14px;
+}
+
+.accounting-range-panel > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.accounting-range-panel > div:first-child strong {
+  color: #ffffff;
+  font-size: 1rem;
+}
+
+.segmented-control {
+  align-items: center;
+  background: #17171d;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 12px;
+  display: grid;
+  gap: 4px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  padding: 4px;
+}
+
+.segmented-control button {
+  background: transparent;
+  border: 0;
+  border-radius: 9px;
+  color: #8f95a3;
+  font-weight: 900;
+  min-height: 36px;
+  padding: 7px 10px;
+}
+
+.segmented-control button.active {
+  background: rgba(24, 211, 178, 0.14);
+  color: #bffcf0;
+}
+
+.accounting-custom-range {
+  align-items: end;
+  display: grid;
+  gap: 8px;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(2, minmax(160px, 1fr)) auto;
 }
 
 .accounting-mini-ledger div,
@@ -3181,6 +4016,25 @@ button:disabled {
   width: 100%;
 }
 
+.appointment-reminder-row {
+  display: grid;
+  gap: 14px;
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(170px, 230px) minmax(240px, 280px) minmax(190px, 250px);
+  max-width: 820px;
+  min-width: 0;
+  width: 100%;
+}
+
+.appointment-reminder-row label {
+  min-width: 0;
+}
+
+.appointment-reminder-row input[type="datetime-local"] {
+  min-width: 0;
+  width: 100%;
+}
+
 .appointment-form > .primary-button {
   grid-column: 1 / span 2;
   max-width: 260px;
@@ -3657,9 +4511,9 @@ button:disabled {
 
 .invoice-logo {
   display: block;
-  margin-bottom: 8px;
-  max-height: 46px;
-  max-width: 150px;
+  margin-bottom: 12px;
+  max-height: 88px;
+  max-width: 250px;
   object-fit: contain;
 }
 
@@ -4711,6 +5565,25 @@ td.urgent-stock-cell::before {
   width: 8px;
 }
 
+.urgent-stock-text {
+  color: #fecaca;
+}
+
+@keyframes softLowStockPulse {
+  0%,
+  100% {
+    background: rgba(127, 29, 29, 0.16);
+    border-color: rgba(248, 113, 113, 0.16);
+    box-shadow: inset 0 0 0 1px rgba(248, 113, 113, 0.04);
+  }
+
+  50% {
+    background: rgba(127, 29, 29, 0.28);
+    border-color: rgba(248, 113, 113, 0.28);
+    box-shadow: inset 0 0 0 1px rgba(248, 113, 113, 0.1), 0 0 14px rgba(239, 68, 68, 0.09);
+  }
+}
+
 @keyframes urgentStockBlink {
   0%,
   100% {
@@ -4721,6 +5594,13 @@ td.urgent-stock-cell::before {
   50% {
     background: rgba(239, 68, 68, 0.28);
     box-shadow: inset 0 0 0 1px rgba(248, 113, 113, 0.32), 0 0 18px rgba(239, 68, 68, 0.18);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-list-row.low-stock-pulse,
+  td.urgent-stock-cell {
+    animation: none;
   }
 }
 
@@ -4901,6 +5781,10 @@ tr:last-child td {
     grid-template-columns: repeat(2, minmax(160px, 1fr));
   }
 
+  .dashboard-kpi-strip {
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  }
+
   .appointment-form {
     grid-template-columns: repeat(2, minmax(160px, 230px));
   }
@@ -4922,6 +5806,20 @@ tr:last-child td {
 
 }
 
+@media (max-width: 1040px) {
+  .dashboard-widget-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dashboard-widget {
+    grid-column: span 1;
+  }
+
+  .dashboard-widget-wide {
+    grid-column: 1 / -1;
+  }
+}
+
 @media (max-width: 820px) {
   .app-shell {
     grid-template-columns: 1fr;
@@ -4941,8 +5839,53 @@ tr:last-child td {
 
   .tabs button {
     justify-content: center;
-    text-align: center;
-  }
+  text-align: center;
+}
+
+.logo-upload-control {
+  background: #17171d;
+  border: 1px dashed rgba(124, 140, 255, 0.26);
+  border-radius: 14px;
+  color: #d7d9e0;
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+}
+
+.logo-upload-control > span {
+  color: #8f95a3;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.logo-upload-control input {
+  display: none;
+}
+
+.logo-upload-control strong {
+  align-items: center;
+  background: rgba(124, 140, 255, 0.16);
+  border: 1px solid rgba(124, 140, 255, 0.28);
+  border-radius: 10px;
+  color: #dfe3ff;
+  display: inline-flex;
+  gap: 8px;
+  justify-content: center;
+  min-height: 42px;
+  padding: 9px 12px;
+}
+
+:root[data-theme="light"] .logo-upload-control {
+  background: rgba(255, 255, 255, 0.72);
+  border-color: rgba(15, 23, 42, 0.18);
+  color: #1f2937;
+}
+
+:root[data-theme="light"] .logo-upload-control strong {
+  background: rgba(20, 184, 166, 0.1);
+  border-color: rgba(20, 184, 166, 0.18);
+  color: #0f766e;
+}
 
   .content {
     padding: 16px;
@@ -4972,6 +5915,8 @@ tr:last-child td {
   }
 
   .metric-grid,
+  .dashboard-widget-grid,
+  .dashboard-location-metrics,
   .dashboard-density,
   .audit-summary,
   .accounting-kpis,
@@ -5010,6 +5955,97 @@ tr:last-child td {
   .attendance-resolve-actions,
   .invoice-item-row {
     grid-template-columns: 1fr;
+  }
+
+  .dashboard-kpi-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-kpi {
+    grid-template-columns: 46px minmax(0, 1fr);
+    min-height: 112px;
+  }
+
+  .dashboard-kpi-icon {
+    height: 46px;
+    width: 46px;
+  }
+
+  .dashboard-command-bar,
+  .dashboard-command-actions,
+  .dashboard-empty {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .dashboard-command-actions {
+    justify-content: stretch;
+  }
+
+  .dashboard-command-actions .segmented-control,
+  .dashboard-command-actions .ghost-button,
+  .dashboard-command-actions .range-inputs {
+    width: 100%;
+  }
+
+  .dashboard-command-actions .segmented-control {
+    justify-content: space-between;
+  }
+
+  .dashboard-command-actions .range-inputs input {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .location-scope-bar {
+    justify-content: stretch;
+  }
+
+  .location-scope-trigger {
+    border-radius: 16px;
+    grid-template-columns: 36px minmax(0, 1fr) 18px;
+    max-width: none;
+    width: 100%;
+  }
+
+  .location-scope-meta {
+    grid-column: 2;
+    justify-items: start;
+    text-align: left;
+  }
+
+  .location-scope-chevron {
+    grid-column: 3;
+    grid-row: 1 / span 2;
+  }
+
+  .location-scope-menu {
+    left: 0;
+    min-width: 0;
+    right: 0;
+  }
+
+  .location-scope-menu button {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .location-scope-menu button > span:nth-child(2) {
+    justify-self: start;
+  }
+
+  .dashboard-widget,
+  .dashboard-widget-wide {
+    grid-column: 1 / -1;
+  }
+
+  .dashboard-list-row,
+  .dashboard-location-row {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-list-row > div:last-child {
+    justify-items: start;
+    text-align: left;
   }
 
   .payroll-shift-form label:first-child,
@@ -5228,15 +6264,746 @@ tr:last-child td {
   }
 
   .appointment-form .date-time-picker,
-  .appointment-form .tire-setup-fields {
+  .appointment-form .tire-setup-fields,
+  .appointment-reminder-row {
     grid-column: 1 / -1;
     max-width: none;
+  }
+
+  .appointment-reminder-row {
+    grid-template-columns: 1fr;
   }
 
   .appointment-form > .primary-button {
     grid-column: 1 / -1;
     max-width: none;
   }
+}
+
+/* Final light-theme override layer for late dashboard, chart, appointment, and inventory rules. */
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+:root[data-theme="light"] .app-shell,
+:root[data-theme="light"] .content,
+:root[data-theme="light"] .dashboard-calendar-anchor,
+:root[data-theme="light"] .accounting-page,
+:root[data-theme="light"] .accounting-main,
+:root[data-theme="light"] .customer-portal {
+  background: transparent !important;
+  color: #0f172a !important;
+}
+
+:root[data-theme="light"] .panel,
+:root[data-theme="light"] .metric-card,
+:root[data-theme="light"] .today-panel,
+:root[data-theme="light"] .dashboard-command-bar,
+:root[data-theme="light"] .dashboard-widget-picker,
+:root[data-theme="light"] .dashboard-widget,
+:root[data-theme="light"] .dashboard-kpi,
+:root[data-theme="light"] .dashboard-list-row,
+:root[data-theme="light"] .dashboard-location-row,
+:root[data-theme="light"] .dashboard-health-row,
+:root[data-theme="light"] .dashboard-empty,
+:root[data-theme="light"] .activity-row,
+:root[data-theme="light"] .follow-up-card,
+:root[data-theme="light"] .today-stats div,
+:root[data-theme="light"] .location-scope-trigger,
+:root[data-theme="light"] .location-scope-menu,
+:root[data-theme="light"] .location-scope-menu button,
+:root[data-theme="light"] .calendar-day,
+:root[data-theme="light"] .calendar-agenda,
+:root[data-theme="light"] .agenda-item,
+:root[data-theme="light"] .date-time-picker,
+:root[data-theme="light"] .date-time-fields label,
+:root[data-theme="light"] .tire-setup-fields,
+:root[data-theme="light"] .tire-search-panel,
+:root[data-theme="light"] .tire-search-result,
+:root[data-theme="light"] .appointment-time-empty,
+:root[data-theme="light"] .time-slots button,
+:root[data-theme="light"] .table-wrap,
+:root[data-theme="light"] .table-search,
+:root[data-theme="light"] .invoice-items-editor,
+:root[data-theme="light"] .invoice-item-row,
+:root[data-theme="light"] .sales-line-chart,
+:root[data-theme="light"] .leader-bars,
+:root[data-theme="light"] .mini-chart,
+:root[data-theme="light"] .bar-chart,
+:root[data-theme="light"] .accounting-bar-chart,
+:root[data-theme="light"] .accounting-chart-card,
+:root[data-theme="light"] .accounting-card,
+:root[data-theme="light"] .accounting-table-card,
+:root[data-theme="light"] .accounting-mini-ledger div,
+:root[data-theme="light"] .accounting-status-pill,
+:root[data-theme="light"] .accounting-donut-legend div,
+:root[data-theme="light"] .donut-legend-row {
+  background: rgba(255, 255, 255, 0.86) !important;
+  border-color: rgba(15, 23, 42, 0.1) !important;
+  color: #0f172a !important;
+}
+
+:root[data-theme="light"] .sales-line-chart,
+:root[data-theme="light"] .leader-bars,
+:root[data-theme="light"] .accounting-bar-chart,
+:root[data-theme="light"] .mini-chart,
+:root[data-theme="light"] .bar-chart {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.78), 0 14px 32px rgba(15, 23, 42, 0.06) !important;
+}
+
+:root[data-theme="light"] .sales-line-chart::after,
+:root[data-theme="light"] .leader-bars::after,
+:root[data-theme="light"] .accounting-bar-chart::after {
+  background: linear-gradient(100deg, transparent 0%, rgba(20, 184, 166, 0.04) 42%, rgba(59, 130, 246, 0.06) 50%, rgba(20, 184, 166, 0.04) 58%, transparent 100%) !important;
+}
+
+:root[data-theme="light"] .content :where(.panel, .metric-card, .dashboard-widget, .dashboard-kpi, .dashboard-command-bar, .dashboard-widget-picker, .calendar-agenda, .date-time-picker, .tire-setup-fields, .tire-search-panel, .table-wrap, .accounting-card, .accounting-chart-card) :where(h1, h2, h3, h4, strong, b, label, th, td) {
+  color: #0f172a !important;
+}
+
+:root[data-theme="light"] .content :where(.panel, .metric-card, .dashboard-widget, .dashboard-kpi, .dashboard-command-bar, .dashboard-widget-picker, .calendar-agenda, .date-time-picker, .tire-setup-fields, .tire-search-panel, .table-wrap, .accounting-card, .accounting-chart-card) :where(p, small, span, em) {
+  color: #64748b !important;
+}
+
+:root[data-theme="light"] .topbar h2,
+:root[data-theme="light"] .dashboard-command-bar h3,
+:root[data-theme="light"] .dashboard-widget-picker h3,
+:root[data-theme="light"] .dashboard-widget-head h3,
+:root[data-theme="light"] .dashboard-calendar-title h3,
+:root[data-theme="light"] .calendar-header h3,
+:root[data-theme="light"] .calendar-agenda h4,
+:root[data-theme="light"] .sales-chart-header > strong,
+:root[data-theme="light"] .analytics-panel h3,
+:root[data-theme="light"] .activity-title h3,
+:root[data-theme="light"] .today-panel-header h3,
+:root[data-theme="light"] .section-toolbar h3,
+:root[data-theme="light"] .dashboard-kpi strong,
+:root[data-theme="light"] .dashboard-health-row strong,
+:root[data-theme="light"] .dashboard-list-row strong,
+:root[data-theme="light"] .dashboard-location-row strong,
+:root[data-theme="light"] .dashboard-empty strong,
+:root[data-theme="light"] .activity-row strong,
+:root[data-theme="light"] .agenda-item span,
+:root[data-theme="light"] .day-view-slot strong,
+:root[data-theme="light"] .leader-bar-label span,
+:root[data-theme="light"] .leader-bar-label strong,
+:root[data-theme="light"] .bar-row strong,
+:root[data-theme="light"] .donut-center strong,
+:root[data-theme="light"] .donut-legend-row strong,
+:root[data-theme="light"] .accounting-donut-legend strong,
+:root[data-theme="light"] .table-pagination strong,
+:root[data-theme="light"] .tire-search-result strong,
+:root[data-theme="light"] th,
+:root[data-theme="light"] td {
+  color: #0f172a !important;
+}
+
+:root[data-theme="light"] .dashboard-kpi > div > span,
+:root[data-theme="light"] .dashboard-kpi > div > small,
+:root[data-theme="light"] .dashboard-progress-row span,
+:root[data-theme="light"] .dashboard-list-row span,
+:root[data-theme="light"] .dashboard-location-row span,
+:root[data-theme="light"] .dashboard-health-row span,
+:root[data-theme="light"] .activity-row span,
+:root[data-theme="light"] .agenda-item small,
+:root[data-theme="light"] .day-view-slot span,
+:root[data-theme="light"] .day-view-slot small,
+:root[data-theme="light"] .leader-bar-label small,
+:root[data-theme="light"] .donut-center span,
+:root[data-theme="light"] .donut-legend-row small,
+:root[data-theme="light"] .accounting-donut-legend small,
+:root[data-theme="light"] .table-toolbar > span,
+:root[data-theme="light"] .table-pagination,
+:root[data-theme="light"] .tire-search-result small,
+:root[data-theme="light"] .tire-search-results > span,
+:root[data-theme="light"] label span {
+  color: #64748b !important;
+}
+
+:root[data-theme="light"] input,
+:root[data-theme="light"] select,
+:root[data-theme="light"] textarea,
+:root[data-theme="light"] .table-search input,
+:root[data-theme="light"] .date-time-fields input,
+:root[data-theme="light"] .tire-import-form input[type="file"] {
+  background: rgba(248, 250, 252, 0.95) !important;
+  border-color: rgba(15, 23, 42, 0.14) !important;
+  color: #0f172a !important;
+  color-scheme: light !important;
+}
+
+:root[data-theme="light"] input::placeholder,
+:root[data-theme="light"] textarea::placeholder {
+  color: #94a3b8 !important;
+}
+
+:root[data-theme="light"] input:disabled,
+:root[data-theme="light"] select:disabled,
+:root[data-theme="light"] textarea:disabled,
+:root[data-theme="light"] .tire-setup-fields.disabled {
+  background: rgba(226, 232, 240, 0.7) !important;
+  color: #64748b !important;
+  opacity: 1 !important;
+}
+
+:root[data-theme="light"] .date-time-picker legend,
+:root[data-theme="light"] .tire-setup-fields legend,
+:root[data-theme="light"] .invoice-items-editor legend {
+  background: #ffffff !important;
+  border-color: rgba(15, 23, 42, 0.12) !important;
+  color: #334155 !important;
+}
+
+:root[data-theme="light"] .calendar-day.muted {
+  background: rgba(241, 245, 249, 0.88) !important;
+  color: #94a3b8 !important;
+}
+
+:root[data-theme="light"] .calendar-day.today {
+  border-color: rgba(13, 148, 136, 0.52) !important;
+  box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.08) !important;
+}
+
+:root[data-theme="light"] .calendar-day.selected,
+:root[data-theme="light"] .day-view-slot.selected {
+  background: linear-gradient(135deg, rgba(219, 234, 254, 0.9), rgba(204, 251, 241, 0.9)) !important;
+  border-color: rgba(37, 99, 235, 0.38) !important;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1) !important;
+}
+
+:root[data-theme="light"] .calendar-event {
+  background: #e2e8f0 !important;
+  border-color: rgba(71, 85, 105, 0.15) !important;
+  color: #334155 !important;
+}
+
+:root[data-theme="light"] .calendar-event.event-blue {
+  background: #dbeafe !important;
+  border-color: rgba(37, 99, 235, 0.2) !important;
+  color: #1d4ed8 !important;
+}
+
+:root[data-theme="light"] .calendar-event.event-purple {
+  background: #f3e8ff !important;
+  border-color: rgba(126, 34, 206, 0.18) !important;
+  color: #7e22ce !important;
+}
+
+:root[data-theme="light"] .calendar-event.event-green {
+  background: #dcfce7 !important;
+  border-color: rgba(21, 128, 61, 0.18) !important;
+  color: #15803d !important;
+}
+
+:root[data-theme="light"] .calendar-event.event-red {
+  background: #fee2e2 !important;
+  border-color: rgba(185, 28, 28, 0.18) !important;
+  color: #b91c1c !important;
+}
+
+:root[data-theme="light"] .calendar-event.event-gray,
+:root[data-theme="light"] .calendar-event.more {
+  background: #f1f5f9 !important;
+  border-color: rgba(100, 116, 139, 0.12) !important;
+  color: #475569 !important;
+}
+
+:root[data-theme="light"] .day-view-slot.free {
+  background: linear-gradient(135deg, rgba(204, 251, 241, 0.86), rgba(255, 255, 255, 0.92)) !important;
+}
+
+:root[data-theme="light"] .day-view-slot.booked {
+  background: linear-gradient(135deg, rgba(254, 226, 226, 0.9), rgba(255, 255, 255, 0.92)) !important;
+  border-color: rgba(220, 38, 38, 0.2) !important;
+}
+
+:root[data-theme="light"] .appointment-status {
+  background: #e0e7ff !important;
+  border-color: rgba(67, 56, 202, 0.18) !important;
+  color: #4338ca !important;
+}
+
+:root[data-theme="light"] .appointment-status.completed {
+  background: #dcfce7 !important;
+  border-color: rgba(21, 128, 61, 0.18) !important;
+  color: #15803d !important;
+}
+
+:root[data-theme="light"] .appointment-status.cancelled {
+  background: #fee2e2 !important;
+  border-color: rgba(185, 28, 28, 0.18) !important;
+  color: #b91c1c !important;
+}
+
+:root[data-theme="light"] .time-slots button:hover,
+:root[data-theme="light"] .time-slots button.selected {
+  background: #2563eb !important;
+  border-color: #2563eb !important;
+  color: #ffffff !important;
+}
+
+:root[data-theme="light"] .time-slots button.booked {
+  background: #fee2e2 !important;
+  border-color: rgba(185, 28, 28, 0.18) !important;
+  color: #b91c1c !important;
+}
+
+:root[data-theme="light"] .primary-button,
+:root[data-theme="light"] .time-slots button.selected {
+  color: #ffffff !important;
+}
+
+:root[data-theme="light"] .ghost-button,
+:root[data-theme="light"] .table-pagination button,
+:root[data-theme="light"] .tire-search-result button,
+:root[data-theme="light"] .result-actions button,
+:root[data-theme="light"] .location-scope-menu button {
+  background: rgba(255, 255, 255, 0.9) !important;
+  border-color: rgba(15, 23, 42, 0.12) !important;
+  color: #1f2937 !important;
+}
+
+:root[data-theme="light"] .ghost-button:hover,
+:root[data-theme="light"] .table-pagination button:hover,
+:root[data-theme="light"] .tire-search-result button:hover,
+:root[data-theme="light"] .result-actions button:hover,
+:root[data-theme="light"] .location-scope-menu button:hover,
+:root[data-theme="light"] .location-scope-menu button.selected {
+  background: rgba(20, 184, 166, 0.1) !important;
+  border-color: rgba(13, 148, 136, 0.22) !important;
+  color: #0f766e !important;
+}
+
+:root[data-theme="light"] .danger-button {
+  background: #fee2e2 !important;
+  border-color: rgba(185, 28, 28, 0.18) !important;
+  color: #b91c1c !important;
+}
+
+:root[data-theme="light"] .dashboard-progress-track,
+:root[data-theme="light"] .bar-track,
+:root[data-theme="light"] .leader-bar-track {
+  background: rgba(226, 232, 240, 0.82) !important;
+  border-color: rgba(15, 23, 42, 0.08) !important;
+}
+
+:root[data-theme="light"] .donut-center,
+:root[data-theme="light"] .accounting-donut-visual {
+  background: radial-gradient(circle, rgba(20, 184, 166, 0.14) 0%, rgba(255, 255, 255, 0.92) 58%, rgba(219, 234, 254, 0.52) 100%) !important;
+}
+
+:root[data-theme="light"] .sales-grid-line,
+:root[data-theme="light"] .recharts-cartesian-grid line {
+  stroke: rgba(15, 23, 42, 0.1) !important;
+}
+
+:root[data-theme="light"] .sales-point circle {
+  fill: #ffffff !important;
+  stroke: #0f766e !important;
+}
+
+:root[data-theme="light"] .sales-axis,
+:root[data-theme="light"] .recharts-text,
+:root[data-theme="light"] .recharts-cartesian-axis-tick-value {
+  color: #64748b !important;
+  fill: #64748b !important;
+}
+
+:root[data-theme="light"] .recharts-default-tooltip {
+  background: rgba(255, 255, 255, 0.98) !important;
+  border: 1px solid rgba(15, 23, 42, 0.12) !important;
+  border-radius: 10px !important;
+  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.12) !important;
+  color: #0f172a !important;
+}
+
+:root[data-theme="light"] .recharts-tooltip-label,
+:root[data-theme="light"] .recharts-tooltip-item,
+:root[data-theme="light"] .recharts-tooltip-item-name,
+:root[data-theme="light"] .recharts-tooltip-item-value {
+  color: #0f172a !important;
+}
+
+:root[data-theme="light"] th {
+  background: rgba(241, 245, 249, 0.96) !important;
+  color: #475569 !important;
+}
+
+:root[data-theme="light"] td {
+  background: rgba(255, 255, 255, 0.52) !important;
+  border-bottom-color: rgba(15, 23, 42, 0.07) !important;
+}
+
+:root[data-theme="light"] tr:hover td {
+  background: rgba(204, 251, 241, 0.42) !important;
+  box-shadow: inset 0 1px 0 rgba(13, 148, 136, 0.08), inset 0 -1px 0 rgba(13, 148, 136, 0.08) !important;
+}
+
+:root[data-theme="light"] td.urgent-stock-cell,
+:root[data-theme="light"] .urgent-stock-text,
+:root[data-theme="light"] .dashboard-list-row.low-stock-pulse > div:last-child strong {
+  color: #b91c1c !important;
+}
+
+:root[data-theme="light"] td.urgent-stock-cell {
+  background: #fee2e2 !important;
+}
+
+:root[data-theme="light"] .dashboard-list-row.low-stock-pulse {
+  background: rgba(254, 226, 226, 0.9) !important;
+  border-color: rgba(185, 28, 28, 0.18) !important;
+}
+
+:root[data-theme="light"] .condition-pill.new {
+  background: #ccfbf1 !important;
+  border-color: rgba(13, 148, 136, 0.2) !important;
+  color: #0f766e !important;
+}
+
+:root[data-theme="light"] .condition-pill.used {
+  background: #fef3c7 !important;
+  border-color: rgba(180, 83, 9, 0.18) !important;
+  color: #92400e !important;
+}
+
+:root[data-theme="light"] .warning-chip,
+:root[data-theme="light"] .status-badge,
+:root[data-theme="light"] .appointment-status,
+:root[data-theme="light"] .condition-pill {
+  text-shadow: none !important;
+}
+
+:root[data-theme="light"] .activity-feed-list button,
+:root[data-theme="light"] .range-inputs input {
+  background: #ffffff !important;
+  border-color: rgba(15, 23, 42, 0.12) !important;
+  color: #0f172a !important;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.055) !important;
+}
+
+:root[data-theme="light"] .activity-feed-list button:hover {
+  background: #f0fdfa !important;
+  border-color: rgba(13, 148, 136, 0.22) !important;
+}
+
+:root[data-theme="light"] .activity-feed-list button strong {
+  color: #0f172a !important;
+}
+
+:root[data-theme="light"] .activity-feed-list button span {
+  color: #64748b !important;
+}
+
+/* Broad light-mode polish across auth, portal, platform, payroll, accounting, and operational pages. */
+:root[data-theme="light"] {
+  --light-page: #f8fafc;
+  --light-surface: #ffffff;
+  --light-surface-soft: #f8fafc;
+  --light-surface-tint: #f0fdfa;
+  --light-border: rgba(15, 23, 42, 0.1);
+  --light-border-strong: rgba(15, 23, 42, 0.16);
+  --light-text: #0f172a;
+  --light-muted: #475569;
+  --light-subtle: #64748b;
+}
+
+:root[data-theme="light"] body,
+:root[data-theme="light"] .login-shell,
+:root[data-theme="light"] .public-booking-shell,
+:root[data-theme="light"] .customer-portal {
+  background:
+    radial-gradient(circle at 14% 8%, rgba(20, 184, 166, 0.08), transparent 30%),
+    radial-gradient(circle at 88% 0%, rgba(59, 130, 246, 0.08), transparent 28%),
+    var(--light-page) !important;
+  color: var(--light-text) !important;
+}
+
+:root[data-theme="light"] :where(
+  .sidebar,
+  .topbar,
+  .login-panel,
+  .public-booking-panel,
+  .public-slot-picker,
+  .customer-slot-picker,
+  .customer-card-form,
+  .customer-notification-panel,
+  .customer-notice,
+  .customer-detail-panel,
+  .customer-detail-stats div,
+  .customer-unpaid-invoice,
+  .customer-notice-composer,
+  .portal-payment-alert,
+  .platform-link-panel,
+  .platform-link-controls,
+  .location-management-panel,
+  .location-chip,
+  .inventory-filters,
+  .tire-import-panel,
+  .tire-import-feedback,
+  .form-banner,
+  .customer-match-panel,
+  .customer-match-panel button,
+  .invoice-source,
+  .invoice-source label,
+  .invoice-total-preview,
+  .printable-invoice,
+  .invoice-toolbar,
+  .empty-state,
+  .audit-log-panel,
+  .audit-summary-card,
+  .tenant-warning,
+  .attendance-admin-controls,
+  .attendance-range-form,
+  .attendance-resolve-actions,
+  .employee-clock-panel,
+  .payroll-period-form,
+  .payroll-schedule-panel,
+  .payroll-shifts-panel,
+  .payroll-loans-panel,
+  .payroll-adjustments-panel,
+  .payroll-record-card,
+  .payroll-breakdown-grid > *,
+  .payroll-adjustment-line,
+  .payroll-record-notes,
+  .payroll-slot-day,
+  .payroll-slot-card,
+  .payroll-signup-pill,
+  .payroll-period-picker,
+  .accounting-form-card,
+  .accounting-field-grid,
+  .account-type-panel,
+  .account-type-list div,
+  .ledger-account-toolbar,
+  .report-statement-strip,
+  .report-statement-metrics div,
+  .top-vendor-list,
+  .vendor-summary-grid > *,
+  .vendors-stack,
+  .settings-preview,
+  .settings-terms,
+  .logo-upload-control,
+  .tire-drawer,
+  .drawer-stats div,
+  .drawer-meta,
+  .table-search,
+  .global-search,
+  .global-results,
+  .notification-menu,
+  .profile-chip,
+  .icon-button,
+  .sidebar-subnav button,
+  .tabs button,
+  .segmented-control,
+  .widget-toggle,
+  .activity-panel,
+  .activity-row,
+  .follow-up-card,
+  .leader-bars,
+  .donut-legend-row,
+  .bar-track,
+  .leader-bar-track,
+  .dashboard-progress-track
+) {
+  background: var(--light-surface) !important;
+  border-color: var(--light-border) !important;
+  color: var(--light-text) !important;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.055) !important;
+}
+
+:root[data-theme="light"] :where(.panel, .metric-card, .table-wrap, .accounting-table-card, .dashboard-widget, .dashboard-kpi) {
+  background: var(--light-surface) !important;
+  border-color: var(--light-border) !important;
+}
+
+:root[data-theme="light"] :where(.section-toolbar, .table-toolbar, .toolbar-actions, .topbar-actions) {
+  background: transparent !important;
+  color: var(--light-text) !important;
+}
+
+:root[data-theme="light"] :where(
+  .app-shell,
+  .login-shell,
+  .public-booking-shell,
+  .customer-portal,
+  .content,
+  .work-area,
+  .accounting-page,
+  .payroll-page,
+  .attendance-page,
+  .employee-portal
+) :where(h1, h2, h3, h4, strong, b, label, th, td, .profile-chip-text strong) {
+  color: var(--light-text) !important;
+}
+
+:root[data-theme="light"] :where(
+  .app-shell,
+  .login-shell,
+  .public-booking-shell,
+  .customer-portal,
+  .content,
+  .work-area,
+  .accounting-page,
+  .payroll-page,
+  .attendance-page,
+  .employee-portal
+) :where(p, small, span, .eyebrow, .empty-note, .mini-status, .profile-chip-text small, .table-toolbar > span) {
+  color: var(--light-subtle) !important;
+}
+
+:root[data-theme="light"] :where(input, select, textarea, .public-notes textarea, .customer-notes textarea) {
+  background: var(--light-surface-soft) !important;
+  border-color: var(--light-border-strong) !important;
+  color: var(--light-text) !important;
+  color-scheme: light !important;
+}
+
+:root[data-theme="light"] :where(input, textarea)::placeholder {
+  color: #94a3b8 !important;
+}
+
+:root[data-theme="light"] .brand-mark,
+:root[data-theme="light"] .metric-icon,
+:root[data-theme="light"] .dashboard-kpi-icon,
+:root[data-theme="light"] .location-scope-icon {
+  background: linear-gradient(135deg, rgba(20, 184, 166, 0.14), rgba(59, 130, 246, 0.12)) !important;
+  border-color: rgba(13, 148, 136, 0.18) !important;
+  color: #0f766e !important;
+}
+
+:root[data-theme="light"] .tabs button.active,
+:root[data-theme="light"] .tabs button:hover,
+:root[data-theme="light"] .sidebar-subnav button.active,
+:root[data-theme="light"] .sidebar-subnav button:hover,
+:root[data-theme="light"] .widget-toggle.active,
+:root[data-theme="light"] .location-scope-menu button.selected,
+:root[data-theme="light"] .global-results button:hover,
+:root[data-theme="light"] .notification-menu button:hover {
+  background: var(--light-surface-tint) !important;
+  border-color: rgba(13, 148, 136, 0.2) !important;
+  color: #0f766e !important;
+}
+
+:root[data-theme="light"] .sidebar-booking-link,
+:root[data-theme="light"] .form-banner,
+:root[data-theme="light"] .invoice-source {
+  background: linear-gradient(135deg, #ecfeff, #eff6ff) !important;
+  border-color: rgba(14, 116, 144, 0.18) !important;
+  color: #0f766e !important;
+}
+
+:root[data-theme="light"] .alert,
+:root[data-theme="light"] .loading {
+  background: #fffbeb !important;
+  border-color: rgba(180, 83, 9, 0.2) !important;
+  color: #92400e !important;
+}
+
+:root[data-theme="light"] .alert.error,
+:root[data-theme="light"] .tire-import-errors {
+  background: #fef2f2 !important;
+  border-color: rgba(185, 28, 28, 0.18) !important;
+  color: #b91c1c !important;
+}
+
+:root[data-theme="light"] .success-alert {
+  background: #ecfdf5 !important;
+  border-color: rgba(21, 128, 61, 0.18) !important;
+  color: #047857 !important;
+}
+
+:root[data-theme="light"] .portal-payment-alert {
+  background: #fffbeb !important;
+  border-color: rgba(180, 83, 9, 0.2) !important;
+}
+
+:root[data-theme="light"] .portal-payment-alert strong {
+  color: #92400e !important;
+}
+
+:root[data-theme="light"] .public-slot-picker legend,
+:root[data-theme="light"] .customer-slot-picker legend,
+:root[data-theme="light"] .date-time-picker legend,
+:root[data-theme="light"] .tire-setup-fields legend,
+:root[data-theme="light"] .invoice-items-editor legend {
+  background: #f8fafc !important;
+  border-color: var(--light-border) !important;
+  color: var(--light-muted) !important;
+}
+
+:root[data-theme="light"] .invoice-document,
+:root[data-theme="light"] .invoice-document * {
+  box-shadow: none !important;
+}
+
+:root[data-theme="light"] .invoice-document {
+  background: #ffffff !important;
+  border: 1px solid #e5e7eb !important;
+  color: #111827 !important;
+}
+
+:root[data-theme="light"] .invoice-document :where(h2, strong, th, td) {
+  color: #111827 !important;
+}
+
+:root[data-theme="light"] .invoice-document :where(p, span, .invoice-terms) {
+  color: #4b5563 !important;
+}
+
+:root[data-theme="light"] .invoice-lines th {
+  background: #f8fafc !important;
+  color: #475569 !important;
+}
+
+:root[data-theme="light"] .primary-button {
+  background: linear-gradient(135deg, #0f766e, #2563eb) !important;
+  border-color: transparent !important;
+  color: #ffffff !important;
+}
+
+:root[data-theme="light"] .danger-button {
+  background: #fef2f2 !important;
+  border-color: rgba(185, 28, 28, 0.18) !important;
+  color: #b91c1c !important;
+}
+
+:root[data-theme="light"] .ghost-button,
+:root[data-theme="light"] .theme-toggle,
+:root[data-theme="light"] .table-pagination button,
+:root[data-theme="light"] .result-actions button,
+:root[data-theme="light"] .tire-search-result button {
+  background: #ffffff !important;
+  border-color: var(--light-border-strong) !important;
+  color: var(--light-text) !important;
+}
+
+:root[data-theme="light"] .status-badge,
+:root[data-theme="light"] .warning-chip,
+:root[data-theme="light"] .condition-pill,
+:root[data-theme="light"] .customer-alert-pill,
+:root[data-theme="light"] .appointment-status,
+:root[data-theme="light"] .calendar-event,
+:root[data-theme="light"] .payroll-signup-pill {
+  box-shadow: none !important;
+  text-shadow: none !important;
+}
+
+:root[data-theme="light"] .monarch-footer,
+:root[data-theme="light"] .login-footer {
+  border-color: var(--light-border) !important;
+  color: var(--light-subtle) !important;
+}
+
+:root[data-theme="light"] .monarch-footer strong,
+:root[data-theme="light"] .login-footer a,
+:root[data-theme="light"] .monarch-footer a {
+  color: #0f766e !important;
+}
+
+:root[data-theme="light"] .help-tip-content {
+  background: #ffffff !important;
+  border-color: var(--light-border-strong) !important;
+  color: var(--light-text) !important;
+  box-shadow: 0 16px 32px rgba(15, 23, 42, 0.14) !important;
 }
 
 @media print {

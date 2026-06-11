@@ -18,6 +18,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PositiveOrZero;
@@ -52,6 +53,9 @@ public class Appointment {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "location_id")
     private ShopLocation shopLocation;
+
+    @Transient
+    private Long requestedLocationId;
 
     @Column(name = "tire_size")
     private String tireSize;
@@ -190,6 +194,14 @@ public class Appointment {
 
     public Long getLocationId() {
         return shopLocation == null ? null : shopLocation.getId();
+    }
+
+    public void setLocationId(Long locationId) {
+        this.requestedLocationId = locationId;
+    }
+
+    public Long getRequestedLocationId() {
+        return requestedLocationId;
     }
 
     public String getLocationName() {

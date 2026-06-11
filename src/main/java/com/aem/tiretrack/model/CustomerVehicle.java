@@ -6,6 +6,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -25,6 +26,16 @@ public class CustomerVehicle {
     @ManyToOne
     @JoinColumn(name = "customer_id", nullable = false)
     private User customer;
+
+    @JsonIgnore
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "shop_id")
+    private Shop shop;
+
+    @JsonIgnore
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "location_id")
+    private ShopLocation shopLocation;
 
     private String nickname;
 
@@ -60,6 +71,14 @@ public class CustomerVehicle {
     public Long getId() { return id; }
     public User getCustomer() { return customer; }
     public void setCustomer(User customer) { this.customer = customer; }
+    public Shop getShop() { return shop; }
+    public void setShop(Shop shop) { this.shop = shop; }
+    public ShopLocation getShopLocation() { return shopLocation; }
+    public void setShopLocation(ShopLocation shopLocation) { this.shopLocation = shopLocation; }
+    public Long getShopId() { return shop == null ? null : shop.getId(); }
+    public String getShopName() { return shop == null ? null : shop.getName(); }
+    public Long getLocationId() { return shopLocation == null ? null : shopLocation.getId(); }
+    public String getLocationName() { return shopLocation == null ? null : shopLocation.getName(); }
     public String getNickname() { return nickname; }
     public void setNickname(String nickname) { this.nickname = nickname; }
     public String getYear() { return year; }

@@ -18,8 +18,12 @@ import com.aem.tiretrack.dto.auth.RegisterRequest;
 import com.aem.tiretrack.dto.auth.RefreshTokenRequest;
 import com.aem.tiretrack.enums.UserRole;
 import com.aem.tiretrack.model.RefreshToken;
+import com.aem.tiretrack.model.Shop;
+import com.aem.tiretrack.model.ShopLocation;
 import com.aem.tiretrack.model.User;
 import com.aem.tiretrack.repository.RefreshTokenRepository;
+import com.aem.tiretrack.repository.ShopLocationRepository;
+import com.aem.tiretrack.repository.ShopRepository;
 import com.aem.tiretrack.repository.UserRepository;
 import com.aem.tiretrack.security.JwtService;
 
@@ -31,6 +35,8 @@ public class AuthService {
     private final JwtService jwtService;
     private final AccountValidationService accountValidationService;
     private final ShopContextService shopContextService;
+    private final ShopRepository shopRepository;
+    private final ShopLocationRepository shopLocationRepository;
 
     @Value("${refresh.token.expiration:604800000}")
     private long refreshTokenExpiration;
@@ -41,13 +47,17 @@ public class AuthService {
             PasswordEncoder passwordEncoder,
             JwtService jwtService,
             AccountValidationService accountValidationService,
-            ShopContextService shopContextService) {
+            ShopContextService shopContextService,
+            ShopRepository shopRepository,
+            ShopLocationRepository shopLocationRepository) {
         this.userRepository = userRepository;
         this.refreshTokenRepository = refreshTokenRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.accountValidationService = accountValidationService;
         this.shopContextService = shopContextService;
+        this.shopRepository = shopRepository;
+        this.shopLocationRepository = shopLocationRepository;
     }
 
     @Transactional
@@ -67,6 +77,7 @@ public class AuthService {
         user.setPhone(request.getPhone());
         user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
         user.setRole(UserRole.CUSTOMER);
+        applyCustomerShopSelection(user, request);
 
         User savedUser = userRepository.save(user);
 
@@ -147,10 +158,48 @@ public class AuthService {
                 refreshToken,
                 user.getShop() == null ? null : user.getShop().getId(),
                 user.getShop() == null ? null : user.getShop().getName(),
+                user.getShop() == null ? null : user.getShop().getSubscriptionPlan(),
+                user.getShop() != null && user.getShop().hasMultiLocationAccess(),
+                isShopOwner(user),
                 user.getShopLocation() == null ? null : user.getShopLocation().getId(),
                 user.getShopLocation() == null ? null : user.getShopLocation().getName(),
                 shopContextService.getAccessibleLocationIds(user),
                 permissionsFor(user));
+    }
+
+    private void applyCustomerShopSelection(User user, RegisterRequest request) {
+        Shop shop = null;
+        boolean platformHasActiveShops = !shopRepository.findByActiveTrueOrderByNameAsc().isEmpty();
+        if (request.getShopId() == null) {
+            if (platformHasActiveShops) {
+                throw new IllegalArgumentException("Choose a shop before creating a customer account.");
+            }
+        } else {
+            shop = shopRepository.findById(request.getShopId())
+                    .filter(Shop::isActive)
+                    .orElseThrow(() -> new IllegalArgumentException("Shop not found"));
+            user.setShop(shop);
+        }
+
+        if (shop != null && request.getLocationId() == null) {
+            boolean hasPublicLocations = shopLocationRepository.findByShop_IdAndActiveTrueAndCustomerFacingTrue(shop.getId()).stream()
+                    .anyMatch(shopContextService::canUseCustomerFacingLocation);
+            if (hasPublicLocations) {
+                throw new IllegalArgumentException("Choose a customer-facing location before creating a customer account.");
+            }
+        }
+
+        if (request.getLocationId() != null) {
+            ShopLocation location = shopContextService.resolveAccessibleLocation(request.getLocationId(), shop, true)
+                    .orElseThrow(() -> new IllegalArgumentException("Shop location is required"));
+            if (!shopContextService.canUseCustomerFacingLocation(location)) {
+                throw new IllegalArgumentException("This location is not available for customer registration.");
+            }
+            user.setShopLocation(location);
+            if (user.getShop() == null) {
+                user.setShop(location.getShop());
+            }
+        }
     }
 
     private List<String> permissionsFor(User user) {
@@ -158,8 +207,16 @@ public class AuthService {
             return List.of("PLATFORM_MANAGE");
         }
 
+        if (user.getRole() == UserRole.OWNER) {
+            return List.of("SHOP_OWNER", "ALL_LOCATIONS", "OWNER_DASHBOARD");
+        }
+
+        if (user.getRole() == UserRole.ADMIN && isShopOwner(user)) {
+            return List.of("SHOP_OWNER", "ALL_LOCATIONS", "LEGACY_ADMIN_OWNER");
+        }
+
         if (user.getRole() == UserRole.ADMIN && user.getShopLocation() == null) {
-            return List.of("SHOP_OWNER", "ALL_LOCATIONS");
+            return List.of("SHOP_ADMIN");
         }
 
         if (user.getRole() == UserRole.ADMIN) {
@@ -171,5 +228,17 @@ public class AuthService {
         }
 
         return List.of("CUSTOMER_PORTAL");
+    }
+
+    private boolean isShopOwner(User user) {
+        Shop shop = user.getShop();
+
+        if (user.getRole() == UserRole.OWNER) {
+            return true;
+        }
+
+        return shop != null
+                && shop.getOwnerAdminId() != null
+                && shop.getOwnerAdminId().equals(user.getId());
     }
 }

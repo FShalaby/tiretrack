@@ -13,6 +13,8 @@ import org.springframework.web.bind.annotation.RestController;
 import com.aem.tiretrack.dto.InvoiceResponse;
 import com.aem.tiretrack.dto.WorkOrderRequest;
 import com.aem.tiretrack.dto.WorkOrderResponse;
+import com.aem.tiretrack.model.ShopLocation;
+import com.aem.tiretrack.service.ShopContextService;
 import com.aem.tiretrack.service.WorkOrderService;
 
 import jakarta.validation.Valid;
@@ -21,14 +23,18 @@ import jakarta.validation.Valid;
 @RequestMapping("/api/work-orders")
 public class WorkOrderController {
     private final WorkOrderService workOrderService;
+    private final ShopContextService shopContextService;
 
-    public WorkOrderController(WorkOrderService workOrderService) {
+    public WorkOrderController(WorkOrderService workOrderService, ShopContextService shopContextService) {
         this.workOrderService = workOrderService;
+        this.shopContextService = shopContextService;
     }
 
     @GetMapping
-    public List<WorkOrderResponse> getAllWorkOrders() {
+    public List<WorkOrderResponse> getAllWorkOrders(@org.springframework.web.bind.annotation.RequestParam(required = false) Long locationId) {
+        ShopLocation location = shopContextService.resolveAccessibleLocation(locationId, null, false).orElse(null);
         return workOrderService.getAllWorkOrders().stream()
+                .filter(workOrder -> matchesLocation(workOrder.getShopLocation(), location))
                 .map(WorkOrderResponse::new)
                 .toList();
     }
@@ -83,5 +89,13 @@ public class WorkOrderController {
     @PostMapping("/{id}/convert-to-invoice")
     public InvoiceResponse convertToInvoice(@PathVariable Long id) {
         return new InvoiceResponse(workOrderService.convertToInvoice(id));
+    }
+
+    private boolean matchesLocation(ShopLocation resourceLocation, ShopLocation requestedLocation) {
+        if (requestedLocation == null) {
+            return true;
+        }
+
+        return resourceLocation != null && requestedLocation.getId().equals(resourceLocation.getId());
     }
 }

@@ -2,6 +2,7 @@ package com.aem.tiretrack.service;
 
 import java.util.List;
 
+import org.springframework.data.domain.PageRequest;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -24,8 +25,9 @@ public class AuditLogService {
             return auditLogRepository.findTop25ByOrderByCreatedAtDesc();
         }
 
-        return auditLogRepository.findTop25ByShop_IdOrderByCreatedAtDesc(
-                shopContextService.requireShopForAdminOrEmployee().getId());
+        return auditLogRepository.findLatestVisibleForShop(
+                shopContextService.requireShopForAdminOrEmployee().getId(),
+                PageRequest.of(0, 25));
     }
 
     public void record(String action, String entityType, Long entityId, String message) {

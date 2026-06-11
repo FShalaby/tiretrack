@@ -8,6 +8,7 @@ import com.aem.tiretrack.model.Invoice;
 
 public class CustomerInvoiceSummary {
     private Long id;
+    private String invoiceNumber;
     private String status;
     private BigDecimal total;
     private BigDecimal amountPaid;
@@ -18,6 +19,7 @@ public class CustomerInvoiceSummary {
 
     public CustomerInvoiceSummary(Invoice invoice) {
         this.id = invoice.getId();
+        this.invoiceNumber = formatInvoiceNumber(invoice.getId());
         this.status = invoice.getStatus();
         this.total = invoice.getTotal();
         BigDecimal safeTotal = invoice.getTotal() == null ? BigDecimal.ZERO : invoice.getTotal();
@@ -33,6 +35,7 @@ public class CustomerInvoiceSummary {
     }
 
     public Long getId() { return id; }
+    public String getInvoiceNumber() { return invoiceNumber; }
     public String getStatus() { return status; }
     public BigDecimal getTotal() { return total; }
     public BigDecimal getAmountPaid() { return amountPaid; }
@@ -40,4 +43,8 @@ public class CustomerInvoiceSummary {
     public LocalDate getDueDate() { return dueDate; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public String getVehicle() { return vehicle; }
+
+    private String formatInvoiceNumber(Long id) {
+        return id == null ? null : "INV-" + String.format("%06d", id);
+    }
 }

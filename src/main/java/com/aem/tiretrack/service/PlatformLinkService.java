@@ -155,6 +155,9 @@ public class PlatformLinkService {
             if (user.getRole() == UserRole.SUPER_ADMIN && assignment.shop() != null) {
                 throw new IllegalArgumentException("SUPER_ADMIN accounts should stay platform-level.");
             }
+            if (user.getRole() == UserRole.OWNER && assignment.location() != null) {
+                throw new IllegalArgumentException("OWNER users belong to the shop, not a single location.");
+            }
             if (assignment.location() != null
                     && user.getRole() != UserRole.ADMIN
                     && user.getRole() != UserRole.EMPLOYEE) {

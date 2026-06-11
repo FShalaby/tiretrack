@@ -17,6 +17,7 @@ import com.aem.tiretrack.model.Appointment;
 import com.aem.tiretrack.model.Invoice;
 import com.aem.tiretrack.model.InvoiceItem;
 import com.aem.tiretrack.model.Shop;
+import com.aem.tiretrack.model.ShopLocation;
 import com.aem.tiretrack.model.Tire;
 import com.aem.tiretrack.model.User;
 import com.aem.tiretrack.model.WorkOrder;
@@ -262,6 +263,19 @@ public class WorkOrderService {
             workOrder.setServiceType(request.getServiceType());
         }
         workOrder.setNotes(request.getNotes());
+
+        if (request.getLocationId() != null) {
+            ShopLocation requestedLocation = shopContextService.resolveAccessibleLocation(
+                    request.getLocationId(),
+                    workOrder.getShop(),
+                    true).orElse(null);
+            if (requestedLocation != null) {
+                workOrder.setShopLocation(requestedLocation);
+                if (workOrder.getShop() == null) {
+                    workOrder.setShop(requestedLocation.getShop());
+                }
+            }
+        }
 
         if (workOrder.getShop() == null) {
             shopContextService.getCurrentTenantShop().ifPresent(workOrder::setShop);

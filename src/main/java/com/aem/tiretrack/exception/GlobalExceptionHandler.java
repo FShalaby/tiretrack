@@ -98,8 +98,8 @@ public class GlobalExceptionHandler {
             HttpServletRequest request) {
         log.warn("Database constraint violation", exception);
         return buildResponse(
-                HttpStatus.CONFLICT,
-                "A record with this value already exists.",
+                dataIntegrityStatus(exception),
+                dataIntegrityMessage(exception),
                 request);
     }
 
@@ -214,5 +214,28 @@ public class GlobalExceptionHandler {
         }
 
         return current.getMessage() == null ? throwable.getMessage() : current.getMessage();
+    }
+
+    private HttpStatus dataIntegrityStatus(DataIntegrityViolationException exception) {
+        String message = rootMessage(exception);
+        if (message != null && message.toLowerCase().contains("data too long")) {
+            return HttpStatus.BAD_REQUEST;
+        }
+        return HttpStatus.CONFLICT;
+    }
+
+    private String dataIntegrityMessage(DataIntegrityViolationException exception) {
+        String message = rootMessage(exception);
+        String normalized = message == null ? "" : message.toLowerCase();
+
+        if (normalized.contains("data too long") && normalized.contains("logo_url")) {
+            return "Logo image is too large to save. Please upload a smaller image.";
+        }
+
+        if (normalized.contains("data too long")) {
+            return "One of the submitted values is too long.";
+        }
+
+        return "A record with this value already exists.";
     }
 }

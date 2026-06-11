@@ -34,6 +34,7 @@ import com.aem.tiretrack.model.JournalEntryLine;
 import com.aem.tiretrack.model.PayrollPeriod;
 import com.aem.tiretrack.model.PayrollRecord;
 import com.aem.tiretrack.model.Shop;
+import com.aem.tiretrack.model.ShopLocation;
 import com.aem.tiretrack.model.User;
 import com.aem.tiretrack.model.Vendor;
 import com.aem.tiretrack.repository.AccountingAccountRepository;
@@ -105,6 +106,10 @@ public class AccountingService {
         return visibleRecentExpenses();
     }
 
+    public List<Expense> getExpenses(Long locationId) {
+        return visibleRecentExpenses(locationId);
+    }
+
     @Transactional
     public Expense createExpense(Expense expense) {
         ensureDefaultAccounts();
@@ -142,6 +147,7 @@ public class AccountingService {
                 + (period == null ? "" : " / " + period.getStartDate() + " to " + period.getEndDate())
                 + (record.getNotes() == null || record.getNotes().isBlank() ? "" : " / " + record.getNotes()));
         expense.setShop(resolvePayrollShop(record));
+        expense.setShopLocation(resolvePayrollLocation(record));
 
         User currentUser = currentUser();
         if (currentUser != null) {
@@ -149,6 +155,9 @@ public class AccountingService {
             expense.setCreatedBy(currentUser.getEmail());
             if (expense.getShop() == null) {
                 expense.setShop(currentUser.getShop());
+            }
+            if (expense.getShopLocation() == null) {
+                expense.setShopLocation(currentUser.getShopLocation());
             }
         }
 
@@ -196,6 +205,7 @@ public class AccountingService {
         entry.setSource("INVOICE_ISSUED");
         applyAdmin(entry, currentAdmin());
         entry.setShop(invoice.getShop());
+        entry.setShopLocation(invoice.getShopLocation());
         BigDecimal total = amount(invoice.getTotal());
         BigDecimal taxAmount = amount(invoice.getTaxAmount());
         BigDecimal revenue = amount(invoice.getSubtotal());
@@ -240,16 +250,21 @@ public class AccountingService {
         entry.setSource(paymentSource);
         applyAdmin(entry, currentAdmin());
         entry.setShop(invoice.getShop());
+        entry.setShopLocation(invoice.getShopLocation());
         addDebit(entry, CASH, paidAmount, invoice.getPaymentMethod() == null ? "Payment received" : invoice.getPaymentMethod());
         addCredit(entry, AR, paidAmount, "Receivable cleared");
         saveBalanced(entry);
     }
 
     public AccountingReport getReport(LocalDate start, LocalDate end) {
+        return getReport(start, end, null);
+    }
+
+    public AccountingReport getReport(LocalDate start, LocalDate end, Long locationId) {
         ensureDefaultAccounts();
-        LocalDate rangeStart = start == null ? LocalDate.now().withDayOfMonth(1) : start;
+        LocalDate rangeStart = start == null ? LocalDate.of(1970, 1, 1) : start;
         LocalDate rangeEnd = end == null ? LocalDate.now() : end;
-        List<JournalEntry> entries = visibleJournalEntriesInRange(rangeStart, rangeEnd);
+        List<JournalEntry> entries = visibleJournalEntriesInRange(rangeStart, rangeEnd, locationId);
         List<AccountBalance> balances = buildBalances(entries);
         List<AccountBalance> profitAndLoss = balances.stream()
                 .filter(balance -> balance.getType() == AccountType.REVENUE || balance.getType() == AccountType.EXPENSE)
@@ -267,7 +282,7 @@ public class AccountingService {
                 balances,
                 profitAndLoss,
                 balanceSheet,
-                visibleRecentExpenses(),
+                visibleRecentExpenses(locationId),
                 entries.stream().limit(25).toList(),
                 visibleVendors(),
                 revenue,
@@ -357,6 +372,7 @@ public class AccountingService {
         entry.setAdminUserId(expense.getAdminUserId());
         entry.setPostedBy(expense.getCreatedBy());
         entry.setShop(expense.getShop());
+        entry.setShopLocation(expense.getShopLocation());
         addDebit(entry, expenseAccountCode(expense), amount(expense.getSubtotal()), expense.getCategory());
         if (amount(expense.getTaxAmount()).compareTo(BigDecimal.ZERO) > 0) {
             addDebit(entry, TAX_RECOVERABLE, amount(expense.getTaxAmount()), "Recoverable tax");
@@ -379,6 +395,7 @@ public class AccountingService {
         entry.setAdminUserId(expense.getAdminUserId());
         entry.setPostedBy(expense.getCreatedBy());
         entry.setShop(expense.getShop());
+        entry.setShopLocation(expense.getShopLocation());
         addDebit(entry, AP, amount(expense.getTotal()), "Payable cleared");
         addCredit(entry, CASH, amount(expense.getTotal()), expense.getPaymentMethod());
         saveBalanced(entry);
@@ -549,7 +566,7 @@ public class AccountingService {
         if (authentication != null && authentication.isAuthenticated() && authentication.getName() != null) {
             User user = userRepository.findByEmail(authentication.getName()).orElse(null);
             if (user != null) {
-                if (user.getRole() == UserRole.ADMIN || user.getRole() == UserRole.EMPLOYEE) {
+                if (user.getRole() == UserRole.OWNER || user.getRole() == UserRole.ADMIN || user.getRole() == UserRole.EMPLOYEE) {
                     shopContextService.requireShopForAdminOrEmployee();
                 }
                 return user;
@@ -578,7 +595,23 @@ public class AccountingService {
         return null;
     }
 
+    private ShopLocation resolvePayrollLocation(PayrollRecord record) {
+        if (record.getPayrollPeriod() != null && record.getPayrollPeriod().getShopLocation() != null) {
+            return record.getPayrollPeriod().getShopLocation();
+        }
+
+        if (record.getEmployee() != null) {
+            return record.getEmployee().getShopLocation();
+        }
+
+        return null;
+    }
+
     private User fallbackAdmin() {
+        List<User> owners = userRepository.findByRoleOrderByCreatedAtDesc(UserRole.OWNER);
+        if (!owners.isEmpty()) {
+            return owners.get(0);
+        }
         List<User> admins = userRepository.findByRoleOrderByCreatedAtDesc(UserRole.ADMIN);
         return admins.isEmpty() ? null : admins.get(0);
     }
@@ -600,7 +633,24 @@ public class AccountingService {
         }
         expense.setAdminUserId(admin.getId());
         expense.setCreatedBy(admin.getEmail());
-        expense.setShop(admin.getShop());
+        if (expense.getShop() == null) {
+            expense.setShop(admin.getShop());
+        }
+        if (expense.getRequestedLocationId() != null) {
+            ShopLocation requestedLocation = shopContextService.resolveAccessibleLocation(
+                    expense.getRequestedLocationId(),
+                    expense.getShop(),
+                    true).orElse(null);
+            if (requestedLocation != null) {
+                expense.setShopLocation(requestedLocation);
+                if (expense.getShop() == null) {
+                    expense.setShop(requestedLocation.getShop());
+                }
+            }
+        }
+        if (expense.getShopLocation() == null) {
+            expense.setShopLocation(admin.getShopLocation());
+        }
     }
 
     private void applyAdmin(JournalEntry entry, User admin) {
@@ -609,7 +659,12 @@ public class AccountingService {
         }
         entry.setAdminUserId(admin.getId());
         entry.setPostedBy(admin.getEmail());
-        entry.setShop(admin.getShop());
+        if (entry.getShop() == null) {
+            entry.setShop(admin.getShop());
+        }
+        if (entry.getShopLocation() == null) {
+            entry.setShopLocation(admin.getShopLocation());
+        }
     }
 
     private void applyAdmin(Vendor vendor, User admin) {
@@ -622,7 +677,7 @@ public class AccountingService {
     }
 
     private void ensureExpenseAccess(Expense expense) {
-        if (!shopContextService.canAccessTenantShop(expense.getShop())) {
+        if (!shopContextService.canAccessTenantResource(expense.getShop(), expense.getShopLocation())) {
             throw new AccessDeniedException("You do not have permission to access this expense.");
         }
     }
@@ -640,8 +695,14 @@ public class AccountingService {
     }
 
     private List<Expense> visibleRecentExpenses() {
+        return visibleRecentExpenses(null);
+    }
+
+    private List<Expense> visibleRecentExpenses(Long locationId) {
+        ShopLocation requestedLocation = shopContextService.resolveAccessibleLocation(locationId, null, false).orElse(null);
         return expenseRepository.findAll().stream()
-                .filter(expense -> shopContextService.canAccessTenantShop(expense.getShop()))
+                .filter(expense -> shopContextService.canAccessTenantResource(expense.getShop(), expense.getShopLocation()))
+                .filter(expense -> matchesLocation(expense.getShopLocation(), requestedLocation))
                 .sorted(Comparator
                         .comparing((Expense expense) -> expense.getExpenseDate() == null ? LocalDate.MIN : expense.getExpenseDate())
                         .reversed()
@@ -660,8 +721,14 @@ public class AccountingService {
     }
 
     private List<JournalEntry> visibleJournalEntriesInRange(LocalDate start, LocalDate end) {
+        return visibleJournalEntriesInRange(start, end, null);
+    }
+
+    private List<JournalEntry> visibleJournalEntriesInRange(LocalDate start, LocalDate end, Long locationId) {
+        ShopLocation requestedLocation = shopContextService.resolveAccessibleLocation(locationId, null, false).orElse(null);
         return journalEntryRepository.findAll().stream()
-                .filter(entry -> shopContextService.canAccessTenantShop(entry.getShop()))
+                .filter(entry -> shopContextService.canAccessTenantResource(entry.getShop(), entry.getShopLocation()))
+                .filter(entry -> matchesLocation(entry.getShopLocation(), requestedLocation))
                 .filter(entry -> entry.getEntryDate() != null)
                 .filter(entry -> !entry.getEntryDate().isBefore(start) && !entry.getEntryDate().isAfter(end))
                 .sorted(Comparator
@@ -669,6 +736,16 @@ public class AccountingService {
                         .reversed()
                         .thenComparing(entry -> entry.getId() == null ? 0L : entry.getId(), Comparator.reverseOrder()))
                 .toList();
+    }
+
+    private boolean matchesLocation(ShopLocation resourceLocation, ShopLocation requestedLocation) {
+        if (requestedLocation == null) {
+            return true;
+        }
+
+        return resourceLocation != null
+                && resourceLocation.getId() != null
+                && resourceLocation.getId().equals(requestedLocation.getId());
     }
 
     private static class RunningBalance {

@@ -21,7 +21,9 @@ import com.aem.tiretrack.dto.PayrollPeriodResponse;
 import com.aem.tiretrack.dto.PayrollRecordNotesRequest;
 import com.aem.tiretrack.dto.PayrollRecordResponse;
 import com.aem.tiretrack.dto.UserResponse;
+import com.aem.tiretrack.model.ShopLocation;
 import com.aem.tiretrack.service.PayrollService;
+import com.aem.tiretrack.service.ShopContextService;
 
 import jakarta.validation.Valid;
 
@@ -30,14 +32,20 @@ import jakarta.validation.Valid;
 public class PayrollController {
 
     private final PayrollService payrollService;
+    private final ShopContextService shopContextService;
 
-    public PayrollController(PayrollService payrollService) {
+    public PayrollController(PayrollService payrollService, ShopContextService shopContextService) {
         this.payrollService = payrollService;
+        this.shopContextService = shopContextService;
     }
 
     @GetMapping("/periods")
-    public List<PayrollPeriodResponse> getPayrollPeriods() {
-        return payrollService.getAllPeriods().stream().map(PayrollPeriodResponse::new).toList();
+    public List<PayrollPeriodResponse> getPayrollPeriods(@org.springframework.web.bind.annotation.RequestParam(required = false) Long locationId) {
+        ShopLocation location = shopContextService.resolveAccessibleLocation(locationId, null, false).orElse(null);
+        return payrollService.getAllPeriods().stream()
+                .filter(period -> matchesLocation(period.getShopLocation(), location))
+                .map(PayrollPeriodResponse::new)
+                .toList();
     }
 
     @GetMapping("/periods/{id}")
@@ -78,8 +86,12 @@ public class PayrollController {
     }
 
     @GetMapping("/employees")
-    public List<UserResponse> getPayrollEmployees() {
-        return payrollService.getPayrollEmployees().stream().map(UserResponse::new).toList();
+    public List<UserResponse> getPayrollEmployees(@org.springframework.web.bind.annotation.RequestParam(required = false) Long locationId) {
+        ShopLocation location = shopContextService.resolveAccessibleLocation(locationId, null, false).orElse(null);
+        return payrollService.getPayrollEmployees().stream()
+                .filter(employee -> matchesLocation(employee.getShopLocation(), location))
+                .map(UserResponse::new)
+                .toList();
     }
 
     @PutMapping("/employees/{employeeId}/settings")
@@ -143,5 +155,13 @@ public class PayrollController {
     @PostMapping("/loans/{id}/cancel")
     public EmployeeLoanResponse cancelEmployeeLoan(@PathVariable long id) {
         return new EmployeeLoanResponse(payrollService.cancelLoan(id));
+    }
+
+    private boolean matchesLocation(ShopLocation resourceLocation, ShopLocation requestedLocation) {
+        if (requestedLocation == null) {
+            return true;
+        }
+
+        return resourceLocation != null && requestedLocation.getId().equals(resourceLocation.getId());
     }
 }

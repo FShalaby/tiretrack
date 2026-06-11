@@ -1,5 +1,7 @@
 package com.aem.tiretrack.service;
 
+import java.util.List;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,18 +26,24 @@ public class CompanySettingsService {
         this.shopContextService = shopContextService;
     }
 
+    @Transactional
     public CompanySettings getSettings() {
         return getSettings(null);
     }
 
+    @Transactional
     public CompanySettings getSettings(Long shopId) {
         Shop shop = resolveSettingsShop(shopId);
         if (shop == null) {
             return getLegacyPlatformSettings();
         }
 
-        return companySettingsRepository.findByShop_Id(shop.getId())
-                .orElseGet(() -> companySettingsRepository.save(createSettingsForShop(shop)));
+        List<CompanySettings> existingSettings = companySettingsRepository.findAllByShop_IdOrderByIdAsc(shop.getId());
+        if (!existingSettings.isEmpty()) {
+            return existingSettings.get(0);
+        }
+
+        return companySettingsRepository.save(createSettingsForShop(shop));
     }
 
     @Transactional
@@ -47,12 +55,12 @@ public class CompanySettingsService {
     public CompanySettings saveSettings(Long shopId, CompanySettingsRequest updatedSettings) {
         CompanySettings settings = getSettings(shopId);
 
-        settings.setShopName(updatedSettings.getShopName());
-        settings.setLogoUrl(updatedSettings.getLogoUrl());
-        settings.setPhone(updatedSettings.getPhone());
-        settings.setAddress(updatedSettings.getAddress());
+        settings.setShopName(cleanText(updatedSettings.getShopName()));
+        settings.setLogoUrl(cleanNullableText(updatedSettings.getLogoUrl()));
+        settings.setPhone(cleanNullableText(updatedSettings.getPhone()));
+        settings.setAddress(cleanNullableText(updatedSettings.getAddress()));
         settings.setTaxRate(updatedSettings.getTaxRate());
-        settings.setInvoiceTerms(updatedSettings.getInvoiceTerms());
+        settings.setInvoiceTerms(cleanNullableText(updatedSettings.getInvoiceTerms()));
 
         return companySettingsRepository.save(settings);
     }
@@ -74,8 +82,12 @@ public class CompanySettingsService {
     }
 
     private CompanySettings getLegacyPlatformSettings() {
-        return companySettingsRepository.findByShopIsNull()
-                .orElseGet(() -> companySettingsRepository.save(new CompanySettings()));
+        List<CompanySettings> existingSettings = companySettingsRepository.findAllByShopIsNullOrderByIdAsc();
+        if (!existingSettings.isEmpty()) {
+            return existingSettings.get(0);
+        }
+
+        return companySettingsRepository.save(new CompanySettings());
     }
 
     private CompanySettings createSettingsForShop(Shop shop) {
@@ -83,7 +95,7 @@ public class CompanySettingsService {
         settings.setShop(shop);
         settings.setShopName(shop.getName());
 
-        companySettingsRepository.findByShopIsNull().ifPresent(legacy -> {
+        companySettingsRepository.findAllByShopIsNullOrderByIdAsc().stream().findFirst().ifPresent(legacy -> {
             settings.setLogoUrl(legacy.getLogoUrl());
             settings.setPhone(legacy.getPhone());
             settings.setAddress(legacy.getAddress());
@@ -92,5 +104,14 @@ public class CompanySettingsService {
         });
 
         return settings;
+    }
+
+    private String cleanText(String value) {
+        return value == null ? null : value.trim();
+    }
+
+    private String cleanNullableText(String value) {
+        String cleaned = cleanText(value);
+        return cleaned == null || cleaned.isBlank() ? null : cleaned;
     }
 }

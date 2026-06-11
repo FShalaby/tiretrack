@@ -9,6 +9,10 @@ public class CustomerProfile {
     private final String email;
     private final String phone;
     private final UserRole role;
+    private final Long shopId;
+    private final String shopName;
+    private final Long locationId;
+    private final String locationName;
 
     public CustomerProfile(User user) {
         this.id = user.getId();
@@ -16,6 +20,10 @@ public class CustomerProfile {
         this.email = user.getEmail();
         this.phone = user.getPhone();
         this.role = user.getRole();
+        this.shopId = user.getShop() == null ? null : user.getShop().getId();
+        this.shopName = user.getShop() == null ? null : user.getShop().getName();
+        this.locationId = user.getLocationId();
+        this.locationName = user.getLocationName();
     }
 
     public Long getId() { return id; }
@@ -23,4 +31,8 @@ public class CustomerProfile {
     public String getEmail() { return email; }
     public String getPhone() { return phone; }
     public UserRole getRole() { return role; }
+    public Long getShopId() { return shopId; }
+    public String getShopName() { return shopName; }
+    public Long getLocationId() { return locationId; }
+    public String getLocationName() { return locationName; }
 }

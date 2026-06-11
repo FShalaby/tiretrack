@@ -23,6 +23,7 @@ import com.aem.tiretrack.model.Estimate;
 import com.aem.tiretrack.model.EstimateItem;
 import com.aem.tiretrack.model.Invoice;
 import com.aem.tiretrack.model.InvoiceItem;
+import com.aem.tiretrack.model.ShopLocation;
 import com.aem.tiretrack.model.Tire;
 import com.aem.tiretrack.model.User;
 import com.aem.tiretrack.repository.AppNotificationRepository;
@@ -146,29 +147,50 @@ public class EstimateService {
 
     @Transactional
     public Invoice convertToInvoice(Long id) {
+        return convertToInvoice(id, null);
+    }
+
+    @Transactional
+    public Invoice convertToInvoice(Long id, Invoice invoiceDraft) {
         Estimate estimate = getEstimateById(id);
         requireConvertibleLifecycle(estimate, true);
 
-        Invoice invoice = new Invoice();
-        invoice.setCustomerId(estimate.getCustomer() == null ? null : estimate.getCustomer().getId());
-        invoice.setCustomerName(estimate.getCustomerName());
-        invoice.setPhone(estimate.getPhone());
-        invoice.setVehicle(estimate.getVehicle());
-        invoice.setTaxRate(estimate.getTaxRate());
-        invoice.setStatus("UNPAID");
-        invoice.setPaymentMethod("Manual");
-        invoice.setShop(estimate.getShop());
-        invoice.setShopLocation(estimate.getShopLocation());
-
-        for (EstimateItem estimateItem : estimate.getItems()) {
-            invoice.addItem(toInvoiceItem(estimateItem));
-        }
-
+        Invoice invoice = buildInvoiceFromEstimate(estimate, invoiceDraft);
         Invoice savedInvoice = invoiceService.saveInvoice(invoice);
         estimate.setConvertedInvoiceId(savedInvoice.getId());
         estimate.setStatus(EstimateStatus.CONVERTED);
         estimateRepository.save(estimate);
         return savedInvoice;
+    }
+
+    private Invoice buildInvoiceFromEstimate(Estimate estimate, Invoice invoiceDraft) {
+        Invoice invoice = invoiceDraft == null ? new Invoice() : invoiceDraft;
+
+        if (invoice.getCustomerId() == null && estimate.getCustomer() != null) {
+            invoice.setCustomerId(estimate.getCustomer().getId());
+        }
+        invoice.setCustomerName(firstNonBlank(invoice.getCustomerName(), estimate.getCustomerName()));
+        invoice.setPhone(firstNonBlank(invoice.getPhone(), estimate.getPhone()));
+        invoice.setVehicle(firstNonBlank(invoice.getVehicle(), estimate.getVehicle()));
+        if (invoice.getTaxRate() == null) {
+            invoice.setTaxRate(estimate.getTaxRate());
+        }
+        invoice.setStatus(firstNonBlank(invoice.getStatus(), "UNPAID"));
+        invoice.setPaymentMethod(firstNonBlank(invoice.getPaymentMethod(), "Manual"));
+        if (invoice.getShop() == null) {
+            invoice.setShop(estimate.getShop());
+        }
+        if (invoice.getShopLocation() == null && invoice.getRequestedLocationId() == null) {
+            invoice.setShopLocation(estimate.getShopLocation());
+        }
+
+        if (invoice.getItems().isEmpty()) {
+            for (EstimateItem estimateItem : estimate.getItems()) {
+                invoice.addItem(toInvoiceItem(estimateItem));
+            }
+        }
+
+        return invoice;
     }
 
     private void applyRequest(Estimate estimate, EstimateRequest request) {
@@ -204,6 +226,19 @@ public class EstimateService {
         estimate.setNotes(request.getNotes());
         estimate.setValidUntil(request.getValidUntil());
         estimate.setTaxRate(normalizeTaxRate(request.getTaxRate()));
+
+        if (request.getLocationId() != null) {
+            ShopLocation requestedLocation = shopContextService.resolveAccessibleLocation(
+                    request.getLocationId(),
+                    estimate.getShop(),
+                    true).orElse(null);
+            if (requestedLocation != null) {
+                estimate.setShopLocation(requestedLocation);
+                if (estimate.getShop() == null) {
+                    estimate.setShop(requestedLocation.getShop());
+                }
+            }
+        }
 
         if (estimate.getShop() == null) {
             shopContextService.getCurrentTenantShop().ifPresent(estimate::setShop);
@@ -313,8 +348,13 @@ public class EstimateService {
             customerNotificationRepository.save(notification);
         }
 
+        saveEstimateSentNotification(estimate, estimateLabel, UserRole.OWNER);
+        saveEstimateSentNotification(estimate, estimateLabel, UserRole.ADMIN);
+    }
+
+    private void saveEstimateSentNotification(Estimate estimate, String estimateLabel, UserRole role) {
         AppNotification notification = new AppNotification();
-        notification.setRecipientRole(UserRole.ADMIN);
+        notification.setRecipientRole(role);
         notification.setShop(estimate.getShop());
         notification.setTitle("Estimate sent");
         notification.setMessage("Estimate " + estimateLabel + " was sent to " + estimate.getCustomerName() + ".");
@@ -404,14 +444,14 @@ public class EstimateService {
             appointment.setTireSize(tire.getTireSize());
         }
 
-        appointment.setAppointmentDate(nextAvailableAppointmentDate());
+        appointment.setAppointmentDate(nextAvailableAppointmentDate(estimate));
         return appointmentService.saveAppointment(appointment);
     }
 
-    private java.time.LocalDateTime nextAvailableAppointmentDate() {
+    private java.time.LocalDateTime nextAvailableAppointmentDate(Estimate estimate) {
         for (int offset = 1; offset <= 30; offset++) {
             LocalDate date = LocalDate.now().plusDays(offset);
-            List<String> slots = appointmentService.getAvailableSlots(date);
+            List<String> slots = appointmentService.getAvailableSlots(date, estimate.getLocationId());
 
             if (!slots.isEmpty()) {
                 return date.atTime(LocalTime.parse(slots.get(0)));

@@ -18,6 +18,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import com.fasterxml.jackson.annotation.JsonIgnore;
@@ -100,6 +101,14 @@ public class Expense {
 
     @JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "location_id")
+    private ShopLocation shopLocation;
+
+    @Transient
+    private Long requestedLocationId;
+
+    @JsonIgnore
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "admin_user_id", insertable = false, updatable = false)
     private User adminUser;
 
@@ -161,6 +170,12 @@ public class Expense {
     public void setShop(Shop shop) { this.shop = shop; }
     public Long getShopId() { return shop == null ? null : shop.getId(); }
     public String getShopName() { return shop == null ? null : shop.getName(); }
+    public ShopLocation getShopLocation() { return shopLocation; }
+    public void setShopLocation(ShopLocation shopLocation) { this.shopLocation = shopLocation; }
+    public Long getLocationId() { return shopLocation == null ? null : shopLocation.getId(); }
+    public void setLocationId(Long locationId) { this.requestedLocationId = locationId; }
+    public Long getRequestedLocationId() { return requestedLocationId; }
+    public String getLocationName() { return shopLocation == null ? null : shopLocation.getName(); }
     public String getCreatedBy() { return createdBy; }
     public void setCreatedBy(String createdBy) { this.createdBy = createdBy; }
     public LocalDateTime getCreatedAt() { return createdAt; }

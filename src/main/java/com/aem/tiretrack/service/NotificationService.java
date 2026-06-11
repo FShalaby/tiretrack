@@ -6,6 +6,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import com.aem.tiretrack.dto.notification.NotificationRequest;
+import com.aem.tiretrack.enums.UserRole;
 import com.aem.tiretrack.exception.ResourceNotFoundException;
 import com.aem.tiretrack.model.AppNotification;
 import com.aem.tiretrack.model.User;
@@ -30,7 +31,7 @@ public class NotificationService {
             return notificationRepository.findTop30ByRecipientUserIdOrRecipientRoleOrderByCreatedAtDesc(user.getId(), user.getRole());
         }
 
-        if (user.getRole() == com.aem.tiretrack.enums.UserRole.ADMIN || user.getRole() == com.aem.tiretrack.enums.UserRole.EMPLOYEE) {
+        if (user.getRole() == UserRole.OWNER || user.getRole() == UserRole.ADMIN || user.getRole() == UserRole.EMPLOYEE) {
             return notificationRepository.findTop30ByRecipientUserIdOrRecipientRoleAndShop_IdOrderByCreatedAtDesc(
                     user.getId(),
                     user.getRole(),

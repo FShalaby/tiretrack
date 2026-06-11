@@ -69,6 +69,10 @@ public class PlatformUserService {
         }
 
         ShopAssignment assignment = resolveAssignment(request.getShopId(), request.getLocationId());
+        if (request.getRole() == UserRole.OWNER && assignment.location() != null) {
+            throw new IllegalArgumentException("OWNER users belong to the shop, not a single location.");
+        }
+
         User user = new User();
         user.setFullName(request.getFullName().trim());
         user.setEmail(normalizedEmail);
@@ -87,7 +91,7 @@ public class PlatformUserService {
 
         User savedUser = userRepository.save(user);
 
-        if (savedUser.isActive() && savedUser.getRole() == UserRole.ADMIN && savedUser.getShop() != null && savedUser.getShopLocation() == null) {
+        if (savedUser.isActive() && savedUser.getRole() == UserRole.OWNER && savedUser.getShop() != null) {
             Shop shop = savedUser.getShop();
             shop.setOwnerAdmin(savedUser);
             shopRepository.save(shop);

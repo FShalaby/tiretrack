@@ -17,6 +17,8 @@ import com.aem.tiretrack.dto.TireImportResponse;
 import com.aem.tiretrack.dto.TireResponse;
 import com.aem.tiretrack.enums.Condition;
 import com.aem.tiretrack.model.Tire;
+import com.aem.tiretrack.model.ShopLocation;
+import com.aem.tiretrack.service.ShopContextService;
 import com.aem.tiretrack.service.TireService;
 
 import jakarta.validation.Valid;
@@ -26,14 +28,20 @@ import jakarta.validation.Valid;
 public class TireController {
 
     private final TireService tireService;
+    private final ShopContextService shopContextService;
 
-    public TireController(TireService tireService) {
+    public TireController(TireService tireService, ShopContextService shopContextService) {
         this.tireService = tireService;
+        this.shopContextService = shopContextService;
     }
 
     @GetMapping
-    public List<TireResponse> getAllTires() {
-        return tireService.getAllTires().stream().map(TireResponse::new).toList();
+    public List<TireResponse> getAllTires(@RequestParam(required = false) Long locationId) {
+        ShopLocation location = shopContextService.resolveAccessibleLocation(locationId, null, false).orElse(null);
+        return tireService.getAllTires().stream()
+                .filter(tire -> matchesLocation(tire.getShopLocation(), location))
+                .map(TireResponse::new)
+                .toList();
     }
 
     @GetMapping("/{id}")
@@ -98,5 +106,13 @@ public class TireController {
     @DeleteMapping("/{id}")
     public void deleteTire(@PathVariable Long id) {
         tireService.deleteTire(id);
+    }
+
+    private boolean matchesLocation(ShopLocation resourceLocation, ShopLocation requestedLocation) {
+        if (requestedLocation == null) {
+            return true;
+        }
+
+        return resourceLocation != null && requestedLocation.getId().equals(resourceLocation.getId());
     }
 }

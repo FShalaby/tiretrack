@@ -11,6 +11,8 @@ public class PublicBookingRequest {
     private String phone;
     private String vehicle;
     private String tireSize;
+    private Long shopId;
+    private Long locationId;
     private LocalDate appointmentDate;
     private LocalTime appointmentTime;
     private ServiceType serviceType;
@@ -54,6 +56,22 @@ public class PublicBookingRequest {
 
     public void setTireSize(String tireSize) {
         this.tireSize = tireSize;
+    }
+
+    public Long getShopId() {
+        return shopId;
+    }
+
+    public void setShopId(Long shopId) {
+        this.shopId = shopId;
+    }
+
+    public Long getLocationId() {
+        return locationId;
+    }
+
+    public void setLocationId(Long locationId) {
+        this.locationId = locationId;
     }
 
     public LocalDate getAppointmentDate() {

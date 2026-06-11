@@ -125,18 +125,35 @@ public class ShopLocationService {
         location.setName(request.getName().trim());
         location.setType(request.getType() == null ? ShopLocationType.STORE : request.getType());
         location.setAddress(request.getAddress());
+        location.setCity(request.getCity());
+        location.setProvince(request.getProvince());
+        location.setPostalCode(request.getPostalCode());
+        location.setPhone(request.getPhone());
+        location.setEmail(request.getEmail());
 
         if (request.getActive() != null) {
             location.setActive(request.getActive());
         } else if (creating) {
             location.setActive(true);
         }
+
+        if (request.getCustomerFacing() != null) {
+            location.setCustomerFacing(request.getCustomerFacing());
+        } else if (creating) {
+            location.setCustomerFacing(isDefaultCustomerFacingType(location.getType()));
+        }
+    }
+
+    private boolean isDefaultCustomerFacingType(ShopLocationType type) {
+        return type == ShopLocationType.STORE
+                || type == ShopLocationType.MOBILE
+                || type == ShopLocationType.MOBILE_SERVICE;
     }
 
     private Shop getActiveShop(Long shopId) {
         if (shopId == null) {
             User currentUser = currentUser();
-            if (currentUser.getRole() == UserRole.ADMIN && currentUser.getShop() != null) {
+            if (isShopOwnerForShop(currentUser, currentUser.getShop())) {
                 Shop shop = currentUser.getShop();
                 if (!shop.isActive()) {
                     throw new IllegalArgumentException("Cannot manage locations for an inactive shop");
@@ -179,15 +196,14 @@ public class ShopLocationService {
         }
 
         User currentUser = currentUser();
+        Shop shop = shopRepository.findById(shopId)
+                .orElseThrow(() -> new IllegalArgumentException("Shop not found with id: " + shopId));
 
         if (currentUser.getRole() == UserRole.SUPER_ADMIN) {
             return;
         }
 
-        if (currentUser.getRole() == UserRole.ADMIN
-                && currentUser.getShop() != null
-                && currentUser.getShopLocation() == null
-                && currentUser.getShop().getId().equals(shopId)) {
+        if (isShopOwnerForShop(currentUser, shop)) {
             return;
         }
 
@@ -203,9 +219,10 @@ public class ShopLocationService {
             return;
         }
 
-        if (currentUser.getRole() == UserRole.ADMIN
-                && currentUser.getShop() != null
-                && currentUser.getShop().getId().equals(shopId)) {
+        Shop shop = shopRepository.findById(shopId)
+                .orElseThrow(() -> new IllegalArgumentException("Shop not found with id: " + shopId));
+
+        if (isShopOwnerForShop(currentUser, shop)) {
             return;
         }
 
@@ -219,17 +236,31 @@ public class ShopLocationService {
             return;
         }
 
+        if (isShopOwnerForShop(currentUser, location.getShop())) {
+            return;
+        }
+
         if (currentUser.getRole() == UserRole.ADMIN
-                && currentUser.getShop() != null
-                && location.getShop() != null
-                && currentUser.getShop().getId().equals(location.getShop().getId())) {
-            if (currentUser.getShopLocation() == null
-                    || currentUser.getShopLocation().getId().equals(location.getId())) {
-                return;
-            }
+                && currentUser.getShopLocation() != null
+                && currentUser.getShopLocation().getId().equals(location.getId())) {
+            return;
         }
 
         throw new AccessDeniedException("You do not have permission to view this shop location");
+    }
+
+    private boolean isShopOwnerForShop(User user, Shop shop) {
+        if (user == null || shop == null || user.getShop() == null || !user.getShop().getId().equals(shop.getId())) {
+            return false;
+        }
+
+        if (user.getRole() == UserRole.OWNER) {
+            return true;
+        }
+
+        return user.getRole() == UserRole.ADMIN
+                && shop.getOwnerAdminId() != null
+                && shop.getOwnerAdminId().equals(user.getId());
     }
 
     private boolean isLocationScopedForShop(User currentUser, Long shopId) {

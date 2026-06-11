@@ -25,6 +25,8 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long>
 
     List<Appointment> findByAppointmentDateBetween(LocalDateTime start, LocalDateTime end);
 
+    List<Appointment> findByReminderStatusAndReminderAtLessThanEqual(String reminderStatus, LocalDateTime reminderAt);
+
     List<Appointment> findByShop_IdAndAppointmentDateBetween(Long shopId, LocalDateTime start, LocalDateTime end);
 
     List<Appointment> findByCustomerIdOrderByAppointmentDateDesc(Long customerId);

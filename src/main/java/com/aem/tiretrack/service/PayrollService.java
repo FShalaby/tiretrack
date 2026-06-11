@@ -92,16 +92,24 @@ public class PayrollService {
     public PayrollPeriod createPeriod(PayrollPeriodRequest request) {
         validatePeriodDates(request);
         Shop currentShop = shopContextService.isSuperAdmin() ? null : shopContextService.requireShopForAdminOrEmployee();
-        ShopLocation currentLocation = shopContextService.getCurrentTenantLocation().orElse(null);
+        ShopLocation currentLocation = request.getLocationId() == null
+                ? shopContextService.getCurrentTenantLocation().orElse(null)
+                : shopContextService.resolveAccessibleLocation(request.getLocationId(), currentShop, true).orElse(null);
 
-        boolean overlaps = currentShop == null
-                ? payrollPeriodRepository.existsByStartDateLessThanEqualAndEndDateGreaterThanEqual(
+        boolean overlaps = currentLocation != null
+                ? payrollPeriodRepository.existsByShop_IdAndShopLocation_IdAndStartDateLessThanEqualAndEndDateGreaterThanEqual(
+                        currentLocation.getShop().getId(),
+                        currentLocation.getId(),
                         request.getEndDate(),
                         request.getStartDate())
-                : payrollPeriodRepository.existsByShop_IdAndStartDateLessThanEqualAndEndDateGreaterThanEqual(
-                        currentShop.getId(),
-                        request.getEndDate(),
-                        request.getStartDate());
+                : currentShop == null
+                        ? payrollPeriodRepository.existsByStartDateLessThanEqualAndEndDateGreaterThanEqual(
+                                request.getEndDate(),
+                                request.getStartDate())
+                        : payrollPeriodRepository.existsByShop_IdAndStartDateLessThanEqualAndEndDateGreaterThanEqual(
+                                currentShop.getId(),
+                                request.getEndDate(),
+                                request.getStartDate());
 
         if (overlaps) {
             throw new IllegalArgumentException("Payroll period overlaps with an existing period");
@@ -111,7 +119,7 @@ public class PayrollService {
         period.setStartDate(request.getStartDate());
         period.setEndDate(request.getEndDate());
         period.setNotes(request.getNotes());
-        period.setShop(currentShop);
+        period.setShop(currentShop != null ? currentShop : currentLocation == null ? null : currentLocation.getShop());
         period.setShopLocation(currentLocation);
 
         return payrollPeriodRepository.save(period);
@@ -129,6 +137,13 @@ public class PayrollService {
         period.setStartDate(request.getStartDate());
         period.setEndDate(request.getEndDate());
         period.setNotes(request.getNotes());
+        ShopLocation requestedLocation = request.getLocationId() == null
+                ? null
+                : shopContextService.resolveAccessibleLocation(request.getLocationId(), period.getShop(), true).orElse(null);
+        period.setShopLocation(requestedLocation);
+        if (requestedLocation != null && period.getShop() == null) {
+            period.setShop(requestedLocation.getShop());
+        }
 
         return payrollPeriodRepository.save(period);
     }
@@ -154,7 +169,9 @@ public class PayrollService {
         User currentUser = userRepository.findByEmail(email)
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
 
-        boolean isPayrollManager = currentUser.getRole() == UserRole.ADMIN || currentUser.getRole() == UserRole.SUPER_ADMIN;
+        boolean isPayrollManager = currentUser.getRole() == UserRole.OWNER
+                || currentUser.getRole() == UserRole.ADMIN
+                || currentUser.getRole() == UserRole.SUPER_ADMIN;
         if (!isPayrollManager && !currentUser.getId().equals(employeeId)) {
             throw new AccessDeniedException("You do not have permission to access this payroll resource");
         }

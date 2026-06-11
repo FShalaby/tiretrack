@@ -23,8 +23,10 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.aem.tiretrack.dto.CompanySettingsRequest;
+import com.aem.tiretrack.dto.DashboardSummary;
 import com.aem.tiretrack.dto.InvoiceStatusUpdateRequest;
 import com.aem.tiretrack.dto.PayrollGenerationResponse;
+import com.aem.tiretrack.dto.customer.CustomerAppointmentRequest;
 import com.aem.tiretrack.dto.customer.CustomerPortalResponse;
 import com.aem.tiretrack.enums.AbsenceDecision;
 import com.aem.tiretrack.enums.AppointmentStatus;
@@ -35,6 +37,7 @@ import com.aem.tiretrack.enums.ExpenseCategory;
 import com.aem.tiretrack.enums.InvoiceItemType;
 import com.aem.tiretrack.enums.PayrollStatus;
 import com.aem.tiretrack.enums.ServiceType;
+import com.aem.tiretrack.enums.ShopLocationType;
 import com.aem.tiretrack.enums.UserRole;
 import com.aem.tiretrack.enums.WorkOrderStatus;
 import com.aem.tiretrack.model.AppNotification;
@@ -49,11 +52,13 @@ import com.aem.tiretrack.model.InvoiceItem;
 import com.aem.tiretrack.model.PayrollPeriod;
 import com.aem.tiretrack.model.PayrollRecord;
 import com.aem.tiretrack.model.Shop;
+import com.aem.tiretrack.model.ShopLocation;
 import com.aem.tiretrack.model.Tire;
 import com.aem.tiretrack.model.User;
 import com.aem.tiretrack.model.WorkOrder;
 import com.aem.tiretrack.repository.AppNotificationRepository;
 import com.aem.tiretrack.repository.AppointmentRepository;
+import com.aem.tiretrack.repository.CompanySettingsRepository;
 import com.aem.tiretrack.repository.CustomerVehicleRepository;
 import com.aem.tiretrack.repository.EmployeeAttendanceRepository;
 import com.aem.tiretrack.repository.EstimateRepository;
@@ -63,6 +68,7 @@ import com.aem.tiretrack.repository.JournalEntryRepository;
 import com.aem.tiretrack.repository.PayrollPeriodRepository;
 import com.aem.tiretrack.repository.PayrollRecordRepository;
 import com.aem.tiretrack.repository.ShopRepository;
+import com.aem.tiretrack.repository.ShopLocationRepository;
 import com.aem.tiretrack.repository.TireRepository;
 import com.aem.tiretrack.repository.UserRepository;
 import com.aem.tiretrack.repository.WorkOrderRepository;
@@ -72,9 +78,11 @@ import com.aem.tiretrack.service.AppointmentService;
 import com.aem.tiretrack.service.AttendanceService;
 import com.aem.tiretrack.service.CompanySettingsService;
 import com.aem.tiretrack.service.CustomerPortalService;
+import com.aem.tiretrack.service.DashboardService;
 import com.aem.tiretrack.service.EstimateService;
 import com.aem.tiretrack.service.InvoiceService;
 import com.aem.tiretrack.service.NotificationService;
+import com.aem.tiretrack.service.PdfService;
 import com.aem.tiretrack.service.PayrollService;
 import com.aem.tiretrack.service.TireService;
 import com.aem.tiretrack.service.WorkOrderService;
@@ -94,9 +102,11 @@ class ProductionReadinessIntegrationTests {
     @Autowired private JwtService jwtService;
 
     @Autowired private ShopRepository shopRepository;
+    @Autowired private ShopLocationRepository shopLocationRepository;
     @Autowired private UserRepository userRepository;
     @Autowired private TireRepository tireRepository;
     @Autowired private AppointmentRepository appointmentRepository;
+    @Autowired private CompanySettingsRepository companySettingsRepository;
     @Autowired private InvoiceRepository invoiceRepository;
     @Autowired private EstimateRepository estimateRepository;
     @Autowired private WorkOrderRepository workOrderRepository;
@@ -118,7 +128,9 @@ class ProductionReadinessIntegrationTests {
     @Autowired private AccountingService accountingService;
     @Autowired private CompanySettingsService companySettingsService;
     @Autowired private CustomerPortalService customerPortalService;
+    @Autowired private DashboardService dashboardService;
     @Autowired private NotificationService notificationService;
+    @Autowired private PdfService pdfService;
 
     @AfterEach
     void clearSecurityContext() {
@@ -253,6 +265,192 @@ class ProductionReadinessIntegrationTests {
     }
 
     @Test
+    void shopAdminLocationFiltersAndInvoiceDeductionStayWithinSelectedLocation() throws Exception {
+        Shop shopA = shopRepository.saveAndFlush(shop("Location Shop A"));
+        Shop shopB = shopRepository.saveAndFlush(shop("Location Shop B"));
+        ShopLocation storeA = shopLocationRepository.saveAndFlush(shopLocation(shopA, "Mississauga Store", ShopLocationType.STORE, true));
+        ShopLocation warehouseA = shopLocationRepository.saveAndFlush(shopLocation(shopA, "Brampton Warehouse", ShopLocationType.WAREHOUSE, false));
+        ShopLocation storeB = shopLocationRepository.saveAndFlush(shopLocation(shopB, "Other Shop Store", ShopLocationType.STORE, true));
+        User adminA = userRepository.saveAndFlush(user("Location Admin A", "loc-admin-a-" + System.nanoTime() + "@test.com", UserRole.ADMIN, shopA));
+
+        Tire tireStore = tire("Store Tire", shopA);
+        tireStore.setQuantity(5);
+        tireStore.setShopLocation(storeA);
+        tireStore = tireRepository.saveAndFlush(tireStore);
+
+        Tire tireWarehouse = tire("Warehouse Tire", shopA);
+        tireWarehouse.setQuantity(7);
+        tireWarehouse.setShopLocation(warehouseA);
+        tireWarehouse = tireRepository.saveAndFlush(tireWarehouse);
+
+        Tire tireOtherShop = tire("Other Shop Tire", shopB);
+        tireOtherShop.setShopLocation(storeB);
+        tireOtherShop = tireRepository.saveAndFlush(tireOtherShop);
+
+        User customerA = userRepository.saveAndFlush(user("Location Customer", "loc-customer-" + System.nanoTime() + "@test.com", UserRole.CUSTOMER, shopA));
+        Appointment storeAppointment = appointment("Location Appointment", customerA, shopA);
+        LocalDate appointmentDate = LocalDate.now().plusDays(10);
+        storeAppointment.setAppointmentDate(appointmentDate.atTime(9, 0));
+        storeAppointment.setShopLocation(storeA);
+        appointmentRepository.saveAndFlush(storeAppointment);
+
+        signIn(adminA);
+
+        assertThat(tireService.getAllTires()).extracting(Tire::getId)
+                .contains(tireStore.getId(), tireWarehouse.getId())
+                .doesNotContain(tireOtherShop.getId());
+
+        String storeInventoryJson = mockMvc.perform(get("/api/tires")
+                        .param("locationId", storeA.getId().toString())
+                        .header("Authorization", bearer(adminA)))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        assertThat(storeInventoryJson).contains("Store Tire").doesNotContain("Warehouse Tire").doesNotContain("Other Shop Tire");
+
+        signIn(adminA);
+        DashboardSummary allLocations = dashboardService.getDashboardSummary();
+        DashboardSummary storeDashboard = dashboardService.getDashboardSummary(storeA.getId());
+        assertThat(allLocations.getTotalTiresInStock()).isEqualTo(12);
+        assertThat(storeDashboard.getTotalTiresInStock()).isEqualTo(5);
+        assertThat(allLocations.getLocationBreakdowns())
+                .filteredOn(breakdown -> storeA.getId().equals(breakdown.getLocationId()))
+                .first()
+                .extracting(breakdown -> breakdown.getInventoryQuantity())
+                .isEqualTo(5);
+
+        assertThat(appointmentService.getAvailableSlots(appointmentDate, storeA.getId())).doesNotContain("09:00");
+        assertThat(appointmentService.getAvailableSlots(appointmentDate, warehouseA.getId())).contains("09:00");
+
+        Invoice wrongLocationInvoice = invoice("Wrong Location Invoice", customerA, shopA);
+        wrongLocationInvoice.setShopLocation(storeA);
+        InvoiceItem wrongLocationItem = invoiceItem(InvoiceItemType.TIRE, "Warehouse Tire", 1, "100.00");
+        wrongLocationItem.setTireId(tireWarehouse.getId());
+        wrongLocationInvoice.addItem(wrongLocationItem);
+        assertThatThrownBy(() -> invoiceService.saveInvoice(wrongLocationInvoice))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("another location");
+
+        Invoice storeInvoice = invoice("Store Location Invoice", customerA, shopA);
+        storeInvoice.setShopLocation(storeA);
+        InvoiceItem storeItem = invoiceItem(InvoiceItemType.TIRE, "Store Tire", 2, "100.00");
+        storeItem.setTireId(tireStore.getId());
+        storeInvoice.addItem(storeItem);
+        invoiceService.saveInvoice(storeInvoice);
+
+        assertThat(tireRepository.findById(tireStore.getId()).orElseThrow().getQuantity()).isEqualTo(3);
+        assertThat(tireRepository.findById(tireWarehouse.getId()).orElseThrow().getQuantity()).isEqualTo(7);
+
+        String publicLocationsJson = mockMvc.perform(get("/api/public/shops/{shopId}/locations", shopA.getId()))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        assertThat(publicLocationsJson).contains("Mississauga Store").doesNotContain("Brampton Warehouse");
+    }
+
+    @Test
+    void ownerSeesAllShopLocationsWhileLocationAdminIsScopedToOneLocation() throws Exception {
+        Shop shop = shopRepository.saveAndFlush(shop("Owner Scope Shop"));
+        ShopLocation store = shopLocationRepository.saveAndFlush(shopLocation(shop, "Owner Store", ShopLocationType.STORE, true));
+        ShopLocation warehouse = shopLocationRepository.saveAndFlush(shopLocation(shop, "Owner Warehouse", ShopLocationType.WAREHOUSE, false));
+
+        User owner = userRepository.saveAndFlush(user("Shop Owner", "shop-owner-" + System.nanoTime() + "@test.com", UserRole.OWNER, shop));
+        User locationAdmin = user("Store Admin", "store-admin-" + System.nanoTime() + "@test.com", UserRole.ADMIN, shop);
+        locationAdmin.setShopLocation(store);
+        locationAdmin = userRepository.saveAndFlush(locationAdmin);
+
+        Tire storeTire = tire("Owner Store Tire", shop);
+        storeTire.setQuantity(5);
+        storeTire.setShopLocation(store);
+        storeTire = tireRepository.saveAndFlush(storeTire);
+
+        Tire warehouseTire = tire("Owner Warehouse Tire", shop);
+        warehouseTire.setQuantity(7);
+        warehouseTire.setShopLocation(warehouse);
+        warehouseTire = tireRepository.saveAndFlush(warehouseTire);
+
+        signIn(owner);
+        assertThat(tireService.getAllTires()).extracting(Tire::getId)
+                .contains(storeTire.getId(), warehouseTire.getId());
+        assertThat(dashboardService.getDashboardSummary().getTotalTiresInStock()).isEqualTo(12);
+        assertThat(dashboardService.getDashboardSummary(warehouse.getId()).getTotalTiresInStock()).isEqualTo(7);
+
+        String ownerLocationsJson = mockMvc.perform(get("/api/shop-locations/shop/{shopId}/active", shop.getId())
+                        .header("Authorization", bearer(owner)))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        assertThat(ownerLocationsJson).contains("Owner Store", "Owner Warehouse");
+
+        signIn(locationAdmin);
+        assertThat(tireService.getAllTires()).extracting(Tire::getId)
+                .contains(storeTire.getId())
+                .doesNotContain(warehouseTire.getId());
+        assertThat(dashboardService.getDashboardSummary().getTotalTiresInStock()).isEqualTo(5);
+        assertDenied(() -> dashboardService.getDashboardSummary(warehouse.getId()));
+
+        String adminLocationsJson = mockMvc.perform(get("/api/shop-locations/shop/{shopId}/active", shop.getId())
+                        .header("Authorization", bearer(locationAdmin)))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        assertThat(adminLocationsJson).contains("Owner Store").doesNotContain("Owner Warehouse");
+
+        mockMvc.perform(get("/api/tires")
+                        .param("locationId", warehouse.getId().toString())
+                        .header("Authorization", bearer(locationAdmin)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void customerRegistrationRequiresAndPersistsPublicShopLocationWhenConfigured() throws Exception {
+        Shop shop = shopRepository.saveAndFlush(shop("Public Signup Shop"));
+        ShopLocation store = shopLocationRepository.saveAndFlush(shopLocation(shop, "Public Signup Store", ShopLocationType.STORE, true));
+        shopLocationRepository.saveAndFlush(shopLocation(shop, "Public Signup Warehouse", ShopLocationType.WAREHOUSE, false));
+
+        String missingSelectionEmail = "signup-missing-" + System.nanoTime() + "@test.com";
+        mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "fullName": "Missing Selection",
+                                  "email": "%s",
+                                  "phone": "416%s",
+                                  "password": "ValidPass1!"
+                                }
+                                """.formatted(missingSelectionEmail, Math.abs(missingSelectionEmail.hashCode()))))
+                .andExpect(status().isBadRequest());
+
+        String email = "signup-linked-" + System.nanoTime() + "@test.com";
+        String registerJson = mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "fullName": "Linked Customer",
+                                  "email": "%s",
+                                  "phone": "647%s",
+                                  "password": "ValidPass1!",
+                                  "shopId": %d,
+                                  "locationId": %d
+                                }
+                                """.formatted(email, Math.abs(email.hashCode()), shop.getId(), store.getId())))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        assertThat(registerJson).contains("\"shopId\":" + shop.getId(), "\"locationId\":" + store.getId());
+
+        User customer = userRepository.findByEmail(email).orElseThrow();
+        assertThat(customer.getRole()).isEqualTo(UserRole.CUSTOMER);
+        assertThat(customer.getShop().getId()).isEqualTo(shop.getId());
+        assertThat(customer.getShopLocation().getId()).isEqualTo(store.getId());
+    }
+
+    @Test
     void partialPaymentFullPaymentAndAccountingEntriesUseActualCashReceived() {
         TenantFixture fixture = tenantFixture();
         signIn(fixture.adminA);
@@ -264,12 +462,14 @@ class ProductionReadinessIntegrationTests {
         InvoiceStatusUpdateRequest partial = new InvoiceStatusUpdateRequest();
         partial.setStatus("PARTIALLY_PAID");
         partial.setAmountPaid(new BigDecimal("300.00"));
+        partial.setDueDate(LocalDate.now().plusDays(10));
         partial.setPaymentMethod("Cash");
 
         Invoice partiallyPaid = invoiceService.updateInvoiceStatus(savedInvoice.getId(), partial);
         assertThat(partiallyPaid.getStatus()).isEqualTo("PARTIALLY_PAID");
         assertThat(partiallyPaid.getAmountPaid()).isEqualByComparingTo("300.00");
         assertThat(partiallyPaid.getBalanceDue()).isEqualByComparingTo("700.00");
+        assertThat(partiallyPaid.getDueDate()).isEqualTo(LocalDate.now().plusDays(10));
         assertThat(paymentEntryCount(partiallyPaid)).isEqualTo(1);
 
         InvoiceStatusUpdateRequest paid = new InvoiceStatusUpdateRequest();
@@ -335,6 +535,84 @@ class ProductionReadinessIntegrationTests {
         signIn(fixture.superAdmin);
         assertThat(companySettingsService.getSettings(fixture.shopA.getId()).getShopName()).isEqualTo("Shop A Public Name");
         assertThat(companySettingsService.getSettings(fixture.shopB.getId()).getShopName()).isEqualTo(shopBSettings.getShopName());
+    }
+
+    @Test
+    void companySettingsSaveUpdatesExistingRowAndAllowsUploadedLogoData() {
+        Shop shop = shopRepository.saveAndFlush(shop("Settings Save Shop"));
+        User admin = userRepository.saveAndFlush(user("Settings Admin", "settings-admin-" + System.nanoTime() + "@test.com", UserRole.ADMIN, shop));
+
+        CompanySettings first = new CompanySettings();
+        first.setShop(shop);
+        first.setShopName("Old Name");
+        first.setTaxRate(new BigDecimal("13.00"));
+        first.setInvoiceTerms("Old terms");
+        first = companySettingsRepository.saveAndFlush(first);
+
+        CompanySettings duplicate = new CompanySettings();
+        duplicate.setShop(shop);
+        duplicate.setShopName("Duplicate Name");
+        duplicate.setTaxRate(new BigDecimal("13.00"));
+        duplicate.setInvoiceTerms("Duplicate terms");
+        duplicate = companySettingsRepository.saveAndFlush(duplicate);
+
+        signIn(admin);
+
+        CompanySettingsRequest request = settingsRequest("Updated Shop Name");
+        request.setLogoUrl("data:image/png;base64," + "A".repeat(90_000));
+        CompanySettings saved = companySettingsService.saveSettings(request);
+
+        assertThat(saved.getId()).isEqualTo(first.getId());
+        assertThat(saved.getShopName()).isEqualTo("Updated Shop Name");
+        assertThat(saved.getLogoUrl()).startsWith("data:image/png;base64,");
+        assertThat(companySettingsRepository.findById(duplicate.getId()).orElseThrow().getShopName()).isEqualTo("Duplicate Name");
+
+        CompanySettingsRequest secondRequest = settingsRequest("Updated Again");
+        secondRequest.setLogoUrl("data:image/png;base64," + "B".repeat(90_000));
+        CompanySettings secondSave = companySettingsService.saveSettings(secondRequest);
+
+        assertThat(secondSave.getId()).isEqualTo(first.getId());
+        assertThat(secondSave.getShopName()).isEqualTo("Updated Again");
+        assertThat(secondSave.getLogoUrl()).contains("BBBB");
+
+        Invoice invoice = invoiceRepository.saveAndFlush(invoice("Settings Invoice", admin, shop));
+        String pdfText = new String(pdfService.invoicePdf(invoice.getId()));
+        assertThat(pdfText).contains("Updated Again");
+    }
+
+    @Test
+    void customerPortalCanBookWithAdminCreatedVehicleAfterShopLinking() {
+        Shop shop = shopRepository.saveAndFlush(shop("Portal Vehicle Shop"));
+        ShopLocation store = shopLocationRepository.saveAndFlush(shopLocation(shop, "Portal Store", ShopLocationType.STORE, true));
+        User customer = userRepository.saveAndFlush(user("Portal Customer", "portal-customer-" + System.nanoTime() + "@test.com", UserRole.CUSTOMER, shop));
+        customer.setShopLocation(store);
+        customer = userRepository.saveAndFlush(customer);
+
+        CustomerVehicle adminCreatedVehicle = vehicle(customer, "Admin Created Vehicle");
+        adminCreatedVehicle.setShop(null);
+        adminCreatedVehicle.setShopLocation(null);
+        adminCreatedVehicle = vehicleRepository.saveAndFlush(adminCreatedVehicle);
+
+        signIn(customer);
+
+        CustomerPortalResponse portal = customerPortalService.portal();
+        assertThat(portal.getVehicles()).extracting(vehicle -> vehicle.getId()).contains(adminCreatedVehicle.getId());
+
+        CustomerAppointmentRequest request = new CustomerAppointmentRequest();
+        request.setVehicleId(adminCreatedVehicle.getId());
+        request.setLocationId(store.getId());
+        request.setAppointmentDate(LocalDate.now().plusDays(2));
+        request.setAppointmentTime(java.time.LocalTime.of(10, 0));
+        request.setServiceType(ServiceType.INSTALLATION);
+
+        Appointment appointment = customerPortalService.bookAppointment(request);
+
+        assertThat(appointment.getCustomerId()).isEqualTo(customer.getId());
+        assertThat(appointment.getVehicle()).contains("Toyota", "Camry");
+        assertThat(appointment.getShop().getId()).isEqualTo(shop.getId());
+        assertThat(appointment.getShopLocation().getId()).isEqualTo(store.getId());
+        CustomerVehicle claimedVehicle = vehicleRepository.findById(adminCreatedVehicle.getId()).orElseThrow();
+        assertThat(claimedVehicle.getShop().getId()).isEqualTo(shop.getId());
     }
 
     private TenantFixture tenantFixture() {
@@ -414,6 +692,20 @@ class ProductionReadinessIntegrationTests {
         shop.setName(name);
         shop.setActive(true);
         return shop;
+    }
+
+    private ShopLocation shopLocation(Shop shop, String name, ShopLocationType type, boolean customerFacing) {
+        ShopLocation location = new ShopLocation();
+        location.setShop(shop);
+        location.setName(name);
+        location.setType(type);
+        location.setAddress(name + " address");
+        location.setCity("Toronto");
+        location.setProvince("ON");
+        location.setPostalCode("M1M 1M1");
+        location.setCustomerFacing(customerFacing);
+        location.setActive(true);
+        return location;
     }
 
     private User user(String name, String email, UserRole role, Shop shop) {

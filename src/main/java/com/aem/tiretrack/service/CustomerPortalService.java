@@ -28,6 +28,8 @@ import com.aem.tiretrack.model.CustomerNotification;
 import com.aem.tiretrack.model.CustomerVehicle;
 import com.aem.tiretrack.model.Estimate;
 import com.aem.tiretrack.model.Invoice;
+import com.aem.tiretrack.model.Shop;
+import com.aem.tiretrack.model.ShopLocation;
 import com.aem.tiretrack.model.User;
 import com.aem.tiretrack.repository.AppointmentRepository;
 import com.aem.tiretrack.repository.CustomerNotificationRepository;
@@ -72,6 +74,7 @@ public class CustomerPortalService {
         this.shopContextService = shopContextService;
     }
 
+    @Transactional
     public CustomerPortalResponse portal() {
         User customer = currentCustomer();
         List<Appointment> appointments = appointmentRepository.findCustomerHistory(customer.getId(), customer.getPhone(), customer.getEmail()).stream()
@@ -90,7 +93,7 @@ public class CustomerPortalService {
                 .toList();
         return new CustomerPortalResponse(
                 new CustomerProfile(customer),
-                vehicleRepository.findByCustomerOrderByCreatedAtDesc(customer),
+                customerVehicles(customer, true),
                 appointments,
                 invoices,
                 estimates,
@@ -101,21 +104,31 @@ public class CustomerPortalService {
     public CustomerVehicle saveVehicle(CustomerVehicle vehicle) {
         User customer = currentCustomer();
         vehicle.setCustomer(customer);
+        vehicle.setShop(customer.getShop());
+        vehicle.setShopLocation(customer.getShopLocation());
         return vehicleRepository.save(vehicle);
     }
 
     public void deleteVehicle(Long id) {
         User customer = currentCustomer();
-        CustomerVehicle vehicle = vehicleRepository.findByIdAndCustomer(id, customer)
-                .orElseThrow(() -> new ResourceNotFoundException("Vehicle not found"));
+        CustomerVehicle vehicle = resolvePortalVehicle(customer, id);
         vehicleRepository.delete(vehicle);
     }
 
     @Transactional
     public Appointment bookAppointment(CustomerAppointmentRequest request) {
         User customer = currentCustomer();
-        CustomerVehicle vehicle = vehicleRepository.findByIdAndCustomer(request.getVehicleId(), customer)
-                .orElseThrow(() -> new ResourceNotFoundException("Vehicle not found"));
+        if (request.getVehicleId() == null) {
+            throw new IllegalArgumentException("Choose a saved vehicle before booking an appointment.");
+        }
+        if (request.getAppointmentDate() == null || request.getAppointmentTime() == null) {
+            throw new IllegalArgumentException("Choose an appointment date and time.");
+        }
+        if (request.getServiceType() == null) {
+            throw new IllegalArgumentException("Choose a service type.");
+        }
+
+        CustomerVehicle vehicle = resolvePortalVehicle(customer, request.getVehicleId());
 
         Appointment appointment = new Appointment();
         appointment.setCustomerId(customer.getId());
@@ -128,6 +141,7 @@ public class CustomerPortalService {
         appointment.setServiceType(request.getServiceType());
         appointment.setNotes(request.getNotes());
         appointment.setShop(customer.getShop());
+        appointment.setShopLocation(resolveCustomerAppointmentLocation(customer, vehicle, request.getLocationId()));
 
         return appointmentService.saveAppointment(appointment);
     }
@@ -227,7 +241,9 @@ public class CustomerPortalService {
         List<Invoice> invoices = invoiceRepository.findCustomerHistory(customer.getId(), customer.getPhone(), customer.getFullName()).stream()
                 .filter(invoice -> shopContextService.canAccessTenantResource(invoice.getShop(), invoice.getShopLocation()))
                 .toList();
-        List<CustomerVehicle> vehicles = vehicleRepository.findByCustomerOrderByCreatedAtDesc(customer);
+        List<CustomerVehicle> vehicles = customerVehicles(customer, false).stream()
+                .filter(vehicle -> shopContextService.canAccessTenantResource(vehicle.getShop(), vehicle.getShopLocation()))
+                .toList();
         BigDecimal totalSpent = invoices.stream()
                 .map(this::collectedAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
@@ -254,7 +270,7 @@ public class CustomerPortalService {
 
         return new CustomerSummary(
                 customer,
-                vehicleRepository.countByCustomer(customer),
+                vehicles.size(),
                 appointments.size(),
                 invoices.size(),
                 totalSpent,
@@ -313,6 +329,99 @@ public class CustomerPortalService {
         }
 
         return recordShop != null && Objects.equals(customer.getShop().getId(), recordShop.getId());
+    }
+
+    private List<CustomerVehicle> customerVehicles(User customer, boolean claimLinkedVehicles) {
+        return vehicleRepository.findPortalVehicles(
+                        customer.getId(),
+                        blankToNull(customer.getEmail()),
+                        blankToNull(customer.getPhone())).stream()
+                .filter(vehicle -> ownsVehicleIdentity(customer, vehicle))
+                .filter(vehicle -> customerCanAccessVehicleShop(customer, vehicle))
+                .map(vehicle -> claimLinkedVehicles ? claimVehicleForCustomer(customer, vehicle) : vehicle)
+                .toList();
+    }
+
+    private CustomerVehicle resolvePortalVehicle(User customer, Long vehicleId) {
+        CustomerVehicle vehicle = vehicleRepository.findById(vehicleId)
+                .orElseThrow(() -> new ResourceNotFoundException("Vehicle not found"));
+
+        if (!ownsVehicleIdentity(customer, vehicle) || !customerCanAccessVehicleShop(customer, vehicle)) {
+            throw new ResourceNotFoundException("Vehicle not found");
+        }
+
+        return claimVehicleForCustomer(customer, vehicle);
+    }
+
+    private boolean ownsVehicleIdentity(User customer, CustomerVehicle vehicle) {
+        User owner = vehicle.getCustomer();
+        if (owner == null) {
+            return false;
+        }
+
+        return Objects.equals(customer.getId(), owner.getId())
+                || equalsIgnoreCase(customer.getEmail(), owner.getEmail())
+                || equalsIgnoreCase(customer.getPhone(), owner.getPhone());
+    }
+
+    private boolean customerCanAccessVehicleShop(User customer, CustomerVehicle vehicle) {
+        User owner = vehicle.getCustomer();
+        Shop customerShop = customer.getShop();
+        Shop ownerShop = owner == null ? null : owner.getShop();
+        Shop vehicleShop = vehicle.getShop();
+
+        if (customerShop == null) {
+            return ownerShop == null && vehicleShop == null;
+        }
+
+        Long customerShopId = customerShop.getId();
+        boolean ownerShopMatches = ownerShop == null || Objects.equals(customerShopId, ownerShop.getId());
+        boolean vehicleShopMatches = vehicleShop == null || Objects.equals(customerShopId, vehicleShop.getId());
+        return ownerShopMatches && vehicleShopMatches;
+    }
+
+    private CustomerVehicle claimVehicleForCustomer(User customer, CustomerVehicle vehicle) {
+        boolean changed = false;
+
+        if (vehicle.getCustomer() == null || !Objects.equals(vehicle.getCustomer().getId(), customer.getId())) {
+            vehicle.setCustomer(customer);
+            changed = true;
+        }
+
+        if (vehicle.getShop() == null && customer.getShop() != null) {
+            vehicle.setShop(customer.getShop());
+            changed = true;
+        }
+
+        if (vehicle.getShopLocation() == null && customer.getShopLocation() != null) {
+            vehicle.setShopLocation(customer.getShopLocation());
+            changed = true;
+        }
+
+        return changed ? vehicleRepository.save(vehicle) : vehicle;
+    }
+
+    private ShopLocation resolveCustomerAppointmentLocation(User customer, CustomerVehicle vehicle, Long requestedLocationId) {
+        ShopLocation selectedLocation = null;
+
+        if (requestedLocationId != null) {
+            selectedLocation = shopContextService.resolveAccessibleLocation(requestedLocationId, customer.getShop(), true).orElse(null);
+            if (selectedLocation != null && !shopContextService.canUseCustomerFacingLocation(selectedLocation)) {
+                throw new IllegalArgumentException("This location is not available for online booking.");
+            }
+        }
+
+        if (selectedLocation == null && vehicle.getShopLocation() != null
+                && shopContextService.canUseCustomerFacingLocation(vehicle.getShopLocation())) {
+            selectedLocation = vehicle.getShopLocation();
+        }
+
+        if (selectedLocation == null && customer.getShopLocation() != null
+                && shopContextService.canUseCustomerFacingLocation(customer.getShopLocation())) {
+            selectedLocation = customer.getShopLocation();
+        }
+
+        return selectedLocation;
     }
 
     private boolean equalsIgnoreCase(String first, String second) {

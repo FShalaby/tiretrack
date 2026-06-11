@@ -53,13 +53,13 @@ public class ShopContextService {
 
     public Optional<Shop> getCurrentTenantShop() {
         return getCurrentUser()
-                .filter(user -> user.getRole() == UserRole.ADMIN || user.getRole() == UserRole.EMPLOYEE)
+                .filter(this::isTenantOperator)
                 .map(User::getShop);
     }
 
     public Optional<ShopLocation> getCurrentTenantLocation() {
         return getCurrentUser()
-                .filter(user -> user.getRole() == UserRole.ADMIN || user.getRole() == UserRole.EMPLOYEE)
+                .filter(this::isTenantOperator)
                 .map(User::getShopLocation);
     }
 
@@ -83,7 +83,7 @@ public class ShopContextService {
 
     public boolean isShopAdmin() {
         return getCurrentUser()
-                .map(user -> user.getRole() == UserRole.ADMIN)
+                .map(user -> user.getRole() == UserRole.OWNER || user.getRole() == UserRole.ADMIN)
                 .orElse(false);
     }
 
@@ -100,7 +100,7 @@ public class ShopContextService {
         User user = getCurrentUser()
                 .orElseThrow(() -> new AccessDeniedException("Authentication is required."));
 
-        if (user.getRole() != UserRole.ADMIN && user.getRole() != UserRole.EMPLOYEE) {
+        if (!isTenantOperator(user)) {
             return user.getShop();
         }
 
@@ -116,7 +116,7 @@ public class ShopContextService {
             return List.of();
         }
 
-        if (user.getShopLocation() != null) {
+        if (!isShopWideManager(user) && user.getShopLocation() != null) {
             return List.of(user.getShopLocation().getId());
         }
 
@@ -146,12 +146,12 @@ public class ShopContextService {
         }
 
         User user = currentUser.get();
-        if (user.getRole() != UserRole.ADMIN && user.getRole() != UserRole.EMPLOYEE) {
+        if (!isTenantOperator(user)) {
             return resourceShop == null || (user.getShop() != null && user.getShop().getId().equals(resourceShop.getId()));
         }
 
         Shop currentShop = requireShopForAdminOrEmployee();
-        return resourceShop != null && currentShop.getId().equals(resourceShop.getId());
+        return resourceShop == null || currentShop.getId().equals(resourceShop.getId());
     }
 
     public boolean canAccessTenantResource(Shop resourceShop, ShopLocation resourceLocation) {
@@ -169,6 +169,28 @@ public class ShopContextService {
         return resourceLocation == null || currentLocationId.get().equals(resourceLocation.getId());
     }
 
+    public boolean isTenantOperator(User user) {
+        return user != null
+                && (user.getRole() == UserRole.OWNER
+                    || user.getRole() == UserRole.ADMIN
+                    || user.getRole() == UserRole.EMPLOYEE);
+    }
+
+    public boolean isShopWideManager(User user) {
+        if (user == null) {
+            return false;
+        }
+
+        if (user.getRole() == UserRole.OWNER) {
+            return true;
+        }
+
+        // Backward compatibility: existing ADMIN users created before OWNER existed
+        // may still have no location assignment and must continue as shop-wide managers
+        // until the platform owner migrates them to OWNER or a specific location.
+        return user.getRole() == UserRole.ADMIN && user.getShopLocation() == null;
+    }
+
     public boolean canAccessTenantUser(User user) {
         if (user == null) {
             return false;
@@ -181,5 +203,49 @@ public class ShopContextService {
         if (!canAccessShop(shopId)) {
             throw new AccessDeniedException("You do not have permission to access this shop resource.");
         }
+    }
+
+    public Optional<ShopLocation> resolveAccessibleLocation(Long locationId, Shop expectedShop, boolean requireActive) {
+        if (locationId == null) {
+            return Optional.empty();
+        }
+
+        ShopLocation location = shopLocationRepository.findById(locationId)
+                .orElseThrow(() -> new IllegalArgumentException("Shop location not found with id: " + locationId));
+
+        if (requireActive && !location.isActive()) {
+            throw new IllegalArgumentException("Selected shop location is inactive.");
+        }
+
+        Shop locationShop = location.getShop();
+        if (locationShop == null) {
+            throw new IllegalArgumentException("Selected shop location is not linked to a shop.");
+        }
+
+        if (expectedShop != null && !locationShop.getId().equals(expectedShop.getId())) {
+            throw new AccessDeniedException("Selected location does not belong to this shop.");
+        }
+
+        Optional<Shop> currentTenantShop = getCurrentTenantShop();
+        if (currentTenantShop.isPresent() && !locationShop.getId().equals(currentTenantShop.get().getId())) {
+            throw new AccessDeniedException("You do not have permission to access this shop location.");
+        }
+
+        if (!canAccessTenantResource(locationShop, location)) {
+            throw new AccessDeniedException("You do not have permission to access this shop location.");
+        }
+
+        return Optional.of(location);
+    }
+
+    public boolean canUseCustomerFacingLocation(ShopLocation location) {
+        if (location == null || !location.isActive() || !location.isCustomerFacing()) {
+            return false;
+        }
+
+        return switch (location.getType()) {
+            case STORE, MOBILE, MOBILE_SERVICE -> true;
+            case STORAGE, WAREHOUSE, OTHER -> false;
+        };
     }
 }

@@ -41,6 +41,21 @@ public class ShopLocation {
     private ShopLocationType type = ShopLocationType.STORE;
 
     private String address;
+
+    private String city;
+
+    private String province;
+
+    @Column(name = "postal_code")
+    private String postalCode;
+
+    private String phone;
+
+    private String email;
+
+    @Column(name = "customer_facing")
+    private Boolean customerFacing = true;
+
     private boolean active = true;
 
     @Column(name = "created_at", updatable = false)
@@ -58,6 +73,9 @@ public class ShopLocation {
         if (type == null) {
             type = ShopLocationType.STORE;
         }
+        if (customerFacing == null) {
+            customerFacing = true;
+        }
     }
 
     @PreUpdate
@@ -66,6 +84,9 @@ public class ShopLocation {
 
         if (type == null) {
             type = ShopLocationType.STORE;
+        }
+        if (customerFacing == null) {
+            customerFacing = true;
         }
     }
 
@@ -78,6 +99,18 @@ public class ShopLocation {
     public void setType(ShopLocationType type) { this.type = type; }
     public String getAddress() { return address; }
     public void setAddress(String address) { this.address = address; }
+    public String getCity() { return city; }
+    public void setCity(String city) { this.city = city; }
+    public String getProvince() { return province; }
+    public void setProvince(String province) { this.province = province; }
+    public String getPostalCode() { return postalCode; }
+    public void setPostalCode(String postalCode) { this.postalCode = postalCode; }
+    public String getPhone() { return phone; }
+    public void setPhone(String phone) { this.phone = phone; }
+    public String getEmail() { return email; }
+    public void setEmail(String email) { this.email = email; }
+    public boolean isCustomerFacing() { return customerFacing == null || customerFacing; }
+    public void setCustomerFacing(Boolean customerFacing) { this.customerFacing = customerFacing == null ? true : customerFacing; }
     public boolean isActive() { return active; }
     public void setActive(boolean active) { this.active = active; }
     public LocalDateTime getCreatedAt() { return createdAt; }

@@ -6,6 +6,7 @@ public class PayrollPeriodRequest {
     private LocalDate startDate;
     private LocalDate endDate;
     private String notes;
+    private Long locationId;
 
     public PayrollPeriodRequest() {
     }
@@ -38,5 +39,13 @@ public class PayrollPeriodRequest {
 
     public void setNotes(String notes) {
         this.notes = notes;
+    }
+
+    public Long getLocationId() {
+        return locationId;
+    }
+
+    public void setLocationId(Long locationId) {
+        this.locationId = locationId;
     }
 }

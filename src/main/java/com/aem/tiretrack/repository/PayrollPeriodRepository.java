@@ -20,6 +20,13 @@ public interface  PayrollPeriodRepository extends JpaRepository<PayrollPeriod, L
     LocalDate startDate
     );
 
+    boolean existsByShop_IdAndShopLocation_IdAndStartDateLessThanEqualAndEndDateGreaterThanEqual(
+    Long shopId,
+    Long locationId,
+    LocalDate endDate,
+    LocalDate startDate
+    );
+
     List<PayrollPeriod> findByShop_Id(Long shopId);
 
 }

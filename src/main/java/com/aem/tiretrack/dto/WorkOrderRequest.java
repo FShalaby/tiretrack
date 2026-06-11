@@ -10,6 +10,7 @@ public class WorkOrderRequest {
     private String email;
     private String vehicle;
     private Long assignedEmployeeId;
+    private Long locationId;
     private ServiceType serviceType;
     private String notes;
 
@@ -27,6 +28,8 @@ public class WorkOrderRequest {
     public void setVehicle(String vehicle) { this.vehicle = vehicle; }
     public Long getAssignedEmployeeId() { return assignedEmployeeId; }
     public void setAssignedEmployeeId(Long assignedEmployeeId) { this.assignedEmployeeId = assignedEmployeeId; }
+    public Long getLocationId() { return locationId; }
+    public void setLocationId(Long locationId) { this.locationId = locationId; }
     public ServiceType getServiceType() { return serviceType; }
     public void setServiceType(ServiceType serviceType) { this.serviceType = serviceType; }
     public String getNotes() { return notes; }

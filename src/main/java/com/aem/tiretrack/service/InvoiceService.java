@@ -2,7 +2,6 @@ package com.aem.tiretrack.service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
@@ -21,6 +20,7 @@ import com.aem.tiretrack.model.Appointment;
 import com.aem.tiretrack.model.Invoice;
 import com.aem.tiretrack.model.InvoiceItem;
 import com.aem.tiretrack.model.Shop;
+import com.aem.tiretrack.model.ShopLocation;
 import com.aem.tiretrack.model.Tire;
 import com.aem.tiretrack.model.User;
 import com.aem.tiretrack.repository.AppointmentRepository;
@@ -142,7 +142,7 @@ public class InvoiceService {
             item.setInvoice(invoice);
 
             if (item.getItemType() == InvoiceItemType.TIRE) {
-                handleTireItem(item, appointment, consumedAppointmentReservations);
+                handleTireItem(invoice, item, appointment, consumedAppointmentReservations);
             }
 
             BigDecimal unitPrice = item.getUnitPrice() == null
@@ -199,6 +199,10 @@ public class InvoiceService {
                 throw new IllegalArgumentException("Partial payments require an amount paid greater than zero.");
             }
 
+            if (invoice.getDueDate() == null) {
+                throw new IllegalArgumentException("Partial payments require a due date for the remaining balance.");
+            }
+
             if (paid.compareTo(total) >= 0) {
                 invoice.setStatus("PAID");
                 invoice.setAmountPaid(total);
@@ -213,9 +217,6 @@ public class InvoiceService {
             invoice.setBalanceDue(total.subtract(paid).setScale(2, RoundingMode.HALF_UP));
             invoice.setPaidAt(null);
             invoice.setPaymentMethod(invoice.getPaymentMethod() == null ? "Manual" : invoice.getPaymentMethod());
-            if (invoice.getDueDate() == null) {
-                invoice.setDueDate(LocalDate.now().plusDays(14));
-            }
             return;
         }
 
@@ -224,9 +225,6 @@ public class InvoiceService {
             invoice.setBalanceDue(BigDecimal.ZERO);
         } else {
             invoice.setBalanceDue(total.subtract(paid).max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP));
-            if (invoice.getDueDate() == null) {
-                invoice.setDueDate(LocalDate.now().plusDays(14));
-            }
         }
         invoice.setAmountPaid(paid.min(total).max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP));
         invoice.setPaidAt(null);
@@ -260,7 +258,7 @@ public class InvoiceService {
         }
     }
 
-    private void handleTireItem(InvoiceItem item, Appointment appointment, Map<Long, Integer> consumedAppointmentReservations) {
+    private void handleTireItem(Invoice invoice, InvoiceItem item, Appointment appointment, Map<Long, Integer> consumedAppointmentReservations) {
         if (item.getTireId() == null) {
             throw new RuntimeException("Tire item must have a tireId");
         }
@@ -268,6 +266,7 @@ public class InvoiceService {
         Tire tire = tireRepository.findById(item.getTireId())
                 .orElseThrow(() -> new RuntimeException("Tire not found"));
         ensureTireAccess(tire);
+        ensureTireMatchesInvoiceLocation(invoice, tire);
 
         int reservedForAppointment = getReservedForAppointment(appointment, item.getTireId());
         int alreadyConsumedForAppointment = consumedAppointmentReservations.getOrDefault(item.getTireId(), 0);
@@ -293,6 +292,20 @@ public class InvoiceService {
 
         if (item.getUnitPrice() == null) {
             item.setUnitPrice(tire.getPrice());
+        }
+    }
+
+    private void ensureTireMatchesInvoiceLocation(Invoice invoice, Tire tire) {
+        if (invoice.getShop() != null && tire.getShop() != null && !invoice.getShop().getId().equals(tire.getShop().getId())) {
+            throw new RuntimeException("Invoice tire belongs to another shop");
+        }
+
+        if (invoice.getShopLocation() == null || tire.getShopLocation() == null) {
+            return;
+        }
+
+        if (!invoice.getShopLocation().getId().equals(tire.getShopLocation().getId())) {
+            throw new RuntimeException("Invoice tire belongs to another location");
         }
     }
 
@@ -355,6 +368,18 @@ public class InvoiceService {
     }
 
     private void assignCurrentTenantContextIfMissing(Invoice invoice) {
+        if (invoice.getRequestedLocationId() != null) {
+            ShopLocation requestedLocation = shopContextService.resolveAccessibleLocation(
+                    invoice.getRequestedLocationId(),
+                    invoice.getShop(),
+                    true).orElse(null);
+            if (requestedLocation != null) {
+                invoice.setShopLocation(requestedLocation);
+                if (invoice.getShop() == null) {
+                    invoice.setShop(requestedLocation.getShop());
+                }
+            }
+        }
         if (invoice.getShop() == null) {
             shopContextService.getCurrentTenantShop().ifPresent(invoice::setShop);
         }

@@ -7,6 +7,7 @@ import com.aem.tiretrack.enums.ServiceType;
 
 public class CustomerAppointmentRequest {
     private Long vehicleId;
+    private Long locationId;
     private LocalDate appointmentDate;
     private LocalTime appointmentTime;
     private ServiceType serviceType;
@@ -14,6 +15,8 @@ public class CustomerAppointmentRequest {
 
     public Long getVehicleId() { return vehicleId; }
     public void setVehicleId(Long vehicleId) { this.vehicleId = vehicleId; }
+    public Long getLocationId() { return locationId; }
+    public void setLocationId(Long locationId) { this.locationId = locationId; }
     public LocalDate getAppointmentDate() { return appointmentDate; }
     public void setAppointmentDate(LocalDate appointmentDate) { this.appointmentDate = appointmentDate; }
     public LocalTime getAppointmentTime() { return appointmentTime; }

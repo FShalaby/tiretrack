@@ -82,12 +82,12 @@ public class ShopService {
                 .orElseThrow(() -> new IllegalArgumentException("User not found with id: " + userId));
         Shop shop = getShopById(shopId);
 
-        if (user.getRole() != UserRole.ADMIN) {
-            throw new IllegalArgumentException("Only ADMIN users can be assigned as shop admins.");
+        if (user.getRole() != UserRole.OWNER && user.getRole() != UserRole.ADMIN) {
+            throw new IllegalArgumentException("Only OWNER or legacy ADMIN users can be assigned as shop owners.");
         }
 
         if (!shop.isActive()) {
-            throw new IllegalArgumentException("Cannot assign admins to an inactive shop");
+            throw new IllegalArgumentException("Cannot assign shop owners to an inactive shop");
         }
 
         user.setShop(shop);
@@ -191,10 +191,10 @@ public class ShopService {
         }
 
         User ownerAdmin = userRepository.findById(ownerAdminId)
-                .orElseThrow(() -> new IllegalArgumentException("Owner admin not found with id: " + ownerAdminId));
+                .orElseThrow(() -> new IllegalArgumentException("Shop owner not found with id: " + ownerAdminId));
 
-        if (ownerAdmin.getRole() != UserRole.ADMIN) {
-            throw new IllegalArgumentException("Shop owner must be an ADMIN user.");
+        if (ownerAdmin.getRole() != UserRole.OWNER && ownerAdmin.getRole() != UserRole.ADMIN) {
+            throw new IllegalArgumentException("Shop owner must be an OWNER or legacy ADMIN user.");
         }
 
         shop.setOwnerAdmin(ownerAdmin);

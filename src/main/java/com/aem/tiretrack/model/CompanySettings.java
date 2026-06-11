@@ -29,7 +29,7 @@ public class CompanySettings {
     @Column(name = "shop_name")
     private String shopName = "Your Shop Name";
 
-    @Column(name = "logo_url")
+    @Column(name = "logo_url", columnDefinition = "MEDIUMTEXT")
     private String logoUrl;
 
     private String phone;

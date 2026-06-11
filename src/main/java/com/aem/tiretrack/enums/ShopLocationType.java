@@ -5,5 +5,6 @@ public enum ShopLocationType {
     STORAGE,
     WAREHOUSE,
     MOBILE,
+    MOBILE_SERVICE,
     OTHER
 }

@@ -6,9 +6,11 @@ import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -16,10 +18,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.aem.tiretrack.enums.AppointmentStatus;
+import com.aem.tiretrack.enums.UserRole;
+import com.aem.tiretrack.model.AppNotification;
 import com.aem.tiretrack.model.Appointment;
 import com.aem.tiretrack.model.Shop;
+import com.aem.tiretrack.model.ShopLocation;
 import com.aem.tiretrack.model.Tire;
 import com.aem.tiretrack.model.User;
+import com.aem.tiretrack.repository.AppNotificationRepository;
 import com.aem.tiretrack.repository.AppointmentRepository;
 import com.aem.tiretrack.repository.TireRepository;
 import com.aem.tiretrack.repository.UserRepository;
@@ -33,13 +39,15 @@ public class AppointmentService {
     private final AppointmentRepository appointmentRepository;
     private final TireRepository tireRepository;
     private final UserRepository userRepository;
+    private final AppNotificationRepository appNotificationRepository;
     private final AuditLogService auditLogService;
     private final ShopContextService shopContextService;
 
-    public AppointmentService(AppointmentRepository appointmentRepository, TireRepository tireRepository, UserRepository userRepository, AuditLogService auditLogService, ShopContextService shopContextService) {
+    public AppointmentService(AppointmentRepository appointmentRepository, TireRepository tireRepository, UserRepository userRepository, AppNotificationRepository appNotificationRepository, AuditLogService auditLogService, ShopContextService shopContextService) {
         this.appointmentRepository = appointmentRepository;
         this.tireRepository = tireRepository;
         this.userRepository = userRepository;
+        this.appNotificationRepository = appNotificationRepository;
         this.auditLogService = auditLogService;
         this.shopContextService = shopContextService;
     }
@@ -58,11 +66,17 @@ public class AppointmentService {
     }
 
     public List<String> getAvailableSlots(LocalDate date) {
+        return getAvailableSlots(date, null);
+    }
+
+    public List<String> getAvailableSlots(LocalDate date, Long locationId) {
+        ShopLocation selectedLocation = shopContextService.resolveAccessibleLocation(locationId, null, true).orElse(null);
         LocalDateTime dayStart = date.atStartOfDay();
         LocalDateTime dayEnd = date.atTime(LocalTime.MAX);
 
         List<Appointment> appointmentsForDay = appointmentRepository.findByAppointmentDateBetween(dayStart, dayEnd).stream()
                 .filter(this::canAccessAppointment)
+                .filter(appointment -> selectedLocation == null || sameLocation(appointment.getShopLocation(), selectedLocation))
                 .toList();
 
         Set<LocalTime> bookedTimes = appointmentsForDay.stream()
@@ -93,6 +107,7 @@ public class AppointmentService {
     @Transactional
     public Appointment saveAppointment(Appointment appointment) {
         assignCurrentTenantContextIfMissing(appointment);
+        normalizeReminderFields(appointment);
         validateAppointmentTime(appointment, null);
         linkCustomer(appointment);
         reserveAppointmentTires(appointment);
@@ -106,6 +121,7 @@ public class AppointmentService {
 
         Appointment existingAppointment = getAppointmentById(id);
         assignCurrentTenantContextIfMissing(updatedAppointment);
+        normalizeReminderFields(updatedAppointment);
         validateAppointmentTime(updatedAppointment, id);
         releaseAppointmentTires(existingAppointment);
 
@@ -151,6 +167,25 @@ public class AppointmentService {
         auditLogService.record("CANCELLED", "Appointment", id, "Cancelled appointment for " + appointment.getCustomerName(), getCurrentUsername());
     }
 
+    @Scheduled(fixedDelayString = "${tiretrack.reminders.fixed-delay-ms:60000}")
+    @Transactional
+    public void sendDueReminders() {
+        List<Appointment> dueReminders = appointmentRepository.findByReminderStatusAndReminderAtLessThanEqual(
+                "SCHEDULED",
+                LocalDateTime.now());
+
+        for (Appointment appointment : dueReminders) {
+            if (!shouldSendReminder(appointment)) {
+                appointment.setReminderStatus("NOT_SET");
+                continue;
+            }
+
+            saveAppointmentReminderNotification(appointment, UserRole.OWNER);
+            saveAppointmentReminderNotification(appointment, UserRole.ADMIN);
+            appointment.setReminderStatus("SENT");
+        }
+    }
+
 
     private void reserveAppointmentTires(Appointment appointment) {
         if (!shouldReserve(appointment)) {
@@ -172,6 +207,50 @@ public class AppointmentService {
 
     private boolean shouldReserve(Appointment appointment) {
         return appointment.getStatus() == null || appointment.getStatus() == AppointmentStatus.BOOKED;
+    }
+
+    private boolean shouldSendReminder(Appointment appointment) {
+        return appointment.getReminderAt() != null && shouldReserve(appointment);
+    }
+
+    private void saveAppointmentReminderNotification(Appointment appointment, UserRole role) {
+        AppNotification notification = new AppNotification();
+        notification.setRecipientRole(role);
+        notification.setShop(appointment.getShop());
+        notification.setTitle("Appointment reminder");
+        notification.setMessage(buildReminderMessage(appointment));
+        notification.setType("REMINDER");
+        notification.setTargetTab("Appointments");
+        appNotificationRepository.save(notification);
+    }
+
+    private String buildReminderMessage(Appointment appointment) {
+        String customerName = appointment.getCustomerName() == null || appointment.getCustomerName().isBlank()
+                ? "Customer"
+                : appointment.getCustomerName();
+        String appointmentTime = appointment.getAppointmentDate() == null
+                ? "soon"
+                : appointment.getAppointmentDate().format(DateTimeFormatter.ofPattern("MMM d, yyyy h:mm a"));
+
+        return customerName + " has an appointment at " + appointmentTime + ".";
+    }
+
+    private void normalizeReminderFields(Appointment appointment) {
+        if (appointment.getReminderAt() == null) {
+            appointment.setReminderStatus("NOT_SET");
+        } else if (appointment.getReminderStatus() == null
+                || appointment.getReminderStatus().isBlank()
+                || "NOT_SET".equalsIgnoreCase(appointment.getReminderStatus())) {
+            appointment.setReminderStatus("SCHEDULED");
+        } else {
+            appointment.setReminderStatus(appointment.getReminderStatus().trim().toUpperCase(Locale.ROOT));
+        }
+
+        if (appointment.getConfirmationStatus() == null || appointment.getConfirmationStatus().isBlank()) {
+            appointment.setConfirmationStatus("PENDING");
+        } else {
+            appointment.setConfirmationStatus(appointment.getConfirmationStatus().trim().toUpperCase(Locale.ROOT));
+        }
     }
 
     private void validateAppointmentTime(Appointment appointment, Long ignoredAppointmentId) {
@@ -200,6 +279,7 @@ public class AppointmentService {
 
         boolean hasConflict = appointmentsAtTime.stream()
                 .filter(existingAppointment -> ignoredAppointmentId == null || !ignoredAppointmentId.equals(existingAppointment.getId()))
+                .filter(existingAppointment -> sameLocation(existingAppointment.getShopLocation(), appointment.getShopLocation()))
                 .anyMatch(this::shouldReserve);
 
         if (hasConflict) {
@@ -258,6 +338,18 @@ public class AppointmentService {
     }
 
     private void assignCurrentTenantContextIfMissing(Appointment appointment) {
+        if (appointment.getRequestedLocationId() != null) {
+            ShopLocation requestedLocation = shopContextService.resolveAccessibleLocation(
+                    appointment.getRequestedLocationId(),
+                    appointment.getShop(),
+                    true).orElse(null);
+            if (requestedLocation != null) {
+                appointment.setShopLocation(requestedLocation);
+                if (appointment.getShop() == null) {
+                    appointment.setShop(requestedLocation.getShop());
+                }
+            }
+        }
         if (appointment.getShop() == null) {
             shopContextService.getCurrentTenantShop().ifPresent(appointment::setShop);
         }
@@ -278,6 +370,9 @@ public class AppointmentService {
 
         if (user.getShop() == null) {
             user.setShop(shop);
+            if (appointment.getShopLocation() != null) {
+                user.setShopLocation(appointment.getShopLocation());
+            }
             userRepository.save(user);
             return;
         }
@@ -285,6 +380,19 @@ public class AppointmentService {
         if (!shop.getId().equals(user.getShop().getId())) {
             throw new RuntimeException("Customer belongs to another shop");
         }
+
+        if (user.getShopLocation() == null && appointment.getShopLocation() != null) {
+            user.setShopLocation(appointment.getShopLocation());
+            userRepository.save(user);
+        }
+    }
+
+    private boolean sameLocation(ShopLocation first, ShopLocation second) {
+        if (first == null || second == null) {
+            return first == null && second == null;
+        }
+
+        return first.getId() != null && first.getId().equals(second.getId());
     }
 
     private void ensureAppointmentAccess(Appointment appointment) {

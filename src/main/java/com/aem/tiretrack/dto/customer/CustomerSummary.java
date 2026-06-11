@@ -13,6 +13,10 @@ public class CustomerSummary {
     private String fullName;
     private String email;
     private String phone;
+    private Long shopId;
+    private String shopName;
+    private Long locationId;
+    private String locationName;
     private long vehicleCount;
     private long appointmentCount;
     private long invoiceCount;
@@ -34,6 +38,10 @@ public class CustomerSummary {
         this.fullName = user.getFullName();
         this.email = user.getEmail();
         this.phone = user.getPhone();
+        this.shopId = user.getShop() == null ? null : user.getShop().getId();
+        this.shopName = user.getShop() == null ? null : user.getShop().getName();
+        this.locationId = user.getLocationId();
+        this.locationName = user.getLocationName();
         this.vehicleCount = vehicleCount;
         this.appointmentCount = appointmentCount;
         this.invoiceCount = invoiceCount;
@@ -55,6 +63,10 @@ public class CustomerSummary {
     public String getFullName() { return fullName; }
     public String getEmail() { return email; }
     public String getPhone() { return phone; }
+    public Long getShopId() { return shopId; }
+    public String getShopName() { return shopName; }
+    public Long getLocationId() { return locationId; }
+    public String getLocationName() { return locationName; }
     public long getVehicleCount() { return vehicleCount; }
     public long getAppointmentCount() { return appointmentCount; }
     public long getInvoiceCount() { return invoiceCount; }

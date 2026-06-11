@@ -11,6 +11,7 @@ public class EstimateRequest {
     private String phone;
     private String email;
     private String vehicle;
+    private Long locationId;
     private BigDecimal taxRate;
     private String notes;
     private LocalDate validUntil;
@@ -26,6 +27,8 @@ public class EstimateRequest {
     public void setEmail(String email) { this.email = email; }
     public String getVehicle() { return vehicle; }
     public void setVehicle(String vehicle) { this.vehicle = vehicle; }
+    public Long getLocationId() { return locationId; }
+    public void setLocationId(Long locationId) { this.locationId = locationId; }
     public BigDecimal getTaxRate() { return taxRate; }
     public void setTaxRate(BigDecimal taxRate) { this.taxRate = taxRate; }
     public String getNotes() { return notes; }

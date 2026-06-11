@@ -55,8 +55,8 @@ public class AccountingController {
     }
 
     @GetMapping("/expenses")
-    public List<ExpenseResponse> getExpenses() {
-        return accountingService.getExpenses().stream().map(ExpenseResponse::new).toList();
+    public List<ExpenseResponse> getExpenses(@RequestParam(required = false) Long locationId) {
+        return accountingService.getExpenses(locationId).stream().map(ExpenseResponse::new).toList();
     }
 
     @PostMapping("/expenses")
@@ -72,8 +72,9 @@ public class AccountingController {
     @GetMapping("/reports")
     public AccountingReport getReport(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate start,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate end) {
-        return accountingService.getReport(start, end);
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate end,
+            @RequestParam(required = false) Long locationId) {
+        return accountingService.getReport(start, end, locationId);
     }
 
     @GetMapping("/diagnostics/duplicate-invoice-payments")

@@ -2,6 +2,7 @@ package com.aem.tiretrack.dto.auth;
 
 import java.util.List;
 
+import com.aem.tiretrack.enums.SubscriptionPlan;
 import com.aem.tiretrack.enums.UserRole;
 
 public class LoginResponse {
@@ -15,6 +16,9 @@ public class LoginResponse {
     private String refreshToken;
     private Long shopId;
     private String shopName;
+    private SubscriptionPlan subscriptionPlan;
+    private boolean multiLocationAllowed;
+    private boolean shopOwner;
     private Long locationId;
     private String locationName;
     private List<Long> accessibleLocationIds;
@@ -25,7 +29,7 @@ public class LoginResponse {
     }
 
     public LoginResponse(Long id, String fullName, String email, UserRole role, String message, String token, String refreshToken, Long shopId, String shopName) {
-        this(id, fullName, email, role, message, token, refreshToken, shopId, shopName, null, null, List.of(), List.of());
+        this(id, fullName, email, role, message, token, refreshToken, shopId, shopName, null, false, false, null, null, List.of(), List.of());
     }
 
     public LoginResponse(
@@ -38,6 +42,9 @@ public class LoginResponse {
             String refreshToken,
             Long shopId,
             String shopName,
+            SubscriptionPlan subscriptionPlan,
+            boolean multiLocationAllowed,
+            boolean shopOwner,
             Long locationId,
             String locationName,
             List<Long> accessibleLocationIds,
@@ -51,6 +58,9 @@ public class LoginResponse {
         this.refreshToken = refreshToken;
         this.shopId = shopId;
         this.shopName = shopName;
+        this.subscriptionPlan = subscriptionPlan;
+        this.multiLocationAllowed = multiLocationAllowed;
+        this.shopOwner = shopOwner;
         this.locationId = locationId;
         this.locationName = locationName;
         this.accessibleLocationIds = accessibleLocationIds == null ? List.of() : accessibleLocationIds;
@@ -91,6 +101,18 @@ public class LoginResponse {
 
     public String getShopName() {
         return shopName;
+    }
+
+    public SubscriptionPlan getSubscriptionPlan() {
+        return subscriptionPlan;
+    }
+
+    public boolean isMultiLocationAllowed() {
+        return multiLocationAllowed;
+    }
+
+    public boolean isShopOwner() {
+        return shopOwner;
     }
 
     public Long getLocationId() {

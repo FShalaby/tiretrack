@@ -15,6 +15,10 @@ public class CustomerVehicleResponse {
     private String tireSetup;
     private String frontTireSize;
     private String rearTireSize;
+    private Long shopId;
+    private String shopName;
+    private Long locationId;
+    private String locationName;
     private LocalDateTime createdAt;
 
     public CustomerVehicleResponse(CustomerVehicle vehicle) {
@@ -28,6 +32,10 @@ public class CustomerVehicleResponse {
         this.tireSetup = vehicle.getTireSetup();
         this.frontTireSize = vehicle.getFrontTireSize();
         this.rearTireSize = vehicle.getRearTireSize();
+        this.shopId = vehicle.getShopId();
+        this.shopName = vehicle.getShopName();
+        this.locationId = vehicle.getLocationId();
+        this.locationName = vehicle.getLocationName();
         this.createdAt = vehicle.getCreatedAt();
     }
 
@@ -41,5 +49,9 @@ public class CustomerVehicleResponse {
     public String getTireSetup() { return tireSetup; }
     public String getFrontTireSize() { return frontTireSize; }
     public String getRearTireSize() { return rearTireSize; }
+    public Long getShopId() { return shopId; }
+    public String getShopName() { return shopName; }
+    public Long getLocationId() { return locationId; }
+    public String getLocationName() { return locationName; }
     public LocalDateTime getCreatedAt() { return createdAt; }
 }

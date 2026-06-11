@@ -32,6 +32,8 @@ public class RegisterRequest {
     private String password;
 
     private UserRole role;
+    private Long shopId;
+    private Long locationId;
 
     public String getFullName() {
         return fullName;
@@ -71,5 +73,21 @@ public class RegisterRequest {
 
     public void setRole(UserRole role) {
         this.role = role;
+    }
+
+    public Long getShopId() {
+        return shopId;
+    }
+
+    public void setShopId(Long shopId) {
+        this.shopId = shopId;
+    }
+
+    public Long getLocationId() {
+        return locationId;
+    }
+
+    public void setLocationId(Long locationId) {
+        this.locationId = locationId;
     }
 }

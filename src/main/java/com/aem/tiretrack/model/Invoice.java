@@ -22,6 +22,7 @@ import jakarta.persistence.OneToMany;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
@@ -54,6 +55,9 @@ public class Invoice {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "location_id")
     private ShopLocation shopLocation;
+
+    @Transient
+    private Long requestedLocationId;
 
     @Column(name = "appointment_id")
     private Long appointmentId;
@@ -203,6 +207,14 @@ public class Invoice {
 
     public Long getLocationId() {
         return shopLocation == null ? null : shopLocation.getId();
+    }
+
+    public void setLocationId(Long locationId) {
+        this.requestedLocationId = locationId;
+    }
+
+    public Long getRequestedLocationId() {
+        return requestedLocationId;
     }
 
     public String getLocationName() {

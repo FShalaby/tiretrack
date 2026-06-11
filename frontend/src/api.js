@@ -1,6 +1,15 @@
 const jsonHeaders = {
   "Content-Type": "application/json"
 };
+const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
+
+function apiUrl(path) {
+  if (/^https?:\/\//i.test(path)) {
+    return path;
+  }
+
+  return `${apiBaseUrl}${path.startsWith("/") ? path : `/${path}`}`;
+}
 
 function getAuthToken() {
   return localStorage.getItem("tiretrack-token");
@@ -68,7 +77,7 @@ async function request(path, options = {}, skipAuth = false) {
   }
 
   try {
-    response = await fetch(path, {
+    response = await fetch(apiUrl(path), {
       ...options,
       headers
     });
@@ -80,7 +89,7 @@ async function request(path, options = {}, skipAuth = false) {
     const refreshed = await refreshAuthToken();
     if (refreshed) {
       const retryToken = getAuthToken();
-      response = await fetch(path, {
+      response = await fetch(apiUrl(path), {
         ...options,
         headers: {
           ...headers,
@@ -146,8 +155,10 @@ export function logout() {
   clearAuthSession();
 }
 
-export function getAvailableSlots(date) {
-  return request(`/api/public/available-slots?date=${encodeURIComponent(date)}`, {}, true);
+export function getAvailableSlots(date, locationId) {
+  const params = new URLSearchParams({ date });
+  if (locationId) params.set("locationId", locationId);
+  return request(`/api/public/available-slots?${params.toString()}`, {}, true);
 }
 
 export function createPublicBooking(booking) {
@@ -158,8 +169,17 @@ export function createPublicBooking(booking) {
   }, true);
 }
 
-export function getDashboard() {
-  return request("/api/dashboard");
+export function getPublicShops() {
+  return request("/api/public/shops", {}, true);
+}
+
+export function getPublicShopLocations(shopId) {
+  return request(`/api/public/shops/${encodeURIComponent(shopId)}/locations`, {}, true);
+}
+
+export function getDashboard(locationId) {
+  const query = locationId ? `?locationId=${encodeURIComponent(locationId)}` : "";
+  return request(`/api/dashboard${query}`);
 }
 
 export function getSettings() {
@@ -202,12 +222,15 @@ export function updateSettings(settings) {
   });
 }
 
-export function getSalesData(days = 14) {
-  return request(`/api/dashboard/sales?days=${encodeURIComponent(days)}`);
+export function getSalesData(days = 14, locationId) {
+  const params = new URLSearchParams({ days });
+  if (locationId) params.set("locationId", locationId);
+  return request(`/api/dashboard/sales?${params.toString()}`);
 }
 
-export function getTires() {
-  return request("/api/tires");
+export function getTires(locationId) {
+  const query = locationId ? `?locationId=${encodeURIComponent(locationId)}` : "";
+  return request(`/api/tires${query}`);
 }
 
 export function searchTiresByBrand(brand) {
@@ -267,8 +290,9 @@ export function updateTire(id, tire) {
   });
 }
 
-export function getAppointments() {
-  return request("/api/appointments");
+export function getAppointments(locationId) {
+  const query = locationId ? `?locationId=${encodeURIComponent(locationId)}` : "";
+  return request(`/api/appointments${query}`);
 }
 
 export function createAppointment(appointment) {
@@ -293,8 +317,9 @@ export function deleteAppointment(id) {
   });
 }
 
-export function getWorkOrders() {
-  return request("/api/work-orders");
+export function getWorkOrders(locationId) {
+  const query = locationId ? `?locationId=${encodeURIComponent(locationId)}` : "";
+  return request(`/api/work-orders${query}`);
 }
 
 export function createWorkOrder(workOrder) {
@@ -353,8 +378,9 @@ export function previewWorkOrderInvoice(id) {
   return request(`/api/work-orders/${encodeURIComponent(id)}/invoice-preview`);
 }
 
-export function getInvoices() {
-  return request("/api/invoices");
+export function getInvoices(locationId) {
+  const query = locationId ? `?locationId=${encodeURIComponent(locationId)}` : "";
+  return request(`/api/invoices${query}`);
 }
 
 export function getInvoice(id) {
@@ -384,8 +410,9 @@ export function updateInvoiceStatus(id, status) {
   });
 }
 
-export function getEstimates() {
-  return request("/api/estimates");
+export function getEstimates(locationId) {
+  const query = locationId ? `?locationId=${encodeURIComponent(locationId)}` : "";
+  return request(`/api/estimates${query}`);
 }
 
 export function createEstimate(estimate) {
@@ -428,9 +455,13 @@ export function sendEstimate(id) {
   });
 }
 
-export function convertEstimateToInvoice(id) {
+export function convertEstimateToInvoice(id, invoice) {
   return request(`/api/estimates/${encodeURIComponent(id)}/convert-to-invoice`, {
-    method: "POST"
+    method: "POST",
+    ...(invoice ? {
+      headers: jsonHeaders,
+      body: JSON.stringify(invoice)
+    } : {})
   });
 }
 
@@ -490,10 +521,11 @@ export function sendCustomerNotice(id, notice) {
   });
 }
 
-export function getAccountingReport(start, end) {
+export function getAccountingReport(start, end, locationId) {
   const params = new URLSearchParams();
   if (start) params.set("start", start);
   if (end) params.set("end", end);
+  if (locationId) params.set("locationId", locationId);
   return request(`/api/accounting/reports${params.toString() ? `?${params.toString()}` : ""}`);
 }
 
@@ -537,8 +569,9 @@ export function createVendor(vendor) {
   });
 }
 
-export function getPayrollPeriods() {
-  return request("/api/payroll/periods");
+export function getPayrollPeriods(locationId) {
+  const query = locationId ? `?locationId=${encodeURIComponent(locationId)}` : "";
+  return request(`/api/payroll/periods${query}`);
 }
 
 export function createPayrollPeriod(period) {
@@ -617,8 +650,9 @@ export function cancelPayrollRecord(id) {
   });
 }
 
-export function getPayrollEmployees() {
-  return request("/api/payroll/employees");
+export function getPayrollEmployees(locationId) {
+  const query = locationId ? `?locationId=${encodeURIComponent(locationId)}` : "";
+  return request(`/api/payroll/employees${query}`);
 }
 
 export function updateEmployeePayrollSettings(employeeId, settings) {
@@ -757,8 +791,9 @@ export function createShopLocation(location) {
   });
 }
 
-export function clockIn() {
-  return request("/api/attendance/clock-in", {
+export function clockIn(locationId) {
+  const query = locationId ? `?locationId=${encodeURIComponent(locationId)}` : "";
+  return request(`/api/attendance/clock-in${query}`, {
     method: "POST"
   });
 }
@@ -782,13 +817,16 @@ export function getAttendanceEmployees() {
   return request("/api/attendance/employees");
 }
 
-export function getAttendanceByDate(date) {
-  const query = date ? `?date=${encodeURIComponent(date)}` : "";
-  return request(`/api/attendance/day${query}`);
+export function getAttendanceByDate(date, locationId) {
+  const params = new URLSearchParams();
+  if (date) params.set("date", date);
+  if (locationId) params.set("locationId", locationId);
+  return request(`/api/attendance/day${params.toString() ? `?${params.toString()}` : ""}`);
 }
 
-export function getEmployeeAttendanceRange(employeeId, start, end) {
+export function getEmployeeAttendanceRange(employeeId, start, end, locationId) {
   const params = new URLSearchParams({ start, end });
+  if (locationId) params.set("locationId", locationId);
   return request(`/api/attendance/employee/${encodeURIComponent(employeeId)}/range?${params.toString()}`);
 }
 

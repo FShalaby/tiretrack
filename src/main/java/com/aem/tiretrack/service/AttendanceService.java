@@ -16,6 +16,7 @@ import com.aem.tiretrack.enums.AbsenceDecision;
 import com.aem.tiretrack.enums.AttendanceStatus;
 import com.aem.tiretrack.enums.UserRole;
 import com.aem.tiretrack.model.EmployeeAttendance;
+import com.aem.tiretrack.model.ShopLocation;
 import com.aem.tiretrack.model.User;
 import com.aem.tiretrack.repository.EmployeeAttendanceRepository;
 import com.aem.tiretrack.repository.UserRepository;
@@ -37,8 +38,16 @@ public class AttendanceService {
 
     @Transactional
     public EmployeeAttendance clockInCurrentUser() {
+        return clockInCurrentUser(null);
+    }
+
+    @Transactional
+    public EmployeeAttendance clockInCurrentUser(Long locationId) {
         User employee = currentEmployee();
         LocalDate today = LocalDate.now();
+        ShopLocation location = locationId == null
+                ? employee.getShopLocation()
+                : shopContextService.resolveAccessibleLocation(locationId, employee.getShop(), true).orElse(null);
 
         attendanceRepository.findByEmployee_IdAndWorkDate(employee.getId(), today).ifPresent(existing -> {
             if (existing.getClockIn() != null) {
@@ -51,7 +60,7 @@ public class AttendanceService {
         EmployeeAttendance attendance = new EmployeeAttendance();
         attendance.setEmployee(employee);
         attendance.setShop(employee.getShop());
-        attendance.setShopLocation(employee.getShopLocation());
+        attendance.setShopLocation(location);
         attendance.setWorkDate(today);
         attendance.setClockIn(LocalDateTime.now());
         attendance.setStatus(AttendanceStatus.PRESENT);
@@ -109,11 +118,24 @@ public class AttendanceService {
                 .toList();
     }
 
+    public List<EmployeeAttendance> getEmployeeAttendanceRange(Long employeeId, LocalDate start, LocalDate end, Long locationId) {
+        ShopLocation location = shopContextService.resolveAccessibleLocation(locationId, null, false).orElse(null);
+        return getEmployeeAttendanceRange(employeeId, start, end).stream()
+                .filter(attendance -> matchesLocation(attendance.getShopLocation(), location))
+                .toList();
+    }
+
     public List<EmployeeAttendance> getAttendanceByDate(LocalDate date) {
+        return getAttendanceByDate(date, null);
+    }
+
+    public List<EmployeeAttendance> getAttendanceByDate(LocalDate date, Long locationId) {
         LocalDate resolvedDate = date == null ? LocalDate.now() : date;
+        ShopLocation location = shopContextService.resolveAccessibleLocation(locationId, null, false).orElse(null);
 
         List<EmployeeAttendance> records = attendanceRepository.findByWorkDate(resolvedDate).stream()
                 .filter(this::canAccessAttendance)
+                .filter(attendance -> matchesLocation(attendance.getShopLocation(), location))
                 .toList();
 
         return records.stream()
@@ -232,6 +254,14 @@ public class AttendanceService {
 
         return shopContextService.canAccessTenantResource(attendance.getShop(), attendance.getShopLocation())
                 || (attendance.getEmployee() != null && shopContextService.canAccessTenantUser(attendance.getEmployee()));
+    }
+
+    private boolean matchesLocation(ShopLocation resourceLocation, ShopLocation requestedLocation) {
+        if (requestedLocation == null) {
+            return true;
+        }
+
+        return resourceLocation != null && requestedLocation.getId().equals(resourceLocation.getId());
     }
 
     private void validateRange(LocalDate start, LocalDate end) {

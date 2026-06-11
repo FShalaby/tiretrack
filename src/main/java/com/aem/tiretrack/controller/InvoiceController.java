@@ -14,7 +14,9 @@ import org.springframework.web.bind.annotation.RestController;
 import com.aem.tiretrack.dto.InvoiceResponse;
 import com.aem.tiretrack.dto.InvoiceStatusUpdateRequest;
 import com.aem.tiretrack.model.Invoice;
+import com.aem.tiretrack.model.ShopLocation;
 import com.aem.tiretrack.service.InvoiceService;
+import com.aem.tiretrack.service.ShopContextService;
 
 import jakarta.validation.Valid;
 
@@ -23,14 +25,20 @@ import jakarta.validation.Valid;
 public class InvoiceController {
 
     private final InvoiceService invoiceService;
+    private final ShopContextService shopContextService;
 
-    public InvoiceController(InvoiceService invoiceService) {
+    public InvoiceController(InvoiceService invoiceService, ShopContextService shopContextService) {
         this.invoiceService = invoiceService;
+        this.shopContextService = shopContextService;
     }
 
     @GetMapping
-    public List<InvoiceResponse> getAllInvoices() {
-        return invoiceService.getAllInvoices().stream().map(InvoiceResponse::new).toList();
+    public List<InvoiceResponse> getAllInvoices(@org.springframework.web.bind.annotation.RequestParam(required = false) Long locationId) {
+        ShopLocation location = shopContextService.resolveAccessibleLocation(locationId, null, false).orElse(null);
+        return invoiceService.getAllInvoices().stream()
+                .filter(invoice -> matchesLocation(invoice.getShopLocation(), location))
+                .map(InvoiceResponse::new)
+                .toList();
     }
 
     @GetMapping("/{id}")
@@ -53,5 +61,13 @@ public class InvoiceController {
     @PutMapping("/{id}/status")
     public InvoiceResponse updateInvoiceStatus(@PathVariable Long id, @RequestBody InvoiceStatusUpdateRequest request) {
         return new InvoiceResponse(invoiceService.updateInvoiceStatus(id, request));
+    }
+
+    private boolean matchesLocation(ShopLocation resourceLocation, ShopLocation requestedLocation) {
+        if (requestedLocation == null) {
+            return true;
+        }
+
+        return resourceLocation != null && requestedLocation.getId().equals(resourceLocation.getId());
     }
 }

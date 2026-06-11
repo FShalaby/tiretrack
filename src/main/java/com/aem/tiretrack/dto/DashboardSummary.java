@@ -1,6 +1,7 @@
 package com.aem.tiretrack.dto;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 public class DashboardSummary {
 
@@ -17,11 +18,17 @@ public class DashboardSummary {
     private long inProgressWorkOrders;
     private long vehicleReadyWorkOrders;
     private long completedWorkOrdersToday;
+    private long totalCustomers;
+    private BigDecimal totalPayrollCost;
+    private BigDecimal totalExpenses;
+    private List<DashboardLocationBreakdown> locationBreakdowns;
 
     public DashboardSummary(int totalTiresInStock, int lowStockCount, long totalInvoices,
             BigDecimal totalRevenue, BigDecimal totalInvoiced, BigDecimal totalCollected,
             BigDecimal outstandingBalance, long partiallyPaidInvoices, long todayAppointments, long pendingWorkOrders,
-            long inProgressWorkOrders, long vehicleReadyWorkOrders, long completedWorkOrdersToday) {
+            long inProgressWorkOrders, long vehicleReadyWorkOrders, long completedWorkOrdersToday,
+            long totalCustomers, BigDecimal totalPayrollCost, BigDecimal totalExpenses,
+            List<DashboardLocationBreakdown> locationBreakdowns) {
         this.totalTiresInStock = totalTiresInStock;
         this.lowStockCount = lowStockCount;
         this.totalInvoices = totalInvoices;
@@ -35,6 +42,10 @@ public class DashboardSummary {
         this.inProgressWorkOrders = inProgressWorkOrders;
         this.vehicleReadyWorkOrders = vehicleReadyWorkOrders;
         this.completedWorkOrdersToday = completedWorkOrdersToday;
+        this.totalCustomers = totalCustomers;
+        this.totalPayrollCost = totalPayrollCost;
+        this.totalExpenses = totalExpenses;
+        this.locationBreakdowns = locationBreakdowns == null ? List.of() : locationBreakdowns;
     }
 
     public int getTotalTiresInStock() {
@@ -87,5 +98,21 @@ public class DashboardSummary {
 
     public long getCompletedWorkOrdersToday() {
         return completedWorkOrdersToday;
+    }
+
+    public long getTotalCustomers() {
+        return totalCustomers;
+    }
+
+    public BigDecimal getTotalPayrollCost() {
+        return totalPayrollCost;
+    }
+
+    public BigDecimal getTotalExpenses() {
+        return totalExpenses;
+    }
+
+    public List<DashboardLocationBreakdown> getLocationBreakdowns() {
+        return locationBreakdowns;
     }
 }

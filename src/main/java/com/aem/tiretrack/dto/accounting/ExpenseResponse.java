@@ -28,6 +28,8 @@ public class ExpenseResponse {
     private String notes;
     private Long shopId;
     private String shopName;
+    private Long locationId;
+    private String locationName;
     private String createdBy;
     private LocalDateTime createdAt;
     private LocalDateTime paidAt;
@@ -52,6 +54,8 @@ public class ExpenseResponse {
         this.notes = expense.getNotes();
         this.shopId = expense.getShopId();
         this.shopName = expense.getShopName();
+        this.locationId = expense.getLocationId();
+        this.locationName = expense.getLocationName();
         this.createdBy = expense.getCreatedBy();
         this.createdAt = expense.getCreatedAt();
         this.paidAt = expense.getPaidAt();
@@ -76,6 +80,8 @@ public class ExpenseResponse {
     public String getNotes() { return notes; }
     public Long getShopId() { return shopId; }
     public String getShopName() { return shopName; }
+    public Long getLocationId() { return locationId; }
+    public String getLocationName() { return locationName; }
     public String getCreatedBy() { return createdBy; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public LocalDateTime getPaidAt() { return paidAt; }

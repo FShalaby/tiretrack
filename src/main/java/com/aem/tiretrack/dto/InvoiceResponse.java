@@ -9,6 +9,7 @@ import com.aem.tiretrack.model.Invoice;
 
 public class InvoiceResponse {
     private Long id;
+    private String invoiceNumber;
     private String customerName;
     private String phone;
     private String vehicle;
@@ -33,6 +34,7 @@ public class InvoiceResponse {
 
     public InvoiceResponse(Invoice invoice) {
         this.id = invoice.getId();
+        this.invoiceNumber = formatInvoiceNumber(invoice.getId());
         this.customerName = invoice.getCustomerName();
         this.phone = invoice.getPhone();
         this.vehicle = invoice.getVehicle();
@@ -57,6 +59,7 @@ public class InvoiceResponse {
     }
 
     public Long getId() { return id; }
+    public String getInvoiceNumber() { return invoiceNumber; }
     public String getCustomerName() { return customerName; }
     public String getPhone() { return phone; }
     public String getVehicle() { return vehicle; }
@@ -78,4 +81,8 @@ public class InvoiceResponse {
     public LocalDateTime getPaidAt() { return paidAt; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public List<InvoiceItemResponse> getItems() { return items; }
+
+    private String formatInvoiceNumber(Long id) {
+        return id == null ? null : "INV-" + String.format("%06d", id);
+    }
 }

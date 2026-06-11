@@ -28,8 +28,8 @@ public class AttendanceController {
     }
 
     @PostMapping("/clock-in")
-    public EmployeeAttendanceResponse clockIn() {
-        return new EmployeeAttendanceResponse(attendanceService.clockInCurrentUser());
+    public EmployeeAttendanceResponse clockIn(@RequestParam(required = false) Long locationId) {
+        return new EmployeeAttendanceResponse(attendanceService.clockInCurrentUser(locationId));
     }
 
     @PostMapping("/clock-out")
@@ -59,8 +59,9 @@ public class AttendanceController {
 
     @GetMapping("/day")
     public List<EmployeeAttendanceResponse> getAttendanceByDate(
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
-        return attendanceService.getAttendanceByDate(date).stream()
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
+            @RequestParam(required = false) Long locationId) {
+        return attendanceService.getAttendanceByDate(date, locationId).stream()
                 .map(EmployeeAttendanceResponse::new)
                 .toList();
     }
@@ -69,8 +70,9 @@ public class AttendanceController {
     public List<EmployeeAttendanceResponse> getEmployeeAttendanceRange(
             @PathVariable Long employeeId,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate start,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate end) {
-        return attendanceService.getEmployeeAttendanceRange(employeeId, start, end).stream()
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate end,
+            @RequestParam(required = false) Long locationId) {
+        return attendanceService.getEmployeeAttendanceRange(employeeId, start, end, locationId).stream()
                 .map(EmployeeAttendanceResponse::new)
                 .toList();
     }

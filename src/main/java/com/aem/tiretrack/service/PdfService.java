@@ -24,7 +24,7 @@ public class PdfService {
 
     public byte[] invoicePdf(Long invoiceId) {
         Invoice invoice = invoiceService.getInvoiceById(invoiceId);
-        CompanySettings settings = companySettingsService.getSettings();
+        CompanySettings settings = settingsForInvoice(invoice);
         StringBuilder text = new StringBuilder();
 
         text.append(settings.getShopName()).append("\n");
@@ -40,7 +40,9 @@ public class PdfService {
         text.append("\nSubtotal: $").append(invoice.getSubtotal());
         text.append("\nTax: $").append(invoice.getTaxAmount());
         text.append("\nTotal: $").append(invoice.getTotal());
-        text.append("\n\n").append(settings.getInvoiceTerms());
+        if (settings.getInvoiceTerms() != null && !settings.getInvoiceTerms().isBlank()) {
+            text.append("\n\n").append(settings.getInvoiceTerms());
+        }
 
         return simplePdf("Invoice " + invoice.getId(), text.toString());
     }
@@ -66,6 +68,12 @@ public class PdfService {
                 .append(invoice.getTotal()).append("\n"));
 
         return simplePdf("Monthly Sales Report", text.toString());
+    }
+
+    private CompanySettings settingsForInvoice(Invoice invoice) {
+        return invoice.getShop() == null
+                ? companySettingsService.getSettings()
+                : companySettingsService.getSettings(invoice.getShop().getId());
     }
 
     private byte[] simplePdf(String title, String text) {

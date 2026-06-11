@@ -22,12 +22,14 @@ public class DashboardController {
     }
 
     @GetMapping
-    public DashboardSummary getDashboardSummary() {
-        return dashboardService.getDashboardSummary();
+    public DashboardSummary getDashboardSummary(@RequestParam(required = false) Long locationId) {
+        return dashboardService.getDashboardSummary(locationId);
     }
 
     @GetMapping("/sales")
-    public List<SalesData> getRecentSales(@RequestParam(defaultValue = "14") int days) {
-        return dashboardService.getRecentSales(days);
+    public List<SalesData> getRecentSales(
+            @RequestParam(defaultValue = "14") int days,
+            @RequestParam(required = false) Long locationId) {
+        return dashboardService.getRecentSales(days, locationId);
     }
 }
