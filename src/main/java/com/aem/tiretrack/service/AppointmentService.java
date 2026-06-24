@@ -18,15 +18,19 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.aem.tiretrack.enums.AppointmentStatus;
+import com.aem.tiretrack.enums.TireRequestSource;
 import com.aem.tiretrack.enums.UserRole;
+import com.aem.tiretrack.dto.TireAvailabilityResponse;
 import com.aem.tiretrack.model.AppNotification;
 import com.aem.tiretrack.model.Appointment;
+import com.aem.tiretrack.model.CustomerVehicle;
 import com.aem.tiretrack.model.Shop;
 import com.aem.tiretrack.model.ShopLocation;
 import com.aem.tiretrack.model.Tire;
 import com.aem.tiretrack.model.User;
 import com.aem.tiretrack.repository.AppNotificationRepository;
 import com.aem.tiretrack.repository.AppointmentRepository;
+import com.aem.tiretrack.repository.CustomerVehicleRepository;
 import com.aem.tiretrack.repository.TireRepository;
 import com.aem.tiretrack.repository.UserRepository;
 
@@ -38,18 +42,33 @@ public class AppointmentService {
 
     private final AppointmentRepository appointmentRepository;
     private final TireRepository tireRepository;
+    private final CustomerVehicleRepository vehicleRepository;
     private final UserRepository userRepository;
     private final AppNotificationRepository appNotificationRepository;
     private final AuditLogService auditLogService;
     private final ShopContextService shopContextService;
+    private final TireAvailabilityService tireAvailabilityService;
+    private final TireRequestService tireRequestService;
 
-    public AppointmentService(AppointmentRepository appointmentRepository, TireRepository tireRepository, UserRepository userRepository, AppNotificationRepository appNotificationRepository, AuditLogService auditLogService, ShopContextService shopContextService) {
+    public AppointmentService(
+            AppointmentRepository appointmentRepository,
+            TireRepository tireRepository,
+            CustomerVehicleRepository vehicleRepository,
+            UserRepository userRepository,
+            AppNotificationRepository appNotificationRepository,
+            AuditLogService auditLogService,
+            ShopContextService shopContextService,
+            TireAvailabilityService tireAvailabilityService,
+            TireRequestService tireRequestService) {
         this.appointmentRepository = appointmentRepository;
         this.tireRepository = tireRepository;
+        this.vehicleRepository = vehicleRepository;
         this.userRepository = userRepository;
         this.appNotificationRepository = appNotificationRepository;
         this.auditLogService = auditLogService;
         this.shopContextService = shopContextService;
+        this.tireAvailabilityService = tireAvailabilityService;
+        this.tireRequestService = tireRequestService;
     }
 
     public List<Appointment> getAllAppointments() {
@@ -108,11 +127,15 @@ public class AppointmentService {
     public Appointment saveAppointment(Appointment appointment) {
         assignCurrentTenantContextIfMissing(appointment);
         normalizeReminderFields(appointment);
+        CustomerVehicle selectedVehicle = resolveAppointmentVehicle(appointment);
+        TireAvailabilityResponse availability = applyTireAvailabilityWorkflow(appointment, selectedVehicle);
         validateAppointmentTime(appointment, null);
         linkCustomer(appointment);
         reserveAppointmentTires(appointment);
         Appointment savedAppointment = appointmentRepository.save(appointment);
         auditLogService.record("BOOKED", "Appointment", savedAppointment.getId(), "Booked appointment for " + savedAppointment.getCustomerName());
+        createTireRequestIfPending(savedAppointment, selectedVehicle, availability);
+        recordOverrideIfNeeded(savedAppointment, appointment);
         return savedAppointment;
     }
 
@@ -122,6 +145,8 @@ public class AppointmentService {
         Appointment existingAppointment = getAppointmentById(id);
         assignCurrentTenantContextIfMissing(updatedAppointment);
         normalizeReminderFields(updatedAppointment);
+        CustomerVehicle selectedVehicle = resolveAppointmentVehicle(updatedAppointment);
+        TireAvailabilityResponse availability = applyTireAvailabilityWorkflow(updatedAppointment, selectedVehicle);
         validateAppointmentTime(updatedAppointment, id);
         releaseAppointmentTires(existingAppointment);
 
@@ -156,6 +181,8 @@ public class AppointmentService {
         reserveAppointmentTires(existingAppointment);
         Appointment savedAppointment = appointmentRepository.save(existingAppointment);
         auditLogService.record("UPDATED", "Appointment", savedAppointment.getId(), "Updated appointment for " + savedAppointment.getCustomerName());
+        createTireRequestIfPending(savedAppointment, selectedVehicle, availability);
+        recordOverrideIfNeeded(savedAppointment, updatedAppointment);
         return savedAppointment;
     }
 
@@ -310,6 +337,141 @@ public class AppointmentService {
         }
 
         tire.setReservedQuantity(nextReservedQuantity);
+    }
+
+    private CustomerVehicle resolveAppointmentVehicle(Appointment appointment) {
+        if (appointment.getCustomerVehicleId() == null) {
+            return null;
+        }
+
+        CustomerVehicle vehicle = vehicleRepository.findById(appointment.getCustomerVehicleId())
+                .orElseThrow(() -> new RuntimeException("Vehicle not found"));
+        if (!shopContextService.canAccessTenantResource(vehicle.getShop(), vehicle.getShopLocation())) {
+            throw new AccessDeniedException("You do not have permission to access this vehicle.");
+        }
+
+        User customer = vehicle.getCustomer();
+        if (customer != null) {
+            if (appointment.getCustomerId() == null) {
+                appointment.setCustomerId(customer.getId());
+            }
+            if (appointment.getCustomerName() == null || appointment.getCustomerName().isBlank()) {
+                appointment.setCustomerName(customer.getFullName());
+            }
+            if (appointment.getEmail() == null || appointment.getEmail().isBlank()) {
+                appointment.setEmail(customer.getEmail());
+            }
+            if (appointment.getPhone() == null || appointment.getPhone().isBlank()) {
+                appointment.setPhone(customer.getPhone());
+            }
+        }
+
+        if (appointment.getVehicle() == null || appointment.getVehicle().isBlank()) {
+            appointment.setVehicle(vehicleLabel(vehicle));
+        }
+        if (appointment.getTireSize() == null || appointment.getTireSize().isBlank()) {
+            appointment.setTireSize(vehicleTireSize(vehicle));
+        }
+        if (appointment.getShop() == null) {
+            appointment.setShop(vehicle.getShop() != null ? vehicle.getShop() : customer == null ? null : customer.getShop());
+        }
+        if (appointment.getShopLocation() == null && vehicle.getShopLocation() != null) {
+            appointment.setShopLocation(vehicle.getShopLocation());
+        }
+
+        return vehicle;
+    }
+
+    private TireAvailabilityResponse applyTireAvailabilityWorkflow(Appointment appointment, CustomerVehicle vehicle) {
+        if (vehicle == null || !tireAvailabilityService.isTireDependentService(appointment.getServiceType())
+                || !tireAvailabilityService.vehicleHasTireSize(vehicle)) {
+            return null;
+        }
+
+        TireAvailabilityResponse availability = tireAvailabilityService.checkStaffAvailability(
+                vehicle.getId(),
+                appointment.getLocationId(),
+                appointment.getServiceType());
+
+        if (availability.isCanConfirmAppointment()) {
+            return availability;
+        }
+
+        if (appointment.isOverrideTireAvailability()) {
+            if (appointment.getTireAvailabilityOverrideReason() == null
+                    || appointment.getTireAvailabilityOverrideReason().isBlank()) {
+                throw new IllegalArgumentException("Enter an override reason before confirming without available tire stock.");
+            }
+            return availability;
+        }
+
+        appointment.setStatus(AppointmentStatus.PENDING_TIRE_AVAILABILITY);
+        appointment.setConfirmationStatus("PENDING");
+        return availability;
+    }
+
+    private void createTireRequestIfPending(Appointment appointment, CustomerVehicle vehicle, TireAvailabilityResponse availability) {
+        if (vehicle == null || availability == null || availability.isCanConfirmAppointment()
+                || appointment.getStatus() != AppointmentStatus.PENDING_TIRE_AVAILABILITY
+                || tireRequestService.hasRequestForAppointment(appointment.getId())) {
+            return;
+        }
+
+        tireRequestService.createRequest(
+                vehicle.getCustomer(),
+                vehicle,
+                appointment.getShop(),
+                appointment.getShopLocation(),
+                appointment,
+                availability.getRequiredSize(),
+                requestSourceForCurrentUser(),
+                shopContextService.getCurrentUser().map(User::getId).orElse(null),
+                appointment.getNotes());
+        auditLogService.record(
+                "PENDING_TIRE_AVAILABILITY",
+                "Appointment",
+                appointment.getId(),
+                "Held appointment pending tire availability. " + availability.getReason());
+    }
+
+    private void recordOverrideIfNeeded(Appointment savedAppointment, Appointment requestAppointment) {
+        if (!requestAppointment.isOverrideTireAvailability()) {
+            return;
+        }
+
+        auditLogService.record(
+                "OVERRIDE",
+                "Appointment",
+                savedAppointment.getId(),
+                "Confirmed appointment despite tire availability warning. Reason: "
+                        + requestAppointment.getTireAvailabilityOverrideReason());
+    }
+
+    private TireRequestSource requestSourceForCurrentUser() {
+        return shopContextService.getCurrentUser()
+                .filter(user -> user.getRole() == UserRole.EMPLOYEE)
+                .map(user -> TireRequestSource.EMPLOYEE)
+                .orElse(TireRequestSource.ADMIN);
+    }
+
+    private String vehicleLabel(CustomerVehicle vehicle) {
+        return String.join(" ", List.of(
+                vehicle.getYear() == null ? "" : vehicle.getYear(),
+                vehicle.getMake() == null ? "" : vehicle.getMake(),
+                vehicle.getModel() == null ? "" : vehicle.getModel()
+        )).trim();
+    }
+
+    private String vehicleTireSize(CustomerVehicle vehicle) {
+        if ("staggered".equalsIgnoreCase(vehicle.getTireSetup())) {
+            return "Front: " + safeText(vehicle.getFrontTireSize()) + " / Rear: " + safeText(vehicle.getRearTireSize());
+        }
+
+        return vehicle.getTireSize();
+    }
+
+    private String safeText(String value) {
+        return value == null ? "" : value;
     }
 
     private void linkCustomer(Appointment appointment) {

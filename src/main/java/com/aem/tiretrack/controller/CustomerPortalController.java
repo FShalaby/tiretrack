@@ -12,6 +12,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.aem.tiretrack.dto.AppointmentResponse;
+import com.aem.tiretrack.dto.TireAvailabilityResponse;
+import com.aem.tiretrack.dto.TireRequestResponse;
 import com.aem.tiretrack.dto.customer.CustomerAppointmentRequest;
 import com.aem.tiretrack.dto.EstimateResponse;
 import com.aem.tiretrack.dto.InvoiceResponse;
@@ -20,6 +22,7 @@ import com.aem.tiretrack.dto.customer.CustomerNoticeRequest;
 import com.aem.tiretrack.dto.customer.CustomerPortalResponse;
 import com.aem.tiretrack.dto.customer.CustomerSummary;
 import com.aem.tiretrack.dto.customer.CustomerVehicleResponse;
+import com.aem.tiretrack.enums.ServiceType;
 import com.aem.tiretrack.model.CustomerVehicle;
 import com.aem.tiretrack.service.CustomerPortalService;
 
@@ -49,6 +52,19 @@ public class CustomerPortalController {
     @PostMapping("/api/customer/appointments")
     public AppointmentResponse bookAppointment(@RequestBody CustomerAppointmentRequest request) {
         return new AppointmentResponse(customerPortalService.bookAppointment(request));
+    }
+
+    @GetMapping("/api/customer/tire-availability")
+    public TireAvailabilityResponse tireAvailability(
+            @org.springframework.web.bind.annotation.RequestParam Long vehicleId,
+            @org.springframework.web.bind.annotation.RequestParam(required = false) Long locationId,
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue = "INSTALLATION") ServiceType serviceType) {
+        return customerPortalService.checkTireAvailability(vehicleId, locationId, serviceType);
+    }
+
+    @GetMapping("/api/customer/tire-requests")
+    public List<TireRequestResponse> tireRequests() {
+        return customerPortalService.portal().getTireRequests();
     }
 
     @PostMapping("/api/customer/invoices/{id}/pay")

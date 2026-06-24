@@ -79,8 +79,10 @@ public class EstimateService {
     public Estimate createEstimate(EstimateRequest request) {
         Estimate estimate = new Estimate();
         applyRequest(estimate, request);
+        linkCustomerAccountIfPresent(estimate);
         Estimate savedEstimate = estimateRepository.save(estimate);
         ensureEstimateNumber(savedEstimate);
+        notifyCustomerEstimateAvailable(savedEstimate);
         return savedEstimate;
     }
 
@@ -91,6 +93,7 @@ public class EstimateService {
             throw new IllegalArgumentException("Only draft estimates can be edited.");
         }
         applyRequest(estimate, request);
+        linkCustomerAccountIfPresent(estimate);
         return estimateRepository.save(estimate);
     }
 
@@ -350,6 +353,33 @@ public class EstimateService {
 
         saveEstimateSentNotification(estimate, estimateLabel, UserRole.OWNER);
         saveEstimateSentNotification(estimate, estimateLabel, UserRole.ADMIN);
+        saveEstimateSentNotification(estimate, estimateLabel, UserRole.EMPLOYEE);
+    }
+
+    private void notifyCustomerEstimateAvailable(Estimate estimate) {
+        User customer = resolveEstimateCustomer(estimate);
+        if (customer == null) {
+            return;
+        }
+
+        String estimateLabel = firstNonBlank(estimate.getEstimateNumber(), "#" + estimate.getId());
+        CustomerNotification notification = new CustomerNotification();
+        notification.setCustomer(customer);
+        notification.setType("ESTIMATE");
+        notification.setTitle("New estimate available");
+        notification.setMessage("Estimate " + estimateLabel + " is now available in your account. Total: $" + amount(estimate.getTotal()) + ".");
+        customerNotificationRepository.save(notification);
+    }
+
+    private void linkCustomerAccountIfPresent(Estimate estimate) {
+        if (estimate.getCustomer() != null) {
+            return;
+        }
+
+        User customer = resolveEstimateCustomer(estimate);
+        if (customer != null) {
+            estimate.setCustomer(customer);
+        }
     }
 
     private void saveEstimateSentNotification(Estimate estimate, String estimateLabel, UserRole role) {
@@ -369,16 +399,30 @@ public class EstimateService {
         }
 
         if (estimate.getPhone() != null && !estimate.getPhone().isBlank()) {
-            return userRepository.findByPhone(estimate.getPhone())
+            User customer = userRepository.findByPhone(estimate.getPhone())
                     .filter(user -> user.getRole() == UserRole.CUSTOMER)
                     .filter(shopContextService::canAccessTenantUser)
                     .orElse(null);
+            if (customer != null) {
+                return customer;
+            }
         }
 
         if (estimate.getEmail() != null && !estimate.getEmail().isBlank()) {
-            return userRepository.findByEmail(estimate.getEmail())
+            User customer = userRepository.findByEmail(estimate.getEmail())
                     .filter(user -> user.getRole() == UserRole.CUSTOMER)
                     .filter(shopContextService::canAccessTenantUser)
+                    .orElse(null);
+            if (customer != null) {
+                return customer;
+            }
+        }
+
+        if (estimate.getCustomerName() != null && !estimate.getCustomerName().isBlank()) {
+            return userRepository.findByRoleOrderByCreatedAtDesc(UserRole.CUSTOMER).stream()
+                    .filter(user -> user.getFullName() != null && user.getFullName().equalsIgnoreCase(estimate.getCustomerName()))
+                    .filter(shopContextService::canAccessTenantUser)
+                    .findFirst()
                     .orElse(null);
         }
 

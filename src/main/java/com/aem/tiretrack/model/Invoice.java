@@ -6,6 +6,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.aem.tiretrack.util.PhoneNumberUtils;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonManagedReference;
 
@@ -162,7 +163,7 @@ public class Invoice {
     }
 
     public void setPhone(String phone) {
-        this.phone = phone;
+        this.phone = PhoneNumberUtils.formatCanadian(phone);
     }
 
     public String getVehicle() {

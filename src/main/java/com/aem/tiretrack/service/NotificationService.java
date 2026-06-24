@@ -27,19 +27,10 @@ public class NotificationService {
 
     public List<AppNotification> currentNotifications() {
         User user = currentUser();
-        if (shopContextService.isSuperAdmin()) {
-            return notificationRepository.findTop30ByRecipientUserIdOrRecipientRoleOrderByCreatedAtDesc(user.getId(), user.getRole());
-        }
-
-        if (user.getRole() == UserRole.OWNER || user.getRole() == UserRole.ADMIN || user.getRole() == UserRole.EMPLOYEE) {
-            return notificationRepository.findTop30ByRecipientUserIdOrRecipientRoleAndShop_IdOrderByCreatedAtDesc(
-                    user.getId(),
-                    user.getRole(),
-                    shopContextService.requireShopForAdminOrEmployee().getId());
-        }
-
-        return notificationRepository.findTop30ByRecipientUserIdOrRecipientRoleOrderByCreatedAtDesc(user.getId(), user.getRole()).stream()
-                .filter(notification -> notification.getRecipientUserId() != null && notification.getRecipientUserId().equals(user.getId()))
+        Long shopId = user.getShop() == null ? null : user.getShop().getId();
+        return notificationRepository.findVisibleNotifications(user.getId(), user.getRole(), shopId).stream()
+                .filter(notification -> canReadNotification(user, notification))
+                .limit(30)
                 .toList();
     }
 
@@ -58,8 +49,11 @@ public class NotificationService {
 
     public AppNotification markRead(Long id) {
         User user = currentUser();
-        AppNotification notification = notificationRepository.findByIdAndRecipientUserId(id, user.getId())
+        AppNotification notification = notificationRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Notification not found"));
+        if (!canReadNotification(user, notification)) {
+            throw new ResourceNotFoundException("Notification not found");
+        }
         notification.setRead(true);
         return notificationRepository.save(notification);
     }
@@ -76,6 +70,26 @@ public class NotificationService {
         String email = SecurityContextHolder.getContext().getAuthentication().getName();
         return userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("User not found"));
+    }
+
+    private boolean canReadNotification(User user, AppNotification notification) {
+        if (notification.getRecipientUserId() != null) {
+            return notification.getRecipientUserId().equals(user.getId());
+        }
+
+        if (notification.getRecipientRole() == null || notification.getRecipientRole() != user.getRole()) {
+            return false;
+        }
+
+        if (user.getRole() == UserRole.SUPER_ADMIN) {
+            return true;
+        }
+
+        if (notification.getShop() == null) {
+            return user.getShop() == null;
+        }
+
+        return user.getShop() != null && notification.getShop().getId().equals(user.getShop().getId());
     }
 
     private String blankDefault(String value, String fallback) {

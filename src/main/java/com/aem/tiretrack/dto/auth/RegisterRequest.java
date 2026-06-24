@@ -1,6 +1,7 @@
 package com.aem.tiretrack.dto.auth;
 
 import com.aem.tiretrack.enums.UserRole;
+import com.aem.tiretrack.util.PhoneNumberUtils;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
@@ -56,7 +57,7 @@ public class RegisterRequest {
     }
 
     public void setPhone(String phone) {
-        this.phone = phone;
+        this.phone = PhoneNumberUtils.formatCanadian(phone);
     }
     
     public String getPassword() {

@@ -2,6 +2,7 @@ package com.aem.tiretrack.model;
 
 import java.time.LocalDateTime;
 
+import com.aem.tiretrack.util.TireSizeUtils;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 
 import jakarta.persistence.Column;
@@ -90,12 +91,12 @@ public class CustomerVehicle {
     public String getPlateNumber() { return plateNumber; }
     public void setPlateNumber(String plateNumber) { this.plateNumber = plateNumber; }
     public String getTireSize() { return tireSize; }
-    public void setTireSize(String tireSize) { this.tireSize = tireSize; }
+    public void setTireSize(String tireSize) { this.tireSize = TireSizeUtils.formatPassengerSize(tireSize); }
     public String getTireSetup() { return tireSetup; }
     public void setTireSetup(String tireSetup) { this.tireSetup = tireSetup; }
     public String getFrontTireSize() { return frontTireSize; }
-    public void setFrontTireSize(String frontTireSize) { this.frontTireSize = frontTireSize; }
+    public void setFrontTireSize(String frontTireSize) { this.frontTireSize = TireSizeUtils.formatPassengerSize(frontTireSize); }
     public String getRearTireSize() { return rearTireSize; }
-    public void setRearTireSize(String rearTireSize) { this.rearTireSize = rearTireSize; }
+    public void setRearTireSize(String rearTireSize) { this.rearTireSize = TireSizeUtils.formatPassengerSize(rearTireSize); }
     public LocalDateTime getCreatedAt() { return createdAt; }
 }

@@ -5,6 +5,7 @@ import java.time.LocalDateTime;
 
 import com.aem.tiretrack.enums.EmploymentType;
 import com.aem.tiretrack.enums.UserRole;
+import com.aem.tiretrack.util.PhoneNumberUtils;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 
 import jakarta.persistence.Column;
@@ -108,7 +109,7 @@ public class User
     }
 
     public void setPhone(String phone) {
-        this.phone = phone;
+        this.phone = PhoneNumberUtils.formatCanadian(phone);
     }
 
     public String getPasswordHash() {

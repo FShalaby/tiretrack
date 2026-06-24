@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 
 import com.aem.tiretrack.enums.EmploymentType;
 import com.aem.tiretrack.enums.UserRole;
+import com.aem.tiretrack.util.PhoneNumberUtils;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -36,7 +37,7 @@ public class PlatformUserRequest {
     public String getEmail() { return email; }
     public void setEmail(String email) { this.email = email; }
     public String getPhone() { return phone; }
-    public void setPhone(String phone) { this.phone = phone; }
+    public void setPhone(String phone) { this.phone = PhoneNumberUtils.formatCanadian(phone); }
     public String getPassword() { return password; }
     public void setPassword(String password) { this.password = password; }
     public UserRole getRole() { return role; }

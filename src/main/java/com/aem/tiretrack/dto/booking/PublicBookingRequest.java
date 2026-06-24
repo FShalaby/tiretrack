@@ -4,6 +4,8 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 
 import com.aem.tiretrack.enums.ServiceType;
+import com.aem.tiretrack.util.PhoneNumberUtils;
+import com.aem.tiretrack.util.TireSizeUtils;
 
 public class PublicBookingRequest {
     private String customerName;
@@ -39,7 +41,7 @@ public class PublicBookingRequest {
     }
 
     public void setPhone(String phone) {
-        this.phone = phone;
+        this.phone = PhoneNumberUtils.formatCanadian(phone);
     }
 
     public String getVehicle() {
@@ -55,7 +57,7 @@ public class PublicBookingRequest {
     }
 
     public void setTireSize(String tireSize) {
-        this.tireSize = tireSize;
+        this.tireSize = TireSizeUtils.formatPassengerSize(tireSize);
     }
 
     public Long getShopId() {

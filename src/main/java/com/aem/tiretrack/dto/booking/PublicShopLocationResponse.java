@@ -32,7 +32,9 @@ public class PublicShopLocationResponse {
 
     public Long getShopId() { return shopId; }
     public String getShopName() { return shopName; }
+    public Long getId() { return locationId; }
     public Long getLocationId() { return locationId; }
+    public String getName() { return locationName; }
     public String getLocationName() { return locationName; }
     public ShopLocationType getType() { return type; }
     public String getAddress() { return address; }

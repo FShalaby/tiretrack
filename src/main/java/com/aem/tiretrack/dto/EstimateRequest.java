@@ -5,6 +5,8 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.aem.tiretrack.util.PhoneNumberUtils;
+
 public class EstimateRequest {
     private Long customerId;
     private String customerName;
@@ -22,7 +24,7 @@ public class EstimateRequest {
     public String getCustomerName() { return customerName; }
     public void setCustomerName(String customerName) { this.customerName = customerName; }
     public String getPhone() { return phone; }
-    public void setPhone(String phone) { this.phone = phone; }
+    public void setPhone(String phone) { this.phone = PhoneNumberUtils.formatCanadian(phone); }
     public String getEmail() { return email; }
     public void setEmail(String email) { this.email = email; }
     public String getVehicle() { return vehicle; }

@@ -34,18 +34,21 @@ public class TireService
     private final ShopLocationRepository shopLocationRepository;
     private final AuditLogService auditLogService;
     private final ShopContextService shopContextService;
+    private final TireRequestService tireRequestService;
 
     public TireService(
             TireRepository tireRepository,
             ShopRepository shopRepository,
             ShopLocationRepository shopLocationRepository,
             AuditLogService auditLogService,
-            ShopContextService shopContextService) {
+            ShopContextService shopContextService,
+            TireRequestService tireRequestService) {
         this.tireRepository = tireRepository;
         this.shopRepository = shopRepository;
         this.shopLocationRepository = shopLocationRepository;
         this.auditLogService = auditLogService;
         this.shopContextService = shopContextService;
+        this.tireRequestService = tireRequestService;
     }
 
     public List<Tire> getAllTires() {
@@ -66,6 +69,7 @@ public class TireService
         applyOptionalShopAssignment(tire, tire);
         Tire savedTire = tireRepository.save(tire);
         auditLogService.record("INVENTORY_CREATED", "Tire", savedTire.getId(), "Created tire " + savedTire.getBrand() + " " + savedTire.getTireSize(), getCurrentUsername());
+        markMatchingTireRequestsAvailable(savedTire);
         return savedTire;
     }
 
@@ -88,6 +92,7 @@ public class TireService
 
         Tire savedTire = tireRepository.save(existingTire);
         auditLogService.record("INVENTORY_UPDATED", "Tire", savedTire.getId(), "Updated tire " + savedTire.getBrand() + " " + savedTire.getTireSize(), getCurrentUsername());
+        markMatchingTireRequestsAvailable(savedTire);
         return savedTire;
     }
 
@@ -196,9 +201,11 @@ public class TireService
                     }
 
                     Tire savedTire = tireRepository.save(existingTire);
+                    markMatchingTireRequestsAvailable(savedTire);
                     updatedCount += 1;
                 } else {
-                    tireRepository.save(importTire);
+                    Tire savedTire = tireRepository.save(importTire);
+                    markMatchingTireRequestsAvailable(savedTire);
                     createdCount += 1;
                 }
             } catch (IllegalArgumentException exception) {
@@ -272,6 +279,18 @@ public class TireService
         target.setShopLocation(location);
         if (shop != null) {
             shopContextService.requireShopAccess(shop.getId());
+        }
+    }
+
+    private void markMatchingTireRequestsAvailable(Tire tire) {
+        int updatedRequests = tireRequestService.markMatchingRequestsAvailableForTire(tire);
+        if (updatedRequests > 0) {
+            auditLogService.record(
+                    "TIRE_REQUESTS_AUTO_AVAILABLE",
+                    "Tire",
+                    tire.getId(),
+                    updatedRequests + " tire request(s) marked available after inventory update",
+                    getCurrentUsername());
         }
     }
 

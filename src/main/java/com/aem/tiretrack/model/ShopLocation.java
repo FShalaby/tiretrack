@@ -3,6 +3,7 @@ package com.aem.tiretrack.model;
 import java.time.LocalDateTime;
 
 import com.aem.tiretrack.enums.ShopLocationType;
+import com.aem.tiretrack.util.PhoneNumberUtils;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -106,7 +107,7 @@ public class ShopLocation {
     public String getPostalCode() { return postalCode; }
     public void setPostalCode(String postalCode) { this.postalCode = postalCode; }
     public String getPhone() { return phone; }
-    public void setPhone(String phone) { this.phone = phone; }
+    public void setPhone(String phone) { this.phone = PhoneNumberUtils.formatCanadian(phone); }
     public String getEmail() { return email; }
     public void setEmail(String email) { this.email = email; }
     public boolean isCustomerFacing() { return customerFacing == null || customerFacing; }

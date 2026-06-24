@@ -13,7 +13,9 @@ public class PublicShopResponse {
         this.active = shop.isActive();
     }
 
+    public Long getId() { return shopId; }
     public Long getShopId() { return shopId; }
+    public String getName() { return shopName; }
     public String getShopName() { return shopName; }
     public boolean isActive() { return active; }
 }

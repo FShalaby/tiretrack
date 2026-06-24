@@ -2,6 +2,8 @@ package com.aem.tiretrack.dto;
 
 import java.math.BigDecimal;
 
+import com.aem.tiretrack.util.PhoneNumberUtils;
+
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 
@@ -20,7 +22,7 @@ public class CompanySettingsRequest {
     public String getLogoUrl() { return logoUrl; }
     public void setLogoUrl(String logoUrl) { this.logoUrl = logoUrl; }
     public String getPhone() { return phone; }
-    public void setPhone(String phone) { this.phone = phone; }
+    public void setPhone(String phone) { this.phone = PhoneNumberUtils.formatCanadian(phone); }
     public String getAddress() { return address; }
     public void setAddress(String address) { this.address = address; }
     public BigDecimal getTaxRate() { return taxRate; }

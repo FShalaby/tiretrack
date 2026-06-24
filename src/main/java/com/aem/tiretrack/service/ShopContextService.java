@@ -244,8 +244,8 @@ public class ShopContextService {
         }
 
         return switch (location.getType()) {
-            case STORE, MOBILE, MOBILE_SERVICE -> true;
-            case STORAGE, WAREHOUSE, OTHER -> false;
+            case STORE -> true;
+            case STORAGE, WAREHOUSE, MOBILE, MOBILE_SERVICE, OTHER -> false;
         };
     }
 }

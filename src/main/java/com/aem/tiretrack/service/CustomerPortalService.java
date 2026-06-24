@@ -15,14 +15,17 @@ import org.springframework.transaction.annotation.Transactional;
 import com.aem.tiretrack.dto.customer.CustomerAppointmentRequest;
 import com.aem.tiretrack.dto.EstimateResponse;
 import com.aem.tiretrack.dto.InvoiceStatusUpdateRequest;
+import com.aem.tiretrack.dto.TireAvailabilityResponse;
 import com.aem.tiretrack.dto.customer.CustomerInvoiceSummary;
 import com.aem.tiretrack.dto.customer.CustomerNoticeRequest;
 import com.aem.tiretrack.dto.customer.CustomerProfile;
 import com.aem.tiretrack.dto.customer.CustomerPortalResponse;
 import com.aem.tiretrack.dto.customer.CustomerSummary;
 import com.aem.tiretrack.enums.AppointmentStatus;
+import com.aem.tiretrack.enums.TireRequestSource;
 import com.aem.tiretrack.enums.UserRole;
 import com.aem.tiretrack.exception.ResourceNotFoundException;
+import com.aem.tiretrack.model.AppNotification;
 import com.aem.tiretrack.model.Appointment;
 import com.aem.tiretrack.model.CustomerNotification;
 import com.aem.tiretrack.model.CustomerVehicle;
@@ -32,6 +35,7 @@ import com.aem.tiretrack.model.Shop;
 import com.aem.tiretrack.model.ShopLocation;
 import com.aem.tiretrack.model.User;
 import com.aem.tiretrack.repository.AppointmentRepository;
+import com.aem.tiretrack.repository.AppNotificationRepository;
 import com.aem.tiretrack.repository.CustomerNotificationRepository;
 import com.aem.tiretrack.repository.CustomerVehicleRepository;
 import com.aem.tiretrack.repository.EstimateRepository;
@@ -50,6 +54,10 @@ public class CustomerPortalService {
     private final EstimateService estimateService;
     private final InvoiceService invoiceService;
     private final ShopContextService shopContextService;
+    private final AppNotificationRepository appNotificationRepository;
+    private final TireAvailabilityService tireAvailabilityService;
+    private final TireRequestService tireRequestService;
+    private final AuditLogService auditLogService;
 
     public CustomerPortalService(
             UserRepository userRepository,
@@ -61,7 +69,11 @@ public class CustomerPortalService {
             AppointmentService appointmentService,
             EstimateService estimateService,
             InvoiceService invoiceService,
-            ShopContextService shopContextService) {
+            ShopContextService shopContextService,
+            AppNotificationRepository appNotificationRepository,
+            TireAvailabilityService tireAvailabilityService,
+            TireRequestService tireRequestService,
+            AuditLogService auditLogService) {
         this.userRepository = userRepository;
         this.vehicleRepository = vehicleRepository;
         this.notificationRepository = notificationRepository;
@@ -72,6 +84,10 @@ public class CustomerPortalService {
         this.estimateService = estimateService;
         this.invoiceService = invoiceService;
         this.shopContextService = shopContextService;
+        this.appNotificationRepository = appNotificationRepository;
+        this.tireAvailabilityService = tireAvailabilityService;
+        this.tireRequestService = tireRequestService;
+        this.auditLogService = auditLogService;
     }
 
     @Transactional
@@ -97,6 +113,7 @@ public class CustomerPortalService {
                 appointments,
                 invoices,
                 estimates,
+                tireRequestService.getRequestsForCustomer(customer),
                 notificationRepository.findByCustomerOrderByCreatedAtDesc(customer)
         );
     }
@@ -143,7 +160,46 @@ public class CustomerPortalService {
         appointment.setShop(customer.getShop());
         appointment.setShopLocation(resolveCustomerAppointmentLocation(customer, vehicle, request.getLocationId()));
 
-        return appointmentService.saveAppointment(appointment);
+        TireAvailabilityResponse availability = tireAvailabilityService.checkCustomerAvailability(
+                vehicle,
+                appointment.getShopLocation(),
+                request.getServiceType());
+        boolean needsSourcingRequest = availability.isTireServiceRequired()
+                && !availability.isCanConfirmAppointment();
+        if (needsSourcingRequest) {
+            appointment.setStatus(AppointmentStatus.PENDING_TIRE_AVAILABILITY);
+            appointment.setConfirmationStatus("PENDING");
+        }
+
+        Appointment savedAppointment = appointmentService.saveAppointment(appointment);
+        if (needsSourcingRequest) {
+            tireRequestService.createRequest(
+                    customer,
+                    vehicle,
+                    savedAppointment.getShop(),
+                    savedAppointment.getShopLocation(),
+                    savedAppointment,
+                    availability.getRequiredSize(),
+                    TireRequestSource.CUSTOMER_PORTAL,
+                    customer.getId(),
+                    request.getNotes());
+            auditPendingTireAppointment(savedAppointment, availability.getReason());
+        } else {
+            notifyStaff(
+                    savedAppointment.getShop(),
+                    "New customer booking",
+                    customer.getFullName() + " booked " + savedAppointment.getServiceType() + " for " + savedAppointment.getAppointmentDate() + ".",
+                    "APPOINTMENT",
+                    "Appointments");
+        }
+        return savedAppointment;
+    }
+
+    public TireAvailabilityResponse checkTireAvailability(Long vehicleId, Long locationId, com.aem.tiretrack.enums.ServiceType serviceType) {
+        User customer = currentCustomer();
+        CustomerVehicle vehicle = resolvePortalVehicle(customer, vehicleId);
+        ShopLocation location = resolveCustomerAppointmentLocation(customer, vehicle, locationId);
+        return tireAvailabilityService.checkCustomerAvailability(vehicle, location, serviceType);
     }
 
     public List<CustomerSummary> adminSummaries() {
@@ -210,7 +266,45 @@ public class CustomerPortalService {
         notification.setMessage("Estimate " + approvedEstimate.getEstimateNumber() + " was approved and an appointment was created.");
         notificationRepository.save(notification);
 
+        notifyStaff(
+                approvedEstimate.getShop(),
+                "Estimate approved",
+                customer.getFullName() + " approved estimate " + approvedEstimate.getEstimateNumber() + ".",
+                "ESTIMATE",
+                "Estimates");
+
         return new EstimateResponse(approvedEstimate);
+    }
+
+    private void notifyStaff(Shop shop, String title, String message, String type, String targetTab) {
+        saveStaffNotification(shop, title, message, type, targetTab, UserRole.OWNER);
+        saveStaffNotification(shop, title, message, type, targetTab, UserRole.ADMIN);
+        saveStaffNotification(shop, title, message, type, targetTab, UserRole.EMPLOYEE);
+    }
+
+    private void saveStaffNotification(Shop shop, String title, String message, String type, String targetTab, UserRole role) {
+        AppNotification notification = new AppNotification();
+        notification.setRecipientRole(role);
+        notification.setShop(shop);
+        notification.setTitle(title);
+        notification.setMessage(message);
+        notification.setType(type);
+        notification.setTargetTab(targetTab);
+        appNotificationRepository.save(notification);
+    }
+
+    private void auditPendingTireAppointment(Appointment appointment, String reason) {
+        auditLogService.record(
+                "PENDING_TIRE_AVAILABILITY",
+                "Appointment",
+                appointment.getId(),
+                "Held customer portal appointment pending tire availability. " + reason);
+        notifyStaff(
+                appointment.getShop(),
+                "Tire availability pending",
+                appointment.getCustomerName() + " needs tire sourcing before this appointment can be confirmed. " + reason,
+                "TIRE_REQUEST",
+                "Appointments");
     }
 
     public CustomerNotification sendNotice(Long customerId, CustomerNoticeRequest request) {

@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import com.aem.tiretrack.enums.EstimateStatus;
+import com.aem.tiretrack.util.PhoneNumberUtils;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 
 import jakarta.persistence.CascadeType;
@@ -130,7 +131,7 @@ public class Estimate {
     public String getCustomerName() { return customerName; }
     public void setCustomerName(String customerName) { this.customerName = customerName; }
     public String getPhone() { return phone; }
-    public void setPhone(String phone) { this.phone = phone; }
+    public void setPhone(String phone) { this.phone = PhoneNumberUtils.formatCanadian(phone); }
     public String getEmail() { return email; }
     public void setEmail(String email) { this.email = email; }
     public String getVehicle() { return vehicle; }

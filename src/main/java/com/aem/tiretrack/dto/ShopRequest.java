@@ -1,6 +1,7 @@
 package com.aem.tiretrack.dto;
 
 import com.aem.tiretrack.enums.SubscriptionPlan;
+import com.aem.tiretrack.util.PhoneNumberUtils;
 
 import jakarta.validation.constraints.NotBlank;
 
@@ -20,7 +21,7 @@ public class ShopRequest {
     public String getLegalName() { return legalName; }
     public void setLegalName(String legalName) { this.legalName = legalName; }
     public String getPhone() { return phone; }
-    public void setPhone(String phone) { this.phone = phone; }
+    public void setPhone(String phone) { this.phone = PhoneNumberUtils.formatCanadian(phone); }
     public String getEmail() { return email; }
     public void setEmail(String email) { this.email = email; }
     public String getAddress() { return address; }

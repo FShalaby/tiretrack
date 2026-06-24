@@ -4,6 +4,8 @@ import java.time.LocalDateTime;
 
 import com.aem.tiretrack.enums.AppointmentStatus;
 import com.aem.tiretrack.enums.ServiceType;
+import com.aem.tiretrack.util.PhoneNumberUtils;
+import com.aem.tiretrack.util.TireSizeUtils;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 
 import jakarta.persistence.Column;
@@ -56,6 +58,15 @@ public class Appointment {
 
     @Transient
     private Long requestedLocationId;
+
+    @Transient
+    private Long customerVehicleId;
+
+    @Transient
+    private Boolean overrideTireAvailability;
+
+    @Transient
+    private String tireAvailabilityOverrideReason;
 
     @Column(name = "tire_size")
     private String tireSize;
@@ -141,7 +152,7 @@ public class Appointment {
     }
 
     public void setPhone(String phone) {
-        this.phone = phone;
+        this.phone = PhoneNumberUtils.formatCanadian(phone);
     }
 
     public String getEmail() {
@@ -204,6 +215,30 @@ public class Appointment {
         return requestedLocationId;
     }
 
+    public Long getCustomerVehicleId() {
+        return customerVehicleId;
+    }
+
+    public void setCustomerVehicleId(Long customerVehicleId) {
+        this.customerVehicleId = customerVehicleId;
+    }
+
+    public boolean isOverrideTireAvailability() {
+        return Boolean.TRUE.equals(overrideTireAvailability);
+    }
+
+    public void setOverrideTireAvailability(Boolean overrideTireAvailability) {
+        this.overrideTireAvailability = overrideTireAvailability;
+    }
+
+    public String getTireAvailabilityOverrideReason() {
+        return tireAvailabilityOverrideReason;
+    }
+
+    public void setTireAvailabilityOverrideReason(String tireAvailabilityOverrideReason) {
+        this.tireAvailabilityOverrideReason = tireAvailabilityOverrideReason;
+    }
+
     public String getLocationName() {
         return shopLocation == null ? null : shopLocation.getName();
     }
@@ -213,7 +248,7 @@ public class Appointment {
     }
 
     public void setTireSize(String tireSize) {
-        this.tireSize = tireSize;
+        this.tireSize = TireSizeUtils.formatPassengerSize(tireSize);
     }
 
     public Long getFrontTireId() {

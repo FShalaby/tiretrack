@@ -76,6 +76,7 @@ public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Excepti
             .requestMatchers("/api/invoices/**").hasAnyRole("SUPER_ADMIN", "OWNER", "ADMIN", "EMPLOYEE")
             .requestMatchers("/api/tires/**").hasAnyRole("SUPER_ADMIN", "OWNER", "ADMIN", "EMPLOYEE")
             .requestMatchers("/api/appointments/**").hasAnyRole("SUPER_ADMIN", "OWNER", "ADMIN", "EMPLOYEE")
+            .requestMatchers("/api/tire-requests/**").hasAnyRole("SUPER_ADMIN", "OWNER", "ADMIN", "EMPLOYEE")
             .requestMatchers("/api/public/**").permitAll()
             // Anything else requires login
             .anyRequest().authenticated()

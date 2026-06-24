@@ -2,6 +2,8 @@ package com.aem.tiretrack.model;
 
 import java.math.BigDecimal;
 
+import com.aem.tiretrack.util.PhoneNumberUtils;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -79,7 +81,7 @@ public class CompanySettings {
     }
 
     public void setPhone(String phone) {
-        this.phone = phone;
+        this.phone = PhoneNumberUtils.formatCanadian(phone);
     }
 
     public String getAddress() {

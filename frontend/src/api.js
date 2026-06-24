@@ -317,6 +317,38 @@ export function deleteAppointment(id) {
   });
 }
 
+export function getAppointmentTireAvailability(vehicleId, locationId, serviceType = "INSTALLATION") {
+  const params = new URLSearchParams({ vehicleId, serviceType });
+  if (locationId) params.set("locationId", locationId);
+  return request(`/api/appointments/tire-availability?${params.toString()}`);
+}
+
+export function getTireRequests() {
+  return request("/api/tire-requests");
+}
+
+export function createTireRequest(tireRequest) {
+  return request("/api/tire-requests", {
+    method: "POST",
+    headers: jsonHeaders,
+    body: JSON.stringify(tireRequest)
+  });
+}
+
+export function updateTireRequestStatus(id, status, adminResponse = "") {
+  return request(`/api/tire-requests/${encodeURIComponent(id)}/status`, {
+    method: "PUT",
+    headers: jsonHeaders,
+    body: JSON.stringify({ status, adminResponse })
+  });
+}
+
+export function confirmTireRequestAppointment(id) {
+  return request(`/api/tire-requests/${encodeURIComponent(id)}/confirm-appointment`, {
+    method: "POST"
+  });
+}
+
 export function getWorkOrders(locationId) {
   const query = locationId ? `?locationId=${encodeURIComponent(locationId)}` : "";
   return request(`/api/work-orders${query}`);
@@ -489,6 +521,16 @@ export function createCustomerAppointment(appointment) {
     headers: jsonHeaders,
     body: JSON.stringify(appointment)
   });
+}
+
+export function getCustomerTireAvailability(vehicleId, locationId, serviceType = "INSTALLATION") {
+  const params = new URLSearchParams({ vehicleId, serviceType });
+  if (locationId) params.set("locationId", locationId);
+  return request(`/api/customer/tire-availability?${params.toString()}`);
+}
+
+export function getCustomerTireRequests() {
+  return request("/api/customer/tire-requests");
 }
 
 export function payCustomerInvoice(id) {

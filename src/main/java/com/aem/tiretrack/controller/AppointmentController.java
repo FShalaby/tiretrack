@@ -11,10 +11,13 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.aem.tiretrack.dto.AppointmentResponse;
+import com.aem.tiretrack.dto.TireAvailabilityResponse;
+import com.aem.tiretrack.enums.ServiceType;
 import com.aem.tiretrack.model.Appointment;
 import com.aem.tiretrack.model.ShopLocation;
 import com.aem.tiretrack.service.AppointmentService;
 import com.aem.tiretrack.service.ShopContextService;
+import com.aem.tiretrack.service.TireAvailabilityService;
 
 import jakarta.validation.Valid;
 
@@ -24,10 +27,15 @@ public class AppointmentController
 {
     private final AppointmentService appointmentService;
     private final ShopContextService shopContextService;
+    private final TireAvailabilityService tireAvailabilityService;
 
-    public AppointmentController(AppointmentService appointmentService, ShopContextService shopContextService) {
+    public AppointmentController(
+            AppointmentService appointmentService,
+            ShopContextService shopContextService,
+            TireAvailabilityService tireAvailabilityService) {
         this.appointmentService = appointmentService;
         this.shopContextService = shopContextService;
+        this.tireAvailabilityService = tireAvailabilityService;
     }
 
     @GetMapping
@@ -42,6 +50,14 @@ public class AppointmentController
     @GetMapping("/{id}")
     public AppointmentResponse getAppointmentById(@PathVariable Long id) {
         return new AppointmentResponse(appointmentService.getAppointmentById(id));
+    }
+
+    @GetMapping("/tire-availability")
+    public TireAvailabilityResponse getTireAvailability(
+            @org.springframework.web.bind.annotation.RequestParam Long vehicleId,
+            @org.springframework.web.bind.annotation.RequestParam(required = false) Long locationId,
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue = "INSTALLATION") ServiceType serviceType) {
+        return tireAvailabilityService.checkStaffAvailability(vehicleId, locationId, serviceType);
     }
 
     @PostMapping

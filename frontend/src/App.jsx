@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import {
   AlertTriangle,
@@ -62,6 +62,7 @@ import {
   deletePayrollShiftSlot,
   deleteTire,
   deleteWorkShift,
+  confirmTireRequestAppointment,
   approveCustomerEstimate,
   approvePayrollRecord,
   addPayrollAdjustment,
@@ -81,6 +82,7 @@ import {
   convertWorkOrderToInvoice,
   generatePayroll,
   getAppointments,
+  getAppointmentTireAvailability,
   getAccountingAccounts,
   getAccountingReport,
   getAuditLogs,
@@ -103,9 +105,11 @@ import {
   getSettings,
   getActiveShopLocations,
   getTires,
+  getTireRequests,
   getAvailableSlots,
   getCurrentUser,
   getCustomerPortal,
+  getCustomerTireAvailability,
   getCustomers,
   getVendors,
   getPayrollEmployees,
@@ -141,7 +145,6 @@ import {
   createEstimate,
   createWorkOrder,
   createWorkOrderFromAppointment,
-  declineEstimate,
   resolveAbsence,
   activatePlatformShop,
   activatePlatformUser,
@@ -156,6 +159,7 @@ import {
   updatePlatformShop,
   updateSettings,
   updateTire,
+  updateTireRequestStatus,
   updateWorkOrder,
   markWorkOrderVehicleReady,
   startWorkOrder,
@@ -187,6 +191,7 @@ const tabIcons = {
 };
 const statusClassMap = {
   BOOKED: "blue",
+  PENDING_TIRE_AVAILABILITY: "yellow",
   COMPLETED: "green",
   CANCELLED: "red",
   PAID: "green",
@@ -205,6 +210,14 @@ const statusClassMap = {
   EXPIRED: "red",
   VOID: "gray",
   DUE_SOON: "yellow",
+  SOURCING: "blue",
+  AVAILABLE: "green",
+  FULFILLED: "green",
+  UNAVAILABLE: "red",
+  IN_STOCK: "green",
+  LOW_STOCK: "yellow",
+  OUT_OF_STOCK: "red",
+  AVAILABLE_AT_OTHER_LOCATION: "yellow",
   REMINDER: "blue",
   NEW: "green",
   USED: "yellow",
@@ -308,6 +321,8 @@ const tooltipStyle = {
   color: "var(--tooltip-text)"
 };
 
+const SERVICE_TYPE_OPTIONS = ["INSTALLATION", "RE_AND_RE", "BOLT_ON", "BALANCING", "ROTATION", "REPAIR"];
+
 const emptyTire = {
   brand: "",
   model: "",
@@ -346,12 +361,14 @@ const emptyAppointment = {
   frontQuantity: 4,
   frontTireSize: "",
   rearTireId: "",
-  rearQuantity: 2,
+  rearQuantity: 0,
   rearTireSize: "",
   appointmentDate: "",
   locationId: "",
   serviceType: "INSTALLATION",
   notes: "",
+  overrideTireAvailability: false,
+  tireAvailabilityOverrideReason: "",
   reminderStatus: "NOT_SET",
   reminderAt: "",
   confirmationStatus: "PENDING",
@@ -460,6 +477,69 @@ function money(value) {
   });
 }
 
+function formatCanadianPhoneInput(value) {
+  const rawDigits = String(value || "").replace(/\D/g, "");
+  const digits = rawDigits.length > 10 && rawDigits.startsWith("1") ? rawDigits.slice(1) : rawDigits;
+  const trimmed = digits.slice(0, 10);
+
+  if (trimmed.length <= 3) {
+    return trimmed;
+  }
+
+  if (trimmed.length <= 6) {
+    return `${trimmed.slice(0, 3)}-${trimmed.slice(3)}`;
+  }
+
+  return `${trimmed.slice(0, 3)}-${trimmed.slice(3, 6)}-${trimmed.slice(6)}`;
+}
+
+function formatTireSizeInput(value) {
+  const digits = String(value || "").replace(/\D/g, "").slice(0, 7);
+
+  if (digits.length <= 3) {
+    return digits;
+  }
+
+  if (digits.length <= 5) {
+    return `${digits.slice(0, 3)}/${digits.slice(3)}`;
+  }
+
+  return `${digits.slice(0, 3)}/${digits.slice(3, 5)}/${digits.slice(5)}`;
+}
+
+function publicStoreLocations(locations) {
+  return (locations || []).filter((location) => String(location.type || "").toUpperCase() === "STORE");
+}
+
+function playNotificationChime() {
+  const AudioContext = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContext) {
+    return;
+  }
+
+  try {
+    const context = new AudioContext();
+    const gain = context.createGain();
+    gain.gain.setValueAtTime(0.0001, context.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.08, context.currentTime + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.45);
+    gain.connect(context.destination);
+
+    [660, 880].forEach((frequency, index) => {
+      const oscillator = context.createOscillator();
+      oscillator.type = "sine";
+      oscillator.frequency.setValueAtTime(frequency, context.currentTime + index * 0.11);
+      oscillator.connect(gain);
+      oscillator.start(context.currentTime + index * 0.11);
+      oscillator.stop(context.currentTime + 0.32 + index * 0.11);
+    });
+
+    window.setTimeout(() => context.close().catch(() => null), 700);
+  } catch {
+    // Browsers can block sound until the user has interacted with the page.
+  }
+}
+
 function invoiceStatusKey(status) {
   const normalized = String(status || "UNPAID").toUpperCase();
   return normalized === "PARTIAL" ? "PARTIALLY_PAID" : normalized;
@@ -478,10 +558,106 @@ function statusLabel(value) {
     VEHICLE_READY: "Vehicle ready",
     PAID_OFF: "Paid off",
     DUE_SOON: "Due soon",
-    NOT_SET: "Not set"
+    CONVERTED: "Invoiced",
+    NOT_SET: "Not set",
+    PENDING_TIRE_AVAILABILITY: "Waiting for tire availability",
+    AVAILABLE_AT_OTHER_LOCATION: "Available at another location",
+    OUT_OF_STOCK: "Out of stock",
+    IN_STOCK: "In stock",
+    LOW_STOCK: "Low stock"
   };
 
   return labels[normalized] || normalized.toLowerCase().replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function appointmentStatusLabel(value) {
+  return statusLabel(value || "BOOKED");
+}
+
+function tireRequestStatusLabel(value) {
+  return statusLabel(value || "PENDING");
+}
+
+function tireAvailabilityTone(status) {
+  switch (String(status || "").toUpperCase()) {
+    case "IN_STOCK":
+      return "green";
+    case "LOW_STOCK":
+    case "AVAILABLE_AT_OTHER_LOCATION":
+      return "yellow";
+    case "OUT_OF_STOCK":
+      return "red";
+    default:
+      return "gray";
+  }
+}
+
+function serviceTypeLabel(value) {
+  const labels = {
+    INSTALLATION: "Installation",
+    RE_AND_RE: "Re & Re (Remove & Replace)",
+    BOLT_ON: "Bolt On",
+    BALANCING: "Balancing",
+    ROTATION: "Rotation",
+    REPAIR: "Repair"
+  };
+
+  return labels[String(value || "").toUpperCase()] || statusLabel(value || "Service");
+}
+
+function usesInventoryTires(serviceType) {
+  return String(serviceType || "").toUpperCase() === "INSTALLATION";
+}
+
+function ownTireServiceMessage(serviceType) {
+  switch (String(serviceType || "").toUpperCase()) {
+    case "RE_AND_RE":
+      return "Customer is bringing loose tires. The shop removes the old tires from the rims and installs the replacement tires.";
+    case "BOLT_ON":
+      return "Customer is bringing a mounted set already on rims. The shop swaps the wheel assemblies onto the vehicle.";
+    default:
+      return "";
+  }
+}
+
+function needsTireSourcing(availability) {
+  return Boolean(availability?.tireServiceRequired && !availability?.canConfirmAppointment);
+}
+
+function appointmentSubmitLabel(editingId, form, availability) {
+  if (editingId) {
+    return "Save Changes";
+  }
+
+  if (needsTireSourcing(availability)) {
+    return form?.overrideTireAvailability ? "Book With Override" : "Create Sourcing Request";
+  }
+
+  return "Book Appointment";
+}
+
+function customerBookingSubmitLabel(availability) {
+  return needsTireSourcing(availability) ? "Request Tire Sourcing" : "Book Appointment";
+}
+
+function tireRequestCustomerMessage(status) {
+  switch (String(status || "PENDING").toUpperCase()) {
+    case "SOURCING":
+      return "The shop is sourcing your tire.";
+    case "AVAILABLE":
+      return "Your requested tire is available.";
+    case "UNAVAILABLE":
+      return "The shop could not source this tire at this time.";
+    case "FULFILLED":
+      return "Your tire request has been fulfilled.";
+    case "DECLINED":
+      return "The shop declined this tire request.";
+    case "CANCELLED":
+      return "This tire request was cancelled.";
+    case "PENDING":
+    default:
+      return "Waiting for shop review.";
+  }
 }
 
 function invoiceCollectedAmount(invoice) {
@@ -621,7 +797,7 @@ function appointmentTimeKey(value) {
 }
 
 function isBookableAppointment(appointment) {
-  return appointment.status !== "CANCELLED" && appointment.status !== "COMPLETED";
+  return !appointment.status || appointment.status === "BOOKED";
 }
 
 function customerForAppointment(appointment, customers) {
@@ -907,7 +1083,7 @@ function accountingRangeLabel(range = defaultAccountingRange) {
 }
 
 function buildTireSize(form) {
-  if (form.serviceType !== "INSTALLATION") {
+  if (!usesInventoryTires(form.serviceType)) {
     return "";
   }
 
@@ -931,7 +1107,7 @@ function parseTireSetup(tireSize) {
   if (!staggeredMatch) {
     return {
       tireSetup: "regular",
-      tireSize: tireSize || "",
+      tireSize: formatTireSizeInput(tireSize),
       frontTireSize: "",
       rearTireSize: ""
     };
@@ -940,8 +1116,8 @@ function parseTireSetup(tireSize) {
   return {
     tireSetup: "staggered",
     tireSize: "",
-    frontTireSize: staggeredMatch[1] || "",
-    rearTireSize: staggeredMatch[2] || ""
+    frontTireSize: formatTireSizeInput(staggeredMatch[1]),
+    rearTireSize: formatTireSizeInput(staggeredMatch[2])
   };
 }
 
@@ -965,6 +1141,7 @@ function App() {
   const [globalQuery, setGlobalQuery] = useState("");
   const [showNotifications, setShowNotifications] = useState(false);
   const [appNotifications, setAppNotifications] = useState([]);
+  const previousAppUnreadCountRef = useRef(null);
   const [highlightedRow, setHighlightedRow] = useState(null);
   const [activityLog, setActivityLog] = useState(() => {
     try {
@@ -978,6 +1155,7 @@ function App() {
   const [tires, setTires] = useState([]);
   const [inventoryTires, setInventoryTires] = useState([]);
   const [appointments, setAppointments] = useState([]);
+  const [tireRequests, setTireRequests] = useState([]);
   const [workOrders, setWorkOrders] = useState([]);
   const [estimates, setEstimates] = useState([]);
   const [invoices, setInvoices] = useState([]);
@@ -1004,6 +1182,7 @@ function App() {
   const [invoiceForm, setInvoiceForm] = useState(() => makeInvoiceForm(loadCompanySettings()));
   const [generatedInvoice, setGeneratedInvoice] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
 
@@ -1071,6 +1250,7 @@ function App() {
         setTires([]);
         setInventoryTires([]);
         setAppointments([]);
+        setTireRequests([]);
         setWorkOrders([]);
         setEstimates([]);
         setInvoices([]);
@@ -1102,6 +1282,7 @@ function App() {
         setTires([]);
         setInventoryTires([]);
         setAppointments([]);
+        setTireRequests([]);
         setWorkOrders([]);
         setEstimates([]);
         setInvoices([]);
@@ -1121,10 +1302,11 @@ function App() {
       if (isShopManagerRole(workingAuth?.role)) {
         const multiLocationAllowed = canUseMultiLocationScope(workingAuth);
         const locationViewId = workingAuth?.locationId ? String(workingAuth.locationId) : multiLocationAllowed ? selectedLocationId : "";
-        const [summary, tireList, appointmentList, workOrderList, estimateList, invoiceList, salesList, savedSettings, auditLogs, customerList, accounting, accounts, vendorList, notifications, locations] = await Promise.all([
+        const [summary, tireList, appointmentList, tireRequestList, workOrderList, estimateList, invoiceList, salesList, savedSettings, auditLogs, customerList, accounting, accounts, vendorList, notifications, locations] = await Promise.all([
           getDashboard(locationViewId),
           getTires(),
           getAppointments(),
+          getTireRequests().catch(() => []),
           getWorkOrders().catch(() => []),
           getEstimates().catch(() => []),
           getInvoices(),
@@ -1149,6 +1331,7 @@ function App() {
         setTires(tireList || []);
         setInventoryTires(filterRecordsByLocation(tireList || [], nextLocationId));
         setAppointments(appointmentList || []);
+        setTireRequests(tireRequestList || []);
         setWorkOrders(workOrderList || []);
         setEstimates(estimateList || []);
         setInvoices(invoiceList || []);
@@ -1173,9 +1356,10 @@ function App() {
         setCompanySettings(mergedSettings);
         localStorage.setItem("tiretrack-company-settings", JSON.stringify(mergedSettings));
       } else {
-        const [tireList, appointmentList, workOrderList, estimateList, invoiceList] = await Promise.all([
+        const [tireList, appointmentList, tireRequestList, workOrderList, estimateList, invoiceList] = await Promise.all([
           getTires(),
           getAppointments(),
+          getTireRequests().catch(() => []),
           getWorkOrders().catch(() => []),
           getEstimates().catch(() => []),
           getInvoices()
@@ -1185,6 +1369,7 @@ function App() {
         setTires(tireList || []);
         setInventoryTires(tireList || []);
         setAppointments(appointmentList || []);
+        setTireRequests(tireRequestList || []);
         setWorkOrders(workOrderList || []);
         setEstimates(estimateList || []);
         setInvoices(invoiceList || []);
@@ -1330,9 +1515,33 @@ function App() {
     setActiveTab("Dashboard");
   }
 
-  async function refreshCustomerPortal() {
+  const refreshCustomerPortal = useCallback(async () => {
     const portal = await getCustomerPortal();
     setCustomerPortal(portal);
+  }, []);
+
+  async function refreshCurrentData() {
+    if (!auth) {
+      return;
+    }
+
+    setIsRefreshing(true);
+    setError("");
+    setSuccessMessage("");
+
+    try {
+      if (auth.role === "CUSTOMER") {
+        await refreshCustomerPortal();
+      } else {
+        await loadData(auth);
+      }
+      setSuccessMessage("Data refreshed.");
+    } catch (err) {
+      setError(err.message || "Could not refresh data.");
+      scrollToFeedback();
+    } finally {
+      setIsRefreshing(false);
+    }
   }
 
   async function saveCustomerVehicle(vehicle) {
@@ -1347,9 +1556,10 @@ function App() {
   }
 
   async function bookCustomerAppointment(appointment) {
-    await createCustomerAppointment(appointment);
+    const savedAppointment = await createCustomerAppointment(appointment);
     scrollToFeedback();
     await refreshCustomerPortal();
+    return savedAppointment;
   }
 
   async function payInvoiceFromPortal(id) {
@@ -1557,6 +1767,7 @@ function App() {
 
   const visibleTires = useMemo(() => filterRecordsByLocation(tires, selectedLocationId), [tires, selectedLocationId]);
   const visibleAppointments = useMemo(() => filterRecordsByLocation(appointments, selectedLocationId), [appointments, selectedLocationId]);
+  const visibleTireRequests = useMemo(() => filterRecordsByLocation(tireRequests, selectedLocationId), [tireRequests, selectedLocationId]);
   const visibleWorkOrders = useMemo(() => filterRecordsByLocation(workOrders, selectedLocationId), [workOrders, selectedLocationId]);
   const visibleEstimates = useMemo(() => filterRecordsByLocation(estimates, selectedLocationId), [estimates, selectedLocationId]);
   const visibleInvoices = useMemo(() => filterRecordsByLocation(invoices, selectedLocationId), [invoices, selectedLocationId]);
@@ -1729,6 +1940,20 @@ function App() {
     ];
   }, [activeAppointments, lowStockTires]);
   const unreadNotifications = appNotifications.filter((notification) => !notification.read);
+
+  useEffect(() => {
+    if (!auth || auth.role === "CUSTOMER") {
+      previousAppUnreadCountRef.current = null;
+      return;
+    }
+
+    const unreadCount = unreadNotifications.length;
+    if ((previousAppUnreadCountRef.current === null && unreadCount > 0)
+        || (previousAppUnreadCountRef.current !== null && unreadCount > previousAppUnreadCountRef.current)) {
+      playNotificationChime();
+    }
+    previousAppUnreadCountRef.current = unreadCount;
+  }, [auth, unreadNotifications.length]);
 
   async function submitTire(event) {
     event.preventDefault();
@@ -1976,19 +2201,22 @@ function App() {
 
     const appointment = {
       customerId: appointmentForm.customerId ? Number(appointmentForm.customerId) : null,
+      customerVehicleId: appointmentForm.customerVehicleId ? Number(appointmentForm.customerVehicleId) : null,
       customerName: appointmentForm.customerName,
       email: appointmentForm.email,
       phone: appointmentForm.phone,
       vehicle: appointmentForm.vehicle,
       tireSize: buildTireSize(appointmentForm),
-      frontTireId: appointmentForm.serviceType === "INSTALLATION" && appointmentForm.frontTireId ? Number(appointmentForm.frontTireId) : null,
-      frontQuantity: appointmentForm.serviceType === "INSTALLATION" ? Number(appointmentForm.frontQuantity || 0) : 0,
-      rearTireId: appointmentForm.serviceType === "INSTALLATION" && appointmentForm.tireSetup === "staggered" && appointmentForm.rearTireId ? Number(appointmentForm.rearTireId) : null,
-      rearQuantity: appointmentForm.serviceType === "INSTALLATION" && appointmentForm.tireSetup === "staggered" ? Number(appointmentForm.rearQuantity || 0) : 0,
+      frontTireId: usesInventoryTires(appointmentForm.serviceType) && appointmentForm.frontTireId ? Number(appointmentForm.frontTireId) : null,
+      frontQuantity: usesInventoryTires(appointmentForm.serviceType) ? Number(appointmentForm.frontQuantity || 0) : 0,
+      rearTireId: usesInventoryTires(appointmentForm.serviceType) && appointmentForm.tireSetup === "staggered" && appointmentForm.rearTireId ? Number(appointmentForm.rearTireId) : null,
+      rearQuantity: usesInventoryTires(appointmentForm.serviceType) && appointmentForm.tireSetup === "staggered" ? Number(appointmentForm.rearQuantity || 0) : 0,
       appointmentDate: appointmentForm.appointmentDate,
       locationId: appointmentForm.locationId ? Number(appointmentForm.locationId) : selectedLocationId ? Number(selectedLocationId) : null,
       serviceType: appointmentForm.serviceType,
       notes: appointmentForm.notes,
+      overrideTireAvailability: Boolean(appointmentForm.overrideTireAvailability),
+      tireAvailabilityOverrideReason: appointmentForm.tireAvailabilityOverrideReason || "",
       reminderStatus,
       reminderAt,
       confirmationStatus: appointmentForm.confirmationStatus,
@@ -1996,8 +2224,8 @@ function App() {
       status: appointmentForm.status
     };
 
-    if (appointmentForm.serviceType === "INSTALLATION" && !appointment.frontTireId) {
-      setError("Select an inventory tire for this installation appointment.");
+    if (usesInventoryTires(appointmentForm.serviceType) && !appointment.frontTireId && !appointment.customerVehicleId && !appointment.tireSize) {
+      setError("Select an inventory tire or saved customer vehicle for this installation appointment.");
       scrollToFeedback();
       return;
     }
@@ -2070,6 +2298,8 @@ function App() {
       locationId: appointment.locationId ? String(appointment.locationId) : selectedLocationId,
       serviceType: appointment.serviceType || "INSTALLATION",
       notes: appointment.notes || "",
+      overrideTireAvailability: false,
+      tireAvailabilityOverrideReason: "",
       reminderStatus: appointment.reminderStatus || "NOT_SET",
       reminderAt: toDateTimeLocalValue(appointment.reminderAt),
       confirmationStatus: appointment.confirmationStatus || "PENDING",
@@ -2187,6 +2417,28 @@ function App() {
     });
     notifySuccess(`Appointment cancelled for ${appointment.customerName}.`);
     await loadData();
+  }
+
+  async function changeTireRequestStatus(request, status, adminResponse = "") {
+    try {
+      await updateTireRequestStatus(request.id, status, adminResponse);
+      notifySuccess(`Tire request marked ${tireRequestStatusLabel(status).toLowerCase()}.`);
+      await loadData(auth);
+    } catch (err) {
+      setError(err.message || "Tire request could not be updated.");
+      scrollToFeedback();
+    }
+  }
+
+  async function confirmTireRequest(request) {
+    try {
+      await confirmTireRequestAppointment(request.id);
+      notifySuccess("Appointment confirmed and tire request fulfilled.");
+      await loadData(auth);
+    } catch (err) {
+      setError(err.message || "Appointment could not be confirmed from this tire request.");
+      scrollToFeedback();
+    }
   }
 
   async function removeInvoice(id) {
@@ -2387,7 +2639,8 @@ function App() {
         onMarkNoticeRead={markPortalNoticeRead}
         onApproveEstimate={approveEstimateFromPortal}
         onPayInvoice={payInvoiceFromPortal}
-        onRefresh={refreshCustomerPortal}
+        isRefreshing={isRefreshing}
+        onRefresh={refreshCurrentData}
         onSaveVehicle={saveCustomerVehicle}
         onToggleTheme={toggleThemeMode}
         portal={customerPortal}
@@ -2491,9 +2744,14 @@ function App() {
             </div>
             <div className="notification-wrap">
               <button
-                className="icon-button"
+                className={`icon-button notification-button${unreadNotifications.length > 0 ? " has-unread" : ""}`}
                 aria-label="Notifications"
-                onClick={() => setShowNotifications((current) => !current)}
+                onClick={() => {
+                  if (unreadNotifications.length > 0) {
+                    playNotificationChime();
+                  }
+                  setShowNotifications((current) => !current);
+                }}
                 type="button"
               >
                 <Bell size={18} />
@@ -2512,7 +2770,7 @@ function App() {
                   ) : (
                     appNotifications.map((notification) => (
                       <button
-                        className={notification.read ? "read" : ""}
+                        className={notification.read ? "read" : "unread"}
                         key={notification.id}
                         onClick={() => openNotification(notification)}
                         type="button"
@@ -2525,9 +2783,9 @@ function App() {
                 </div>
               )}
             </div>
-            <button className="ghost-button with-icon" onClick={() => loadData(auth)} type="button">
+            <button className="ghost-button with-icon" disabled={isRefreshing || loading} onClick={refreshCurrentData} type="button">
               <RefreshCw size={16} />
-              Refresh
+              {isRefreshing ? "Refreshing..." : "Refresh"}
             </button>
             <ThemeToggleButton onToggle={toggleThemeMode} themeMode={themeMode} />
             {auth?.role !== "SUPER_ADMIN" && (
@@ -2630,6 +2888,8 @@ function App() {
             customers={visibleCustomers}
             editingId={editingAppointmentId}
             form={appointmentForm}
+            onConfirmTireRequest={confirmTireRequest}
+            onTireRequestStatusChange={changeTireRequestStatus}
             onChange={setAppointmentForm}
             onCancelEdit={cancelAppointmentEdit}
             onDelete={removeAppointment}
@@ -2638,6 +2898,7 @@ function App() {
             highlightedRow={highlightedRow}
             selectedLocationId={selectedLocationId}
             shopLocations={shopLocations}
+            tireRequests={visibleTireRequests}
             tires={visibleTires}
           />
         )}
@@ -3646,7 +3907,7 @@ function AppointmentCalendar({
                   <strong>{formatAppointmentTime(appointment.appointmentDate)}</strong>
                   <div>
                     <span>{appointment.customerName}</span>
-                    <small>{appointment.serviceType} - {appointment.vehicle || "No vehicle"}</small>
+                    <small>{serviceTypeLabel(appointment.serviceType)} - {appointment.vehicle || "No vehicle"}</small>
                     <div className="agenda-actions">
                       <button className="ghost-button" onClick={() => onInvoiceAppointment(appointment)} type="button">
                         Invoice
@@ -3731,6 +3992,8 @@ function formatShortDate(value) {
 function serviceColorClass(serviceType) {
   const colors = {
     INSTALLATION: "event-blue",
+    RE_AND_RE: "event-purple",
+    BOLT_ON: "event-green",
     BALANCING: "event-purple",
     ROTATION: "event-green",
     REPAIR: "event-red"
@@ -3767,7 +4030,7 @@ function urgentStockValue(tire, value) {
 }
 
 function tireSizeValue(tire) {
-  return `${tire.width}/${tire.aspectRatio}R${tire.rimSize}`;
+  return `${tire.width}/${tire.aspectRatio}/${tire.rimSize}`;
 }
 
 function tireAvailableQuantity(tire) {
@@ -4835,17 +5098,62 @@ function Appointments({
   form,
   highlightedRow,
   onCancelEdit,
+  onConfirmTireRequest,
   onChange,
   onDelete,
   onEdit,
   onSubmit,
+  onTireRequestStatusChange,
   selectedLocationId = "",
   shopLocations = [],
+  tireRequests = [],
   tires
 }) {
   const matchingCustomers = matchingCustomersForForm(customers, form);
   const selectedCustomer = customers.find((customer) => Number(customer.id) === Number(form.customerId));
   const selectedCustomerVehicles = selectedCustomer?.vehicles || [];
+  const [availability, setAvailability] = useState(null);
+  const [availabilityError, setAvailabilityError] = useState("");
+  const [isCheckingAvailability, setIsCheckingAvailability] = useState(false);
+  const selectedVehicleId = form.customerVehicleId || "";
+  const selectedAppointmentLocationId = form.locationId || selectedLocationId || "";
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function checkAvailability() {
+      if (!selectedVehicleId || !usesInventoryTires(form.serviceType)) {
+        setAvailability(null);
+        setAvailabilityError("");
+        return;
+      }
+
+      setIsCheckingAvailability(true);
+      setAvailabilityError("");
+
+      try {
+        const result = await getAppointmentTireAvailability(selectedVehicleId, selectedAppointmentLocationId, form.serviceType);
+        if (!cancelled) {
+          setAvailability(result);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setAvailability(null);
+          setAvailabilityError(err.message || "Tire availability could not be checked.");
+        }
+      } finally {
+        if (!cancelled) {
+          setIsCheckingAvailability(false);
+        }
+      }
+    }
+
+    checkAvailability();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedVehicleId, selectedAppointmentLocationId, form.serviceType]);
 
   function selectCustomer(customer) {
     onChange({
@@ -4871,13 +5179,17 @@ function Appointments({
         tireSetup: "staggered",
         tireSize: "",
         frontTireSize: vehicle.frontTireSize || "",
-        rearTireSize: vehicle.rearTireSize || ""
+        rearTireSize: vehicle.rearTireSize || "",
+        frontQuantity: 2,
+        rearQuantity: 2
       }
       : {
         tireSetup: "regular",
         tireSize: vehicle.tireSize || "",
         frontTireSize: "",
-        rearTireSize: ""
+        rearTireSize: "",
+        frontQuantity: 4,
+        rearQuantity: 0
       };
 
     onChange({
@@ -4885,6 +5197,8 @@ function Appointments({
       customerVehicleId: String(vehicle.id),
       vehicle: vehicleName(vehicle),
       locationId: vehicle.locationId ? String(vehicle.locationId) : form.locationId,
+      overrideTireAvailability: false,
+      tireAvailabilityOverrideReason: "",
       ...tireSetup
     });
   }
@@ -4938,12 +5252,57 @@ function Appointments({
           value={form.vehicle}
           onChange={(vehicle) => onChange({ ...form, vehicle })}
         />
-        <TireSetupFields
-          disabled={form.serviceType !== "INSTALLATION"}
-          form={form}
-          onChange={onChange}
-          tires={tires}
+        <ServiceTypeSelect required value={form.serviceType} onChange={(serviceType) => onChange({ ...form, serviceType })} />
+        {usesInventoryTires(form.serviceType) ? (
+          <TireSetupFields
+            disabled={false}
+            form={form}
+            onChange={onChange}
+            tires={tires}
+          />
+        ) : (
+          <OwnTireServiceNote serviceType={form.serviceType} />
+        )}
+        <TireAvailabilityPanel
+          availability={availability}
+          error={availabilityError}
+          isLoading={isCheckingAvailability}
+          mode="staff"
         />
+        {needsTireSourcing(availability) && (
+          <div className={`availability-override-panel ${form.overrideTireAvailability ? "override-active" : ""}`}>
+            <div className="availability-override-copy">
+              <span className="availability-override-icon">
+                {form.overrideTireAvailability ? <ShieldCheck size={18} /> : <AlertTriangle size={18} />}
+              </span>
+              <div>
+                <strong>{form.overrideTireAvailability ? "Manager override is on" : "Tire sourcing required"}</strong>
+                <p>
+                  {form.overrideTireAvailability
+                    ? "This books the appointment without confirmed stock. Keep the reason specific so the team knows why it was approved."
+                    : "Current stock cannot confirm this installation. Save it as a sourcing request, or use an override only when the tires are otherwise handled."}
+                </p>
+              </div>
+            </div>
+            <label className="checkbox-row override-toggle">
+              <input
+                checked={Boolean(form.overrideTireAvailability)}
+                onChange={(event) => onChange({ ...form, overrideTireAvailability: event.target.checked })}
+                type="checkbox"
+              />
+              <span>Book anyway with manager override</span>
+            </label>
+            {form.overrideTireAvailability && (
+              <Input
+                label="Override reason"
+                required
+                value={form.tireAvailabilityOverrideReason || ""}
+                onChange={(tireAvailabilityOverrideReason) => onChange({ ...form, tireAvailabilityOverrideReason })}
+                placeholder="Example: Customer bringing tires, supplier confirmed delivery, manager approval"
+              />
+            )}
+          </div>
+        )}
         <AppointmentDatePicker
           appointments={appointments}
           editingId={editingId}
@@ -4963,8 +5322,7 @@ function Appointments({
             }}
           />
         )}
-        <Select label="Service" required value={form.serviceType} onChange={(serviceType) => onChange({ ...form, serviceType })} options={["INSTALLATION", "BALANCING", "ROTATION", "REPAIR"]} />
-        <Select label="Status" value={form.status} onChange={(status) => onChange({ ...form, status })} options={["BOOKED", "COMPLETED", "CANCELLED"]} />
+        <Select label="Status" value={form.status} onChange={(status) => onChange({ ...form, status })} options={["BOOKED", "PENDING_TIRE_AVAILABILITY", "COMPLETED", "CANCELLED"]} optionLabel={appointmentStatusLabel} />
         <div className="appointment-reminder-row">
           <Select
             label="Reminder"
@@ -4998,9 +5356,15 @@ function Appointments({
         <Input label="Cancel / no-show reason" value={form.cancelReason || ""} onChange={(cancelReason) => onChange({ ...form, cancelReason })} />
         <Input label="Notes" value={form.notes} onChange={(notes) => onChange({ ...form, notes })} />
         <button className="primary-button" type="submit">
-          {editingId ? "Save Changes" : "Book Appointment"}
+          {appointmentSubmitLabel(editingId, form, availability)}
         </button>
       </form>
+
+      <TireRequestQueue
+        onConfirmAppointment={onConfirmTireRequest}
+        onStatusChange={onTireRequestStatusChange}
+        requests={tireRequests}
+      />
 
       <DataTable
         highlightedRow={highlightedRow}
@@ -5032,7 +5396,7 @@ function Appointments({
               appointment.vehicle,
               appointment.tireSize,
               appointment.locationName,
-              appointment.serviceType,
+              serviceTypeLabel(appointment.serviceType),
               appointment.notes,
               appointment.reminderStatus,
               reminderStatusLabel(appointment.reminderStatus),
@@ -5048,7 +5412,7 @@ function Appointments({
               appointment.tireSize || "-",
               appointment.locationName || "Unassigned",
               dateTime(appointment.appointmentDate),
-              appointment.serviceType,
+              serviceTypeLabel(appointment.serviceType),
               reminderStatusLabel(appointment.reminderStatus),
               confirmationStatusLabel(appointment.confirmationStatus),
               appointment.status || "-"
@@ -5056,6 +5420,119 @@ function Appointments({
             source: appointment
           };
         })}
+      />
+    </section>
+  );
+}
+
+function TireAvailabilityPanel({ availability, error, isLoading, mode = "customer" }) {
+  if (isLoading) {
+    return <div className="tire-availability-card loading">Checking tire availability...</div>;
+  }
+
+  if (error) {
+    return <div className="tire-availability-card error">{error}</div>;
+  }
+
+  if (!availability || !availability.tireServiceRequired) {
+    return null;
+  }
+
+  const otherLocations = availability.otherLocationAvailability || [];
+  const warehouseAvailability = availability.warehouseAvailability || [];
+
+  return (
+    <div className={`tire-availability-card ${tireAvailabilityTone(availability.status)}`}>
+      <div className="availability-card-head">
+        <div>
+          <span className="eyebrow">Tire availability</span>
+          <strong>{statusLabel(availability.status)}</strong>
+        </div>
+        <span className={`status-badge ${tireAvailabilityTone(availability.status)}`}>{statusLabel(availability.status)}</span>
+      </div>
+      <p>{availability.reason}</p>
+      <div className="availability-metrics">
+        <div><span>Required size</span><strong>{availability.requiredSize || "-"}</strong></div>
+        <div><span>Selected location</span><strong>{availability.selectedLocationAvailableQuantity ?? 0}</strong></div>
+      </div>
+      {otherLocations.length > 0 && (
+        <div className="availability-location-list">
+          <span>{mode === "customer" ? "Other customer locations" : "Other shop locations"}</span>
+          {otherLocations.map((location) => (
+            <small key={`other-${location.locationId || location.locationName}`}>
+              {location.locationName}: {location.availableQuantity} available
+            </small>
+          ))}
+        </div>
+      )}
+      {mode === "staff" && warehouseAvailability.length > 0 && (
+        <div className="availability-location-list internal">
+          <span>Internal stock</span>
+          {warehouseAvailability.map((location) => (
+            <small key={`warehouse-${location.locationId || location.locationName}`}>
+              {location.locationName}: {location.availableQuantity} available
+            </small>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TireRequestQueue({ onConfirmAppointment, onStatusChange, requests }) {
+  const visibleRequests = [...(requests || [])].sort((first, second) => Number(second.id || 0) - Number(first.id || 0));
+  const [responses, setResponses] = useState({});
+
+  function responseFor(requestId) {
+    return responses[requestId] || "";
+  }
+
+  function setResponse(requestId, value) {
+    setResponses((current) => ({ ...current, [requestId]: value }));
+  }
+
+  return (
+    <section className="panel tire-request-panel">
+      <div className="section-toolbar">
+        <div>
+          <span className="eyebrow">Operations</span>
+          <h3>Pending Tire Requests</h3>
+        </div>
+        <span className="audit-count">{visibleRequests.length} request{visibleRequests.length === 1 ? "" : "s"}</span>
+      </div>
+      <DataTable
+        actions={(request) => (
+          <div className="tire-request-actions">
+            <input
+              aria-label="Shop response"
+              onChange={(event) => setResponse(request.id, event.target.value)}
+              placeholder="Optional response"
+              value={responseFor(request.id)}
+            />
+            <button className="ghost-button" onClick={() => onStatusChange(request, "SOURCING", responseFor(request.id))} type="button">Sourcing</button>
+            <button className="ghost-button" onClick={() => onStatusChange(request, "AVAILABLE", responseFor(request.id))} type="button">Available</button>
+            <button className="ghost-button" onClick={() => onStatusChange(request, "UNAVAILABLE", responseFor(request.id))} type="button">Unavailable</button>
+            {request.appointmentId && ["SOURCING", "AVAILABLE"].includes(String(request.status || "").toUpperCase()) && (
+              <button className="primary-button" onClick={() => onConfirmAppointment(request)} type="button">Confirm appointment</button>
+            )}
+          </div>
+        )}
+        columns={["Customer", "Vehicle", "Tire Size", "Location", "Appointment", "Status", "Response", ""]}
+        emptyText="No tire sourcing requests."
+        rows={visibleRequests.map((request) => ({
+          key: `tire-request-${request.id}`,
+          source: request,
+          searchText: [request.customerName, request.vehicle, request.requestedSize, request.locationName, request.status, request.adminResponse].filter(Boolean).join(" "),
+          values: [
+            request.customerName || "-",
+            request.vehicle || "-",
+            request.requestedSize || "-",
+            request.locationName || "Unassigned",
+            request.appointmentDate ? dateTime(request.appointmentDate) : request.appointmentId ? `#${request.appointmentId}` : "-",
+            request.status || "PENDING",
+            request.adminResponse || "-"
+          ]
+        }))}
       />
     </section>
   );
@@ -5249,7 +5726,7 @@ function WorkOrdersPage({ appointments, customers, onInvoiceCreated, onNotify, o
           <div>
             <span className="eyebrow">Appointment source</span>
             <h3>{selectedAppointment ? selectedAppointment.customerName : "Manual work order"}</h3>
-            <p>{selectedAppointment ? `${selectedAppointment.serviceType} - ${dateTime(selectedAppointment.appointmentDate)}` : "Choose an appointment to fill customer, vehicle, and service details."}</p>
+            <p>{selectedAppointment ? `${serviceTypeLabel(selectedAppointment.serviceType)} - ${dateTime(selectedAppointment.appointmentDate)}` : "Choose an appointment to fill customer, vehicle, and service details."}</p>
           </div>
           <Select
             label="Choose appointment"
@@ -5304,7 +5781,8 @@ function WorkOrdersPage({ appointments, customers, onInvoiceCreated, onNotify, o
             }}
           />
         )}
-        <Select label="Service" required value={form.serviceType} onChange={(serviceType) => setForm({ ...form, serviceType })} options={["INSTALLATION", "BALANCING", "ROTATION", "REPAIR"]} />
+        <ServiceTypeSelect required value={form.serviceType} onChange={(serviceType) => setForm({ ...form, serviceType })} />
+        <OwnTireServiceNote serviceType={form.serviceType} />
         <Input label="Notes" value={form.notes} onChange={(notes) => setForm({ ...form, notes })} />
         <button className="primary-button" type="submit">
           {editingId ? "Save Work Order" : "Create Work Order"}
@@ -5360,7 +5838,7 @@ function WorkOrdersPage({ appointments, customers, onInvoiceCreated, onNotify, o
               appointment.customerName,
               appointment.vehicle || "-",
               appointment.locationName || "Unassigned",
-              appointment.serviceType || "-"
+              serviceTypeLabel(appointment.serviceType)
             ],
             source: appointment
           }))}
@@ -5411,7 +5889,7 @@ function WorkOrdersPage({ appointments, customers, onInvoiceCreated, onNotify, o
             workOrder.customerName,
             workOrder.vehicle || "-",
             workOrder.locationName || "Unassigned",
-            workOrder.serviceType || "-",
+            serviceTypeLabel(workOrder.serviceType),
             workOrder.assignedEmployeeName || "-",
             dateTime(workOrder.appointmentDate),
             workOrder.status || "PENDING",
@@ -5734,11 +6212,6 @@ function EstimatesPage({ customers, estimates, onNotify, onRefresh, onStartInvoi
             <button className="ghost-button" onClick={() => setPreviewEstimate(estimate)} type="button">
               Preview
             </button>
-            {!["CONVERTED", "DECLINED", "REJECTED", "CANCELLED"].includes(estimate.status) && (
-              <button className="ghost-button" onClick={() => runEstimateAction("Estimate rejected.", () => declineEstimate(estimate.id))} type="button">
-                Reject
-              </button>
-            )}
             {!["CONVERTED", "CANCELLED"].includes(estimate.status) && (
               <button className="danger-button" onClick={() => runEstimateAction("Estimate cancelled.", () => cancelEstimate(estimate.id))} type="button">
                 Cancel
@@ -5777,6 +6250,30 @@ function TireSetupFields({ disabled, form, onChange, tires }) {
   const [conditionFilter, setConditionFilter] = useState("ALL");
   const matchingTires = filterTiresForAppointment(tires, searchQuery, conditionFilter);
 
+  function changeSetup(tireSetup) {
+    if (tireSetup === "staggered") {
+      onChange({
+        ...form,
+        tireSetup,
+        tireSize: "",
+        frontTireSize: form.frontTireSize || form.tireSize,
+        frontQuantity: 2,
+        rearQuantity: 2
+      });
+      return;
+    }
+
+    onChange({
+      ...form,
+      tireSetup: "regular",
+      tireSize: form.tireSize || form.frontTireSize,
+      rearTireId: "",
+      rearTireSize: "",
+      frontQuantity: 4,
+      rearQuantity: 0
+    });
+  }
+
   function selectTire(tire, position = "front") {
     const size = tireSizeValue(tire);
 
@@ -5785,7 +6282,7 @@ function TireSetupFields({ disabled, form, onChange, tires }) {
         ...form,
         rearTireId: String(tire.id),
         rearTireSize: size,
-        rearQuantity: form.rearQuantity || 2
+        rearQuantity: 2
       });
       return;
     }
@@ -5795,7 +6292,8 @@ function TireSetupFields({ disabled, form, onChange, tires }) {
         ...form,
         frontTireId: String(tire.id),
         frontTireSize: size,
-        frontQuantity: form.frontQuantity || 2
+        frontQuantity: 2,
+        rearQuantity: form.rearQuantity || 2
       });
       return;
     }
@@ -5805,7 +6303,7 @@ function TireSetupFields({ disabled, form, onChange, tires }) {
       frontTireId: String(tire.id),
       rearTireId: "",
       tireSize: size,
-      frontQuantity: form.frontQuantity || 4,
+      frontQuantity: 4,
       rearQuantity: 0
     });
   }
@@ -5815,11 +6313,11 @@ function TireSetupFields({ disabled, form, onChange, tires }) {
 
     if (!tire) {
       if (position === "rear") {
-        onChange({ ...form, rearTireId: "", rearTireSize: "" });
+        onChange({ ...form, rearTireId: "", rearTireSize: "", rearQuantity: 0 });
       } else if (isStaggered) {
-        onChange({ ...form, frontTireId: "", frontTireSize: "" });
+        onChange({ ...form, frontTireId: "", frontTireSize: "", frontQuantity: 0 });
       } else {
-        onChange({ ...form, frontTireId: "", tireSize: "", rearTireId: "" });
+        onChange({ ...form, frontTireId: "", tireSize: "", rearTireId: "", frontQuantity: 0, rearQuantity: 0 });
       }
       return;
     }
@@ -5842,7 +6340,7 @@ function TireSetupFields({ disabled, form, onChange, tires }) {
         disabled={disabled}
         label="Setup"
         value={form.tireSetup}
-        onChange={(tireSetup) => onChange({ ...form, tireSetup })}
+        onChange={changeSetup}
         options={["regular", "staggered"]}
         optionLabel={(value) => value === "staggered" ? "Staggered" : "Regular"}
       />
@@ -5903,7 +6401,7 @@ function TireSetupFields({ disabled, form, onChange, tires }) {
             required={!disabled}
             value={form.frontTireSize}
             onChange={(frontTireSize) => onChange({ ...form, frontTireSize })}
-            placeholder="245/35R19"
+            placeholder="245/35/19"
           />
           <Input
             disabled={disabled}
@@ -5927,7 +6425,7 @@ function TireSetupFields({ disabled, form, onChange, tires }) {
             required={!disabled}
             value={form.rearTireSize}
             onChange={(rearTireSize) => onChange({ ...form, rearTireSize })}
-            placeholder="275/30R19"
+            placeholder="275/30/19"
           />
           <Input
             disabled={disabled}
@@ -5954,7 +6452,7 @@ function TireSetupFields({ disabled, form, onChange, tires }) {
             required={!disabled}
             value={form.tireSize}
             onChange={(tireSize) => onChange({ ...form, tireSize })}
-            placeholder="205/55R16"
+            placeholder="205/55/16"
           />
           <Input
             disabled={disabled}
@@ -6101,7 +6599,7 @@ function AppointmentDayView({ appointments, editingId, locationId, onSelect, sel
             >
               <strong>{slot}</strong>
               <span>{appointment ? appointment.customerName : "Available"}</span>
-              {appointment && <small>{appointment.serviceType}</small>}
+              {appointment && <small>{serviceTypeLabel(appointment.serviceType)}</small>}
               {!appointment && <CheckCircle2 size={16} />}
             </button>
           );
@@ -6261,7 +6759,7 @@ function Invoices({
           <div>
             <span className="eyebrow">{form.estimateId ? "Estimate source" : "Appointment source"}</span>
             <h3>{form.estimateId ? "Estimate invoice draft" : selectedAppointment ? selectedAppointment.customerName : "Manual invoice"}</h3>
-            <p>{form.estimateId ? "Review and edit the invoice before saving the estimate conversion." : selectedAppointment ? `${selectedAppointment.serviceType} - ${dateTime(selectedAppointment.appointmentDate)}` : "Choose an appointment to fill customer, vehicle, and reserved tires."}</p>
+            <p>{form.estimateId ? "Review and edit the invoice before saving the estimate conversion." : selectedAppointment ? `${serviceTypeLabel(selectedAppointment.serviceType)} - ${dateTime(selectedAppointment.appointmentDate)}` : "Choose an appointment to fill customer, vehicle, and reserved tires."}</p>
           </div>
           <Select
             label="Choose appointment"
@@ -6718,7 +7216,7 @@ function emptyCustomerVehicleForm() {
   return { nickname: "", year: "", make: "", model: "", plateNumber: "", tireSetup: "regular", tireSize: "", frontTireSize: "", rearTireSize: "" };
 }
 
-function CustomerPortalShell({ auth, onApproveEstimate, onBookAppointment, onDeleteVehicle, onLogout, onMarkNoticeRead, onPayInvoice, onRefresh, onSaveVehicle, onToggleTheme, portal, themeMode }) {
+function CustomerPortalShell({ auth, isRefreshing = false, onApproveEstimate, onBookAppointment, onDeleteVehicle, onLogout, onMarkNoticeRead, onPayInvoice, onRefresh, onSaveVehicle, onToggleTheme, portal, themeMode }) {
   const [vehicleForm, setVehicleForm] = useState(emptyCustomerVehicleForm);
   const [bookingForm, setBookingForm] = useState({
     vehicleId: "",
@@ -6732,10 +7230,14 @@ function CustomerPortalShell({ auth, onApproveEstimate, onBookAppointment, onDel
   const [locations, setLocations] = useState([]);
   const [isLoadingSlots, setIsLoadingSlots] = useState(false);
   const [isLoadingLocations, setIsLoadingLocations] = useState(false);
+  const [availability, setAvailability] = useState(null);
+  const [availabilityError, setAvailabilityError] = useState("");
+  const [isCheckingAvailability, setIsCheckingAvailability] = useState(false);
   const [payingInvoiceId, setPayingInvoiceId] = useState(null);
   const [approvingEstimateId, setApprovingEstimateId] = useState(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const previousUnreadCountRef = useRef(null);
 
   useEffect(() => {
     if (message || error) {
@@ -6747,11 +7249,22 @@ function CustomerPortalShell({ auth, onApproveEstimate, onBookAppointment, onDel
   const appointments = portal?.appointments || [];
   const invoices = portal?.invoices || [];
   const estimates = portal?.estimates || [];
+  const tireRequests = portal?.tireRequests || [];
   const notifications = portal?.notifications || [];
   const unreadCount = notifications.filter((notification) => !notification.read).length;
+  const latestUnreadNotice = notifications.find((notification) => !notification.read);
   const unpaidInvoices = invoices.filter((invoice) => !["PAID", "VOID"].includes(invoiceStatusKey(invoice.status)));
   const selectedBookingVehicle = vehicles.find((vehicle) => String(vehicle.id) === String(bookingForm.vehicleId));
   const bookingLocationId = bookingForm.locationId || selectedBookingVehicle?.locationId || auth?.locationId || "";
+  const customerNeedsTireSourcing = needsTireSourcing(availability);
+
+  useEffect(() => {
+    if ((previousUnreadCountRef.current === null && unreadCount > 0)
+        || (previousUnreadCountRef.current !== null && unreadCount > previousUnreadCountRef.current)) {
+      playNotificationChime();
+    }
+    previousUnreadCountRef.current = unreadCount;
+  }, [unreadCount]);
 
   useEffect(() => {
     async function loadCustomerLocations() {
@@ -6763,8 +7276,8 @@ function CustomerPortalShell({ auth, onApproveEstimate, onBookAppointment, onDel
       setIsLoadingLocations(true);
 
       try {
-        const publicLocations = await getPublicShopLocations(auth.shopId);
-        setLocations(publicLocations || []);
+        const publicLocations = publicStoreLocations(await getPublicShopLocations(auth.shopId));
+        setLocations(publicLocations);
         setBookingForm((current) => ({
           ...current,
           locationId: publicLocations?.some((location) => String(location.id) === String(current.locationId))
@@ -6809,10 +7322,59 @@ function CustomerPortalShell({ auth, onApproveEstimate, onBookAppointment, onDel
   }, [bookingForm.appointmentDate, bookingLocationId, locations.length]);
 
   useEffect(() => {
+    let cancelled = false;
+
+    async function checkAvailability() {
+      if (!bookingForm.vehicleId || !usesInventoryTires(bookingForm.serviceType)) {
+        setAvailability(null);
+        setAvailabilityError("");
+        return;
+      }
+
+      setIsCheckingAvailability(true);
+      setAvailabilityError("");
+
+      try {
+        const result = await getCustomerTireAvailability(bookingForm.vehicleId, bookingLocationId, bookingForm.serviceType);
+        if (!cancelled) {
+          setAvailability(result);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setAvailability(null);
+          setAvailabilityError(err.message || "Tire availability could not be checked.");
+        }
+      } finally {
+        if (!cancelled) {
+          setIsCheckingAvailability(false);
+        }
+      }
+    }
+
+    checkAvailability();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [bookingForm.vehicleId, bookingForm.serviceType, bookingLocationId]);
+
+  useEffect(() => {
     if (!portal) {
       onRefresh().catch(() => {});
     }
-  }, [portal, onRefresh]);
+  }, [portal]);
+
+  async function refreshPortal() {
+    setError("");
+    setMessage("");
+
+    try {
+      await onRefresh();
+      setMessage("Portal refreshed.");
+    } catch (err) {
+      setError(err.message || "Could not refresh portal.");
+    }
+  }
 
   async function submitVehicle(event) {
     event.preventDefault();
@@ -6849,13 +7411,15 @@ function CustomerPortalShell({ auth, onApproveEstimate, onBookAppointment, onDel
         return;
       }
 
-      await onBookAppointment({
+      const savedAppointment = await onBookAppointment({
         ...bookingForm,
         vehicleId: Number(bookingForm.vehicleId),
         locationId: bookingLocationId ? Number(bookingLocationId) : null
       });
       setBookingForm((current) => ({ ...current, appointmentTime: "", locationId: bookingLocationId || current.locationId, notes: "" }));
-      setMessage("Appointment booked.");
+      setMessage(savedAppointment?.status === "PENDING_TIRE_AVAILABILITY"
+        ? "Tire sourcing request sent. The shop will review availability before confirming your appointment."
+        : "Appointment booked.");
     } catch (err) {
       setError(err.message || "Appointment could not be booked.");
     }
@@ -6902,13 +7466,22 @@ function CustomerPortalShell({ auth, onApproveEstimate, onBookAppointment, onDel
         </div>
         <div className="toolbar-actions">
           <ThemeToggleButton onToggle={onToggleTheme} themeMode={themeMode} />
-          <button className="ghost-button with-icon" onClick={onRefresh} type="button"><RefreshCw size={16} />Refresh</button>
+          <button className="ghost-button with-icon" disabled={isRefreshing} onClick={refreshPortal} type="button"><RefreshCw size={16} />{isRefreshing ? "Refreshing..." : "Refresh"}</button>
           <button className="ghost-button with-icon" onClick={onLogout} type="button"><UserCircle size={17} />Logout</button>
         </div>
       </header>
 
       {message ? <div className="success-alert">{message}</div> : null}
       {error ? <div className="alert error">{error}</div> : null}
+      {unreadCount > 0 && (
+        <div className="customer-unread-alert" role="status" aria-live="polite">
+          <Bell size={18} />
+          <div>
+            <strong>{unreadCount} unread notice{unreadCount === 1 ? "" : "s"}</strong>
+            <span>{latestUnreadNotice?.title || "You have a new shop notice"}{latestUnreadNotice?.message ? ` - ${latestUnreadNotice.message}` : ""}</span>
+          </div>
+        </div>
+      )}
       {unpaidInvoices.length > 0 && (
         <div className="portal-payment-alert">
           <strong>You have unpaid invoices requiring payment.</strong>
@@ -6922,6 +7495,7 @@ function CustomerPortalShell({ auth, onApproveEstimate, onBookAppointment, onDel
         <div className="metric-card"><span>Invoices</span><strong>{invoices.length}</strong></div>
         <div className="metric-card"><span>Unpaid invoices</span><strong>{unpaidInvoices.length}</strong></div>
         <div className="metric-card"><span>Estimates</span><strong>{estimates.length}</strong></div>
+        <div className="metric-card"><span>Tire requests</span><strong>{tireRequests.length}</strong></div>
         <div className="metric-card"><span>Unread notices</span><strong>{unreadCount}</strong></div>
       </section>
 
@@ -6970,11 +7544,11 @@ function CustomerPortalShell({ auth, onApproveEstimate, onBookAppointment, onDel
           <Select label="Tire setup" value={vehicleForm.tireSetup} onChange={(tireSetup) => setVehicleForm({ ...vehicleForm, tireSetup })} options={["regular", "staggered"]} optionLabel={(option) => option === "regular" ? "Regular" : "Staggered"} />
           {vehicleForm.tireSetup === "staggered" ? (
             <>
-              <Input label="Front tire size" required value={vehicleForm.frontTireSize} onChange={(frontTireSize) => setVehicleForm({ ...vehicleForm, frontTireSize })} placeholder="245/35R19" />
-              <Input label="Rear tire size" required value={vehicleForm.rearTireSize} onChange={(rearTireSize) => setVehicleForm({ ...vehicleForm, rearTireSize })} placeholder="275/30R19" />
+              <Input label="Front tire size" required value={vehicleForm.frontTireSize} onChange={(frontTireSize) => setVehicleForm({ ...vehicleForm, frontTireSize })} placeholder="245/35/19" />
+              <Input label="Rear tire size" required value={vehicleForm.rearTireSize} onChange={(rearTireSize) => setVehicleForm({ ...vehicleForm, rearTireSize })} placeholder="275/30/19" />
             </>
           ) : (
-            <Input label="Tire size" value={vehicleForm.tireSize} onChange={(tireSize) => setVehicleForm({ ...vehicleForm, tireSize })} placeholder="225/45R17" />
+            <Input label="Tire size" value={vehicleForm.tireSize} onChange={(tireSize) => setVehicleForm({ ...vehicleForm, tireSize })} placeholder="225/45/17" />
           )}
           <button className="primary-button" type="submit">Save Vehicle</button>
         </form>
@@ -7010,7 +7584,20 @@ function CustomerPortalShell({ auth, onApproveEstimate, onBookAppointment, onDel
             />
           )}
           {isLoadingLocations && <span className="empty-note">Loading locations...</span>}
-          <Select label="Service" required value={bookingForm.serviceType} onChange={(serviceType) => setBookingForm({ ...bookingForm, serviceType })} options={["INSTALLATION", "BALANCING", "ROTATION", "REPAIR"]} />
+          <ServiceTypeSelect required value={bookingForm.serviceType} onChange={(serviceType) => setBookingForm({ ...bookingForm, serviceType })} />
+          <OwnTireServiceNote serviceType={bookingForm.serviceType} />
+          <TireAvailabilityPanel
+            availability={availability}
+            error={availabilityError}
+            isLoading={isCheckingAvailability}
+            mode="customer"
+          />
+          {customerNeedsTireSourcing && (
+            <div className="customer-sourcing-note">
+              <strong>Request tire sourcing</strong>
+              <span>The shop will look for this tire and confirm the appointment once availability is sorted.</span>
+            </div>
+          )}
           <Input label="Date" min={todayDateKey()} required type="date" value={bookingForm.appointmentDate} onChange={(appointmentDate) => setBookingForm({ ...bookingForm, appointmentDate })} />
           <fieldset className="customer-slot-picker">
             <legend>Available times</legend>
@@ -7034,7 +7621,9 @@ function CustomerPortalShell({ auth, onApproveEstimate, onBookAppointment, onDel
             )}
           </fieldset>
           <label className="customer-notes"><span>Notes</span><textarea value={bookingForm.notes} onChange={(event) => setBookingForm({ ...bookingForm, notes: event.target.value })} rows="3" /></label>
-          <button className="primary-button" disabled={!vehicles.length || !slots.length || !bookingForm.appointmentTime} type="submit">Book Appointment</button>
+          <button className="primary-button" disabled={!vehicles.length || !slots.length || !bookingForm.appointmentTime} type="submit">
+            {customerBookingSubmitLabel(availability)}
+          </button>
         </form>
       </section>
 
@@ -7048,7 +7637,24 @@ function CustomerPortalShell({ auth, onApproveEstimate, onBookAppointment, onDel
         <DataTable
           columns={["Date", "Location", "Vehicle", "Service", "Status", "Notes"]}
           emptyText="No appointments yet."
-          rows={appointments.map((appointment) => ({ key: `customer-appt-${appointment.id}`, values: [dateTime(appointment.appointmentDate), appointment.locationName || "Preferred shop", appointment.vehicle || "-", appointment.serviceType || "-", appointment.status || "-", appointment.notes || "-"] }))}
+          rows={appointments.map((appointment) => ({ key: `customer-appt-${appointment.id}`, values: [dateTime(appointment.appointmentDate), appointment.locationName || "Preferred shop", appointment.vehicle || "-", serviceTypeLabel(appointment.serviceType), appointment.status || "-", appointment.notes || "-"] }))}
+        />
+        <DataTable
+          columns={["Tire Size", "Vehicle", "Location", "Appointment", "Status", "Shop Response"]}
+          emptyText="No tire requests yet."
+          rows={tireRequests.map((request) => ({
+            key: `customer-tire-request-${request.id}`,
+            source: request,
+            searchText: [request.requestedSize, request.vehicle, request.locationName, request.status, request.adminResponse].filter(Boolean).join(" "),
+            values: [
+              request.requestedSize || "-",
+              request.vehicle || "-",
+              request.locationName || "Preferred shop",
+              request.appointmentDate ? dateTime(request.appointmentDate) : request.appointmentId ? `#${request.appointmentId}` : "-",
+              request.status || "PENDING",
+              request.adminResponse || tireRequestCustomerMessage(request.status)
+            ]
+          }))}
         />
         <DataTable
           actions={(estimate) => (
@@ -7170,8 +7776,8 @@ function PublicBookingPage({ onToggleTheme, themeMode }) {
       setIsLoadingLocations(true);
 
       try {
-        const publicLocations = await getPublicShopLocations(form.shopId);
-        setLocations(publicLocations || []);
+        const publicLocations = publicStoreLocations(await getPublicShopLocations(form.shopId));
+        setLocations(publicLocations);
         setForm((current) => ({
           ...current,
           locationId: publicLocations?.some((location) => String(location.id) === String(current.locationId))
@@ -7305,14 +7911,13 @@ function PublicBookingPage({ onToggleTheme, themeMode }) {
           )}
           {isLoadingLocations && <span className="empty-note">Loading locations...</span>}
           <Input label="Vehicle" required value={form.vehicle} onChange={(vehicle) => update("vehicle", vehicle)} />
-          <Input label="Tire size" value={form.tireSize} onChange={(tireSize) => update("tireSize", tireSize)} placeholder="225/45R17" />
-          <Select
-            label="Service"
+          <Input label="Tire size" value={form.tireSize} onChange={(tireSize) => update("tireSize", tireSize)} placeholder="225/45/17" />
+          <ServiceTypeSelect
             required
             value={form.serviceType}
             onChange={(serviceType) => update("serviceType", serviceType)}
-            options={["INSTALLATION", "BALANCING", "ROTATION", "REPAIR"]}
           />
+          <OwnTireServiceNote serviceType={form.serviceType} />
           <Input label="Date" min={todayDateKey()} required type="date" value={form.appointmentDate} onChange={(appointmentDate) => update("appointmentDate", appointmentDate)} />
 
           <fieldset className="public-slot-picker">
@@ -7448,8 +8053,8 @@ function CustomerSignupScreen({ error, form, isSubmitting, onSubmit, onToggleThe
       setIsLoadingLocations(true);
 
       try {
-        const publicLocations = await getPublicShopLocations(form.shopId);
-        setLocations(publicLocations || []);
+        const publicLocations = publicStoreLocations(await getPublicShopLocations(form.shopId));
+        setLocations(publicLocations);
         setForm((current) => ({
           ...current,
           locationId: publicLocations?.some((location) => String(location.id) === String(current.locationId))
@@ -7501,7 +8106,14 @@ function CustomerSignupScreen({ error, form, isSubmitting, onSubmit, onToggleThe
           </label>
           <label>
             Phone
-            <input required value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} />
+            <input
+              inputMode="tel"
+              maxLength="12"
+              required
+              type="tel"
+              value={form.phone}
+              onChange={(event) => setForm({ ...form, phone: formatCanadianPhoneInput(event.target.value) })}
+            />
           </label>
           {shops.length > 0 && (
             <Select
@@ -7889,7 +8501,16 @@ function AccountingPage({
               <label><span>Custom category</span><input placeholder="Add category" value={vendorForm.customCategory} onChange={(event) => onVendorChange({ ...vendorForm, customCategory: event.target.value, category: event.target.value })} /></label>
             )}
             <label><span>Email</span><input value={vendorForm.email} onChange={(event) => onVendorChange({ ...vendorForm, email: event.target.value })} /></label>
-            <label><span>Phone</span><input value={vendorForm.phone} onChange={(event) => onVendorChange({ ...vendorForm, phone: event.target.value })} /></label>
+            <label>
+              <span>Phone</span>
+              <input
+                inputMode="tel"
+                maxLength="12"
+                type="tel"
+                value={vendorForm.phone}
+                onChange={(event) => onVendorChange({ ...vendorForm, phone: formatCanadianPhoneInput(event.target.value) })}
+              />
+            </label>
             <button className="primary-button" type="submit">Add Vendor</button>
               </form>
               <AccountingTablePanel title="Vendors" detail="Saved suppliers and current-period spending.">
@@ -10445,11 +11066,36 @@ function DataTable({ actions, columns, emptyText, highlightedRow, rows }) {
   );
 }
 
-function Input({ label, onChange, ...props }) {
+function Input({ label, onChange, type, inputMode, maxLength, ...props }) {
+  const isPhoneInput = type === "tel" || String(label || "").toLowerCase().includes("phone");
+  const isTireSizeInput = String(label || "").toLowerCase().includes("tire size");
+  const resolvedInputMode = isPhoneInput || isTireSizeInput ? "tel" : inputMode;
+  const resolvedMaxLength = isPhoneInput ? 12 : isTireSizeInput ? 9 : maxLength;
+  const resolvedType = isPhoneInput ? "tel" : type;
+
+  function handleChange(event) {
+    const value = event.target.value;
+    if (isPhoneInput) {
+      onChange(formatCanadianPhoneInput(value));
+      return;
+    }
+    if (isTireSizeInput) {
+      onChange(formatTireSizeInput(value));
+      return;
+    }
+    onChange(value);
+  }
+
   return (
     <label>
       <span>{label}</span>
-      <input {...props} onChange={(event) => onChange(event.target.value)} />
+      <input
+        {...props}
+        inputMode={resolvedInputMode}
+        maxLength={resolvedMaxLength}
+        type={resolvedType}
+        onChange={handleChange}
+      />
     </label>
   );
 }
@@ -10467,6 +11113,47 @@ function Select({ label, onChange, optionLabel, options, value, ...props }) {
         ))}
       </select>
     </label>
+  );
+}
+
+function ServiceTypeSelect({ label = "Service", onChange, value, ...props }) {
+  return (
+    <Select
+      {...props}
+      label={(
+        <span className="field-label-with-help">
+          {label}
+          <span aria-label="Service type help" className="help-tip" tabIndex="0">
+            ?
+            <span className="help-tip-content">
+              Installation uses shop inventory. Re & Re means the customer brings loose tires and the shop removes and replaces tires on the rims. Bolt On means the customer brings a mounted set already on rims.
+            </span>
+          </span>
+        </span>
+      )}
+      onChange={onChange}
+      optionLabel={serviceTypeLabel}
+      options={SERVICE_TYPE_OPTIONS}
+      value={value}
+    />
+  );
+}
+
+function OwnTireServiceNote({ serviceType }) {
+  const message = ownTireServiceMessage(serviceType);
+
+  if (!message) {
+    return null;
+  }
+
+  return (
+    <div className="own-tire-service-note">
+      <span className="own-tire-service-icon"><Package size={17} /></span>
+      <div>
+        <strong>{serviceTypeLabel(serviceType)}</strong>
+        <p>{message}</p>
+      </div>
+    </div>
   );
 }
 

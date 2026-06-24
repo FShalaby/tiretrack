@@ -73,6 +73,57 @@ body {
   color: #1f2937;
 }
 
+:root[data-theme="light"] .tire-availability-card,
+:root[data-theme="light"] .availability-override-panel,
+:root[data-theme="light"] .customer-sourcing-note,
+:root[data-theme="light"] .own-tire-service-note {
+  background: rgba(255, 255, 255, 0.82);
+  border-color: rgba(15, 23, 42, 0.12);
+  color: #1f2937;
+}
+
+:root[data-theme="light"] .availability-metrics div {
+  background: rgba(248, 250, 252, 0.92);
+}
+
+:root[data-theme="light"] .availability-card-head strong,
+:root[data-theme="light"] .availability-override-copy strong,
+:root[data-theme="light"] .customer-sourcing-note strong,
+:root[data-theme="light"] .own-tire-service-note strong,
+:root[data-theme="light"] .field-label-with-help,
+:root[data-theme="light"] .availability-metrics strong,
+:root[data-theme="light"] .availability-location-list small {
+  color: #111827;
+}
+
+:root[data-theme="light"] .tire-availability-card p,
+:root[data-theme="light"] .availability-override-copy p,
+:root[data-theme="light"] .customer-sourcing-note span,
+:root[data-theme="light"] .own-tire-service-note p,
+:root[data-theme="light"] .availability-metrics span,
+:root[data-theme="light"] .availability-location-list span,
+:root[data-theme="light"] .availability-location-list.internal small {
+  color: #475569;
+}
+
+:root[data-theme="light"] .availability-override-icon {
+  background: #fffbeb;
+  border-color: rgba(217, 119, 6, 0.28);
+  color: #b45309;
+}
+
+:root[data-theme="light"] .override-active .availability-override-icon {
+  background: #eff6ff;
+  border-color: rgba(37, 99, 235, 0.24);
+  color: #1d4ed8;
+}
+
+:root[data-theme="light"] .own-tire-service-icon {
+  background: #ecfeff;
+  border-color: rgba(8, 145, 178, 0.22);
+  color: #0e7490;
+}
+
 :root[data-theme="light"] .sidebar {
   box-shadow: 10px 0 30px rgba(15, 23, 42, 0.05);
 }
@@ -588,6 +639,48 @@ button {
   top: -5px;
 }
 
+.notification-button.has-unread {
+  border-color: rgba(239, 68, 68, 0.48);
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.14), 0 10px 24px rgba(239, 68, 68, 0.18);
+  color: #ffffff;
+}
+
+.notification-button.has-unread::after {
+  animation: notificationPulse 1.8s ease-in-out infinite;
+  border: 1px solid rgba(239, 68, 68, 0.48);
+  border-radius: 14px;
+  content: "";
+  inset: -4px;
+  pointer-events: none;
+  position: absolute;
+}
+
+.notification-menu button.unread {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.16), rgba(124, 140, 255, 0.12));
+  border: 1px solid rgba(239, 68, 68, 0.26);
+}
+
+.notification-menu button.unread span {
+  color: #ffffff;
+}
+
+.notification-menu button.unread small {
+  color: #f2c7c7;
+}
+
+@keyframes notificationPulse {
+  0%,
+  100% {
+    opacity: 0.3;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.75;
+    transform: scale(1.08);
+  }
+}
+
 .profile-chip {
   cursor: pointer;
   font-weight: 800;
@@ -905,6 +998,50 @@ button {
 
 .portal-payment-alert strong {
   color: #ffffff;
+}
+
+.customer-unread-alert {
+  align-items: center;
+  animation: customerNoticePulse 2.1s ease-in-out infinite;
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.16), rgba(124, 140, 255, 0.12));
+  border: 1px solid rgba(239, 68, 68, 0.32);
+  border-radius: 14px;
+  color: #fecaca;
+  display: flex;
+  gap: 12px;
+  padding: 14px 15px;
+}
+
+.customer-unread-alert svg {
+  color: #fca5a5;
+  flex: 0 0 auto;
+}
+
+.customer-unread-alert div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.customer-unread-alert strong {
+  color: #ffffff;
+}
+
+.customer-unread-alert span {
+  color: #f2c7c7;
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+@keyframes customerNoticePulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 rgba(239, 68, 68, 0);
+  }
+
+  50% {
+    box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.12);
+  }
 }
 
 .customer-grid {
@@ -4071,6 +4208,258 @@ button:disabled {
   max-width: min(100%, 360px);
 }
 
+.tire-availability-card {
+  grid-column: 1 / -1;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.1));
+  background: color-mix(in srgb, var(--panel, rgba(255, 255, 255, 0.06)) 92%, transparent);
+  border-radius: 14px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 18px 36px rgba(0, 0, 0, 0.12);
+  overflow: hidden;
+  padding: 16px;
+  display: grid;
+  gap: 10px;
+}
+
+.tire-availability-card.loading,
+.tire-availability-card.error {
+  color: var(--muted, #9ca3af);
+}
+
+.tire-availability-card.error {
+  border-color: rgba(239, 68, 68, 0.45);
+  color: #ef4444;
+}
+
+.tire-availability-card.green {
+  border-color: rgba(34, 197, 94, 0.45);
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.13), color-mix(in srgb, var(--panel, rgba(255, 255, 255, 0.06)) 92%, transparent));
+}
+
+.tire-availability-card.yellow {
+  border-color: rgba(245, 158, 11, 0.55);
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.15), color-mix(in srgb, var(--panel, rgba(255, 255, 255, 0.06)) 92%, transparent));
+}
+
+.tire-availability-card.red {
+  border-color: rgba(239, 68, 68, 0.55);
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.15), color-mix(in srgb, var(--panel, rgba(255, 255, 255, 0.06)) 92%, transparent));
+}
+
+.availability-card-head,
+.availability-metrics,
+.availability-location-list {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.availability-card-head {
+  justify-content: space-between;
+}
+
+.availability-card-head strong {
+  display: block;
+  color: var(--text, #f7f7fb);
+  font-size: 1rem;
+}
+
+.tire-availability-card p {
+  margin: 0;
+  color: var(--muted, #9ca3af);
+}
+
+.availability-metrics {
+  flex-wrap: wrap;
+}
+
+.availability-metrics div {
+  min-width: 150px;
+  border-radius: 8px;
+  background: var(--soft-panel, rgba(255, 255, 255, 0.06));
+  padding: 10px;
+}
+
+.availability-metrics span,
+.availability-location-list span {
+  display: block;
+  color: var(--muted, #9ca3af);
+  font-size: 0.78rem;
+}
+
+.availability-metrics strong {
+  display: block;
+  color: var(--text, #f7f7fb);
+  margin-top: 3px;
+}
+
+.availability-location-list {
+  align-items: flex-start;
+  flex-direction: column;
+  border-top: 1px solid var(--border, rgba(255, 255, 255, 0.1));
+  padding-top: 10px;
+}
+
+.availability-location-list small {
+  color: var(--text, #f7f7fb);
+}
+
+.availability-location-list.internal small {
+  color: var(--muted, #9ca3af);
+}
+
+.availability-override-panel {
+  grid-column: 1 / -1;
+  border: 1px solid rgba(245, 158, 11, 0.38);
+  border-radius: 14px;
+  background:
+    linear-gradient(135deg, rgba(245, 158, 11, 0.16), rgba(245, 158, 11, 0.05)),
+    color-mix(in srgb, var(--panel, rgba(255, 255, 255, 0.06)) 92%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 18px 38px rgba(0, 0, 0, 0.12);
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+}
+
+.availability-override-panel.override-active {
+  background:
+    linear-gradient(135deg, rgba(59, 130, 246, 0.17), rgba(34, 197, 94, 0.08)),
+    color-mix(in srgb, var(--panel, rgba(255, 255, 255, 0.06)) 92%, transparent);
+  border-color: rgba(59, 130, 246, 0.48);
+}
+
+.availability-override-copy {
+  align-items: flex-start;
+  display: flex;
+  gap: 12px;
+}
+
+.availability-override-icon {
+  align-items: center;
+  background: rgba(245, 158, 11, 0.16);
+  border: 1px solid rgba(245, 158, 11, 0.32);
+  border-radius: 12px;
+  color: #fbbf24;
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: 38px;
+  justify-content: center;
+  width: 38px;
+}
+
+.override-active .availability-override-icon {
+  background: rgba(59, 130, 246, 0.16);
+  border-color: rgba(59, 130, 246, 0.34);
+  color: #93c5fd;
+}
+
+.availability-override-copy strong {
+  color: var(--text, #f7f7fb);
+}
+
+.availability-override-copy p {
+  color: var(--muted, #9ca3af);
+  margin: 0;
+  max-width: 760px;
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.override-toggle {
+  border-radius: 8px;
+  color: var(--text, #f7f7fb);
+  font-weight: 800;
+  width: fit-content;
+}
+
+.checkbox-row input {
+  width: 18px;
+  height: 18px;
+}
+
+.customer-sourcing-note {
+  border: 1px solid rgba(245, 158, 11, 0.42);
+  border-radius: 8px;
+  background: rgba(245, 158, 11, 0.08);
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+}
+
+.customer-sourcing-note strong {
+  color: var(--text, #f7f7fb);
+}
+
+.customer-sourcing-note span {
+  color: var(--muted, #9ca3af);
+  font-size: 0.9rem;
+}
+
+.own-tire-service-note {
+  align-items: flex-start;
+  border: 1px solid rgba(34, 211, 238, 0.26);
+  border-radius: 14px;
+  background:
+    linear-gradient(135deg, rgba(34, 211, 238, 0.11), rgba(124, 140, 255, 0.07)),
+    color-mix(in srgb, var(--panel, rgba(255, 255, 255, 0.06)) 92%, transparent);
+  display: flex;
+  gap: 11px;
+  grid-column: 1 / -1;
+  max-width: 780px;
+  padding: 13px 14px;
+}
+
+.own-tire-service-icon {
+  align-items: center;
+  background: rgba(34, 211, 238, 0.13);
+  border: 1px solid rgba(34, 211, 238, 0.26);
+  border-radius: 12px;
+  color: #67e8f9;
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: 36px;
+  justify-content: center;
+  width: 36px;
+}
+
+.own-tire-service-note strong {
+  color: var(--text, #f7f7fb);
+}
+
+.own-tire-service-note p {
+  color: var(--muted, #9ca3af);
+  font-size: 0.9rem;
+  margin: 3px 0 0;
+}
+
+.field-label-with-help {
+  align-items: center;
+  color: inherit;
+  display: inline-flex;
+  gap: 7px;
+  min-width: 0;
+}
+
+.tire-request-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.tire-request-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.tire-request-actions input {
+  min-width: 180px;
+  max-width: 260px;
+}
+
 .appointment-time-empty {
   background: #202028;
   border: 1px dashed rgba(255, 255, 255, 0.12);
@@ -4498,6 +4887,7 @@ button:disabled {
 
 .invoice-document-header,
 .invoice-parties {
+  align-items: flex-start;
   display: flex;
   gap: 20px;
   justify-content: space-between;
@@ -4525,9 +4915,42 @@ button:disabled {
 }
 
 .invoice-document-header > div:last-child {
+  align-content: start;
   display: grid;
   gap: 8px;
+  justify-items: end;
+  line-height: 1.2;
   text-align: right;
+}
+
+.invoice-document-header > div:last-child .status-badge {
+  justify-self: end;
+  width: fit-content;
+}
+
+.invoice-document .status-badge.gray {
+  background: #eef2f7;
+  color: #475569;
+}
+
+.invoice-document .status-badge.blue {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.invoice-document .status-badge.green {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.invoice-document .status-badge.yellow {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.invoice-document .status-badge.red {
+  background: #fee2e2;
+  color: #b91c1c;
 }
 
 .invoice-parties {
@@ -6883,6 +7306,26 @@ tr:last-child td {
   color: #0f766e !important;
 }
 
+:root[data-theme="light"] .notification-button.has-unread {
+  background: #fff7ed !important;
+  border-color: rgba(220, 38, 38, 0.34) !important;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1), 0 10px 24px rgba(220, 38, 38, 0.12);
+  color: #991b1b !important;
+}
+
+:root[data-theme="light"] .notification-menu button.unread {
+  background: linear-gradient(135deg, #fff7ed, #fef2f2) !important;
+  border: 1px solid rgba(220, 38, 38, 0.18);
+}
+
+:root[data-theme="light"] .notification-menu button.unread span {
+  color: #991b1b !important;
+}
+
+:root[data-theme="light"] .notification-menu button.unread small {
+  color: #7f1d1d !important;
+}
+
 :root[data-theme="light"] .sidebar-booking-link,
 :root[data-theme="light"] .form-banner,
 :root[data-theme="light"] .invoice-source {
@@ -6918,6 +7361,21 @@ tr:last-child td {
 
 :root[data-theme="light"] .portal-payment-alert strong {
   color: #92400e !important;
+}
+
+:root[data-theme="light"] .customer-unread-alert {
+  background: linear-gradient(135deg, #fff7ed, #fef2f2) !important;
+  border-color: rgba(220, 38, 38, 0.22) !important;
+  color: #991b1b !important;
+}
+
+:root[data-theme="light"] .customer-unread-alert svg,
+:root[data-theme="light"] .customer-unread-alert strong {
+  color: #991b1b !important;
+}
+
+:root[data-theme="light"] .customer-unread-alert span {
+  color: #7f1d1d !important;
 }
 
 :root[data-theme="light"] .public-slot-picker legend,

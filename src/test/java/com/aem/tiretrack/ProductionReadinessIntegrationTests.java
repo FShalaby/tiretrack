@@ -54,6 +54,7 @@ import com.aem.tiretrack.model.PayrollRecord;
 import com.aem.tiretrack.model.Shop;
 import com.aem.tiretrack.model.ShopLocation;
 import com.aem.tiretrack.model.Tire;
+import com.aem.tiretrack.model.TireRequest;
 import com.aem.tiretrack.model.User;
 import com.aem.tiretrack.model.WorkOrder;
 import com.aem.tiretrack.repository.AppNotificationRepository;
@@ -70,6 +71,7 @@ import com.aem.tiretrack.repository.PayrollRecordRepository;
 import com.aem.tiretrack.repository.ShopRepository;
 import com.aem.tiretrack.repository.ShopLocationRepository;
 import com.aem.tiretrack.repository.TireRepository;
+import com.aem.tiretrack.repository.TireRequestRepository;
 import com.aem.tiretrack.repository.UserRepository;
 import com.aem.tiretrack.repository.WorkOrderRepository;
 import com.aem.tiretrack.security.JwtService;
@@ -105,6 +107,7 @@ class ProductionReadinessIntegrationTests {
     @Autowired private ShopLocationRepository shopLocationRepository;
     @Autowired private UserRepository userRepository;
     @Autowired private TireRepository tireRepository;
+    @Autowired private TireRequestRepository tireRequestRepository;
     @Autowired private AppointmentRepository appointmentRepository;
     @Autowired private CompanySettingsRepository companySettingsRepository;
     @Autowired private InvoiceRepository invoiceRepository;
@@ -613,6 +616,76 @@ class ProductionReadinessIntegrationTests {
         assertThat(appointment.getShopLocation().getId()).isEqualTo(store.getId());
         CustomerVehicle claimedVehicle = vehicleRepository.findById(adminCreatedVehicle.getId()).orElseThrow();
         assertThat(claimedVehicle.getShop().getId()).isEqualTo(shop.getId());
+    }
+
+    @Test
+    void customerPortalInstallationWithAvailableVehicleTireConfirmsAppointment() {
+        Shop shop = shopRepository.saveAndFlush(shop("Portal Tire Stock Shop"));
+        ShopLocation store = shopLocationRepository.saveAndFlush(shopLocation(shop, "Portal Tire Store", ShopLocationType.STORE, true));
+        User customer = userRepository.saveAndFlush(user("Portal Tire Customer", "portal-tire-customer-" + System.nanoTime() + "@test.com", UserRole.CUSTOMER, shop));
+        customer.setShopLocation(store);
+        customer = userRepository.saveAndFlush(customer);
+
+        CustomerVehicle vehicle = vehicle(customer, "Stock Vehicle");
+        vehicle.setShop(shop);
+        vehicle.setShopLocation(store);
+        vehicle = vehicleRepository.saveAndFlush(vehicle);
+
+        Tire tire = tire("Available Portal Tire", shop);
+        tire.setWidth(225);
+        tire.setAspectRatio(45);
+        tire.setRimSize(18);
+        tire.setQuantity(4);
+        tire.setShopLocation(store);
+        tireRepository.saveAndFlush(tire);
+
+        signIn(customer);
+
+        CustomerAppointmentRequest request = new CustomerAppointmentRequest();
+        request.setVehicleId(vehicle.getId());
+        request.setLocationId(store.getId());
+        request.setAppointmentDate(LocalDate.now().plusDays(5));
+        request.setAppointmentTime(java.time.LocalTime.of(11, 0));
+        request.setServiceType(ServiceType.INSTALLATION);
+
+        Appointment appointment = customerPortalService.bookAppointment(request);
+
+        assertThat(appointment.getStatus()).isEqualTo(AppointmentStatus.BOOKED);
+        assertThat(tireRequestRepository.findByCustomer_IdOrderByCreatedAtDesc(customer.getId())).isEmpty();
+    }
+
+    @Test
+    void customerPortalOutOfStockInstallationCreatesPendingTireRequest() {
+        Shop shop = shopRepository.saveAndFlush(shop("Portal Tire Request Shop"));
+        ShopLocation store = shopLocationRepository.saveAndFlush(shopLocation(shop, "Portal Request Store", ShopLocationType.STORE, true));
+        User customer = userRepository.saveAndFlush(user("Portal Request Customer", "portal-request-customer-" + System.nanoTime() + "@test.com", UserRole.CUSTOMER, shop));
+        customer.setShopLocation(store);
+        customer = userRepository.saveAndFlush(customer);
+
+        CustomerVehicle vehicle = vehicle(customer, "Out Of Stock Vehicle");
+        vehicle.setShop(shop);
+        vehicle.setShopLocation(store);
+        vehicle = vehicleRepository.saveAndFlush(vehicle);
+
+        signIn(customer);
+
+        CustomerAppointmentRequest request = new CustomerAppointmentRequest();
+        request.setVehicleId(vehicle.getId());
+        request.setLocationId(store.getId());
+        request.setAppointmentDate(LocalDate.now().plusDays(6));
+        request.setAppointmentTime(java.time.LocalTime.of(12, 0));
+        request.setServiceType(ServiceType.INSTALLATION);
+        request.setNotes("Customer needs the shop to source tires.");
+
+        Appointment appointment = customerPortalService.bookAppointment(request);
+        List<TireRequest> requests = tireRequestRepository.findByCustomer_IdOrderByCreatedAtDesc(customer.getId());
+        CustomerPortalResponse portal = customerPortalService.portal();
+
+        assertThat(appointment.getStatus()).isEqualTo(AppointmentStatus.PENDING_TIRE_AVAILABILITY);
+        assertThat(requests).hasSize(1);
+        assertThat(requests.get(0).getRequestedSize()).isEqualTo("225/45/18");
+        assertThat(requests.get(0).getAppointmentId()).isEqualTo(appointment.getId());
+        assertThat(portal.getTireRequests()).extracting(tireRequest -> tireRequest.getId()).contains(requests.get(0).getId());
     }
 
     private TenantFixture tenantFixture() {
