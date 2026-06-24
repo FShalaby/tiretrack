@@ -20,6 +20,36 @@
 
 # 🚀 Overview
 
+# Standard Local Setup
+
+TireTrack uses one machine-local `.env` file for backend configuration. The `.env` file is ignored by Git, should never be committed, and is loaded automatically by Spring Boot.
+
+One-time setup on a new machine:
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` once with that machine's MySQL password, JWT secret, and platform owner password.
+
+After that, run the backend normally:
+
+```bash
+./mvnw spring-boot:run
+```
+
+Run the frontend in a second terminal:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Backend configuration is loaded automatically from `.env`, so you do not need to export environment variables every time.
+
+---
+
 TireTrack is a modern full-stack business management platform built specifically for tire and rim businesses.
 
 Designed around real-world tire shop workflows, TireTrack combines inventory management, appointments, work orders, estimates, invoicing, payroll, accounting, customer management, and multi-shop SaaS operations into a single platform.

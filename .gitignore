@@ -15,6 +15,11 @@ backend.err.log
 frontend.log
 frontend.err.log
 
+# Local environment/secrets
+.env
+.env.local
+.env.*.local
+
 ### STS ###
 .apt_generated
 .classpath
