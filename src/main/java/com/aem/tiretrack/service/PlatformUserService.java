@@ -49,6 +49,9 @@ public class PlatformUserService {
     @Transactional
     public User createUser(PlatformUserRequest request) {
         String normalizedEmail = accountValidationService.normalizeEmail(request.getEmail());
+        if (request.getPassword() == null || !request.getPassword().equals(request.getConfirmPassword())) {
+            throw new IllegalArgumentException("Passwords do not match");
+        }
         accountValidationService.validateNewAccount(normalizedEmail, request.getPassword());
 
         if (request.getRole() == UserRole.SUPER_ADMIN) {

@@ -1130,7 +1130,7 @@ function App() {
   const [loginForm, setLoginForm] = useState({ email: "", password: "" });
   const [loginError, setLoginError] = useState("");
   const [loginSubmitting, setLoginSubmitting] = useState(false);
-  const [signupForm, setSignupForm] = useState({ fullName: "", email: "", phone: "", password: "", shopId: "", locationId: "" });
+  const [signupForm, setSignupForm] = useState({ fullName: "", email: "", phone: "", password: "", confirmPassword: "", shopId: "", locationId: "" });
   const [signupError, setSignupError] = useState("");
   const [signupSubmitting, setSignupSubmitting] = useState(false);
   const [themeMode, setThemeMode] = useState(loadThemeMode);
@@ -1488,6 +1488,12 @@ function App() {
   async function handleCustomerSignup(event) {
     event.preventDefault();
     setSignupError("");
+
+    if (signupForm.password !== signupForm.confirmPassword) {
+      setSignupError("Passwords do not match.");
+      return;
+    }
+
     setSignupSubmitting(true);
 
     try {
@@ -4127,6 +4133,7 @@ const emptyPlatformUserForm = {
   email: "",
   phone: "",
   password: "",
+  confirmPassword: "",
   role: "OWNER",
   shopId: "",
   locationId: "",
@@ -4257,6 +4264,14 @@ function PlatformPage({
     setIsSaving(true);
     setLinkMessage("");
     setError("");
+
+    if (userForm.password !== userForm.confirmPassword) {
+      const message = "Passwords do not match.";
+      setLinkMessage(message);
+      setError(message);
+      setIsSaving(false);
+      return;
+    }
 
     try {
       await onCreateUser({
@@ -4514,7 +4529,23 @@ function PlatformPage({
           <Input label="Full name" required value={userForm.fullName} onChange={(fullName) => setUserForm({ ...userForm, fullName })} />
           <Input label="Email" required type="email" value={userForm.email} onChange={(email) => setUserForm({ ...userForm, email })} />
           <Input label="Phone" required type="tel" value={userForm.phone} onChange={(phone) => setUserForm({ ...userForm, phone })} />
-          <Input label="Password" required type="password" value={userForm.password} onChange={(password) => setUserForm({ ...userForm, password })} />
+          <Input
+            label="Password"
+            minLength="8"
+            pattern="^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,}$"
+            required
+            title="Use at least 8 characters with uppercase, lowercase, number, and symbol"
+            type="password"
+            value={userForm.password}
+            onChange={(password) => setUserForm({ ...userForm, password })}
+          />
+          <Input
+            label="Confirm password"
+            required
+            type="password"
+            value={userForm.confirmPassword}
+            onChange={(confirmPassword) => setUserForm({ ...userForm, confirmPassword })}
+          />
           <Select
             label="Role"
             value={userForm.role}
@@ -8143,12 +8174,21 @@ function CustomerSignupScreen({ error, form, isSubmitting, onSubmit, onToggleThe
             Password
             <input
               minLength="8"
-              pattern="^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$"
+              pattern="^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,}$"
               required
               title="Use at least 8 characters with uppercase, lowercase, number, and symbol"
               type="password"
               value={form.password}
               onChange={(event) => setForm({ ...form, password: event.target.value })}
+            />
+          </label>
+          <label>
+            Confirm password
+            <input
+              required
+              type="password"
+              value={form.confirmPassword}
+              onChange={(event) => setForm({ ...form, confirmPassword: event.target.value })}
             />
           </label>
           <button className="primary-button with-icon" disabled={isSubmitting} type="submit">

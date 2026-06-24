@@ -22,6 +22,9 @@ public class PlatformUserRequest {
     @NotBlank(message = "Password is required")
     private String password;
 
+    @NotBlank(message = "Confirm password is required")
+    private String confirmPassword;
+
     @NotNull(message = "Role is required")
     private UserRole role;
 
@@ -40,6 +43,8 @@ public class PlatformUserRequest {
     public void setPhone(String phone) { this.phone = PhoneNumberUtils.formatCanadian(phone); }
     public String getPassword() { return password; }
     public void setPassword(String password) { this.password = password; }
+    public String getConfirmPassword() { return confirmPassword; }
+    public void setConfirmPassword(String confirmPassword) { this.confirmPassword = confirmPassword; }
     public UserRole getRole() { return role; }
     public void setRole(UserRole role) { this.role = role; }
     public Long getShopId() { return shopId; }

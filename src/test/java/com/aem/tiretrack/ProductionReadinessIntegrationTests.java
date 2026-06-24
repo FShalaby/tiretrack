@@ -410,6 +410,28 @@ class ProductionReadinessIntegrationTests {
     }
 
     @Test
+    void customerRegistrationRejectsMismatchedPasswords() throws Exception {
+        String email = "signup-password-mismatch-" + System.nanoTime() + "@test.com";
+        String response = mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "fullName": "Password Mismatch",
+                                  "email": "%s",
+                                  "phone": "437%s",
+                                  "password": "ValidPass1!",
+                                  "confirmPassword": "DifferentPass1!"
+                                }
+                                """.formatted(email, Math.abs(email.hashCode()))))
+                .andExpect(status().isBadRequest())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        assertThat(response).contains("Passwords do not match");
+    }
+
+    @Test
     void customerRegistrationRequiresAndPersistsPublicShopLocationWhenConfigured() throws Exception {
         Shop shop = shopRepository.saveAndFlush(shop("Public Signup Shop"));
         ShopLocation store = shopLocationRepository.saveAndFlush(shopLocation(shop, "Public Signup Store", ShopLocationType.STORE, true));
@@ -423,7 +445,8 @@ class ProductionReadinessIntegrationTests {
                                   "fullName": "Missing Selection",
                                   "email": "%s",
                                   "phone": "416%s",
-                                  "password": "ValidPass1!"
+                                  "password": "ValidPass1!",
+                                  "confirmPassword": "ValidPass1!"
                                 }
                                 """.formatted(missingSelectionEmail, Math.abs(missingSelectionEmail.hashCode()))))
                 .andExpect(status().isBadRequest());
@@ -437,6 +460,7 @@ class ProductionReadinessIntegrationTests {
                                   "email": "%s",
                                   "phone": "647%s",
                                   "password": "ValidPass1!",
+                                  "confirmPassword": "ValidPass1!",
                                   "shopId": %d,
                                   "locationId": %d
                                 }

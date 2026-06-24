@@ -32,6 +32,9 @@ public class RegisterRequest {
     )
     private String password;
 
+    @NotBlank(message = "Confirm password is required")
+    private String confirmPassword;
+
     private UserRole role;
     private Long shopId;
     private Long locationId;
@@ -66,6 +69,14 @@ public class RegisterRequest {
 
     public void setPassword(String password) {
         this.password = password;
+    }
+
+    public String getConfirmPassword() {
+        return confirmPassword;
+    }
+
+    public void setConfirmPassword(String confirmPassword) {
+        this.confirmPassword = confirmPassword;
     }
     
     public UserRole getRole() {

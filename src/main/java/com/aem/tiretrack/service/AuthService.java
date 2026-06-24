@@ -63,6 +63,9 @@ public class AuthService {
     @Transactional
     public LoginResponse register(RegisterRequest request) {
         String normalizedEmail = accountValidationService.normalizeEmail(request.getEmail());
+        if (request.getPassword() == null || !request.getPassword().equals(request.getConfirmPassword())) {
+            throw new IllegalArgumentException("Passwords do not match");
+        }
         accountValidationService.validateNewAccount(normalizedEmail, request.getPassword());
 
         if (userRepository.existsByEmail(normalizedEmail)) {
