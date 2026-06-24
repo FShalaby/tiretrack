@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
+import io.jsonwebtoken.security.WeakKeyException;
 import io.jsonwebtoken.security.Keys;
 
 @Service
@@ -29,13 +30,22 @@ public class JwtService {
     private String audience;
 
     private SecretKey getSigningKey() {
-        byte[] keyBytes;
+        String configuredSecret = this.secretKey == null ? "" : this.secretKey.trim();
         try {
-            keyBytes = Decoders.BASE64.decode(this.secretKey);
-        } catch (IllegalArgumentException ex) {
-            keyBytes = this.secretKey.getBytes(StandardCharsets.UTF_8);
+            byte[] decodedKey = Decoders.BASE64.decode(configuredSecret);
+            if (decodedKey.length >= 32) {
+                return Keys.hmacShaKeyFor(decodedKey);
+            }
+        } catch (RuntimeException ex) {
+            // Plain-text secrets are supported for local/demo setup.
         }
-        return Keys.hmacShaKeyFor(keyBytes);
+
+        byte[] keyBytes = configuredSecret.getBytes(StandardCharsets.UTF_8);
+        try {
+            return Keys.hmacShaKeyFor(keyBytes);
+        } catch (WeakKeyException ex) {
+            throw new IllegalStateException("JWT_SECRET must be at least 32 characters long or a Base64-encoded 256-bit key.", ex);
+        }
     }
 
     public String generateToken(String email) {
