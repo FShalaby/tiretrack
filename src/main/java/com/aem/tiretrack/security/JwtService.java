@@ -1,5 +1,6 @@
 package com.aem.tiretrack.security;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Date;
 
 import javax.crypto.SecretKey;
@@ -28,7 +29,12 @@ public class JwtService {
     private String audience;
 
     private SecretKey getSigningKey() {
-        byte[] keyBytes = Decoders.BASE64.decode(this.secretKey);
+        byte[] keyBytes;
+        try {
+            keyBytes = Decoders.BASE64.decode(this.secretKey);
+        } catch (IllegalArgumentException ex) {
+            keyBytes = this.secretKey.getBytes(StandardCharsets.UTF_8);
+        }
         return Keys.hmacShaKeyFor(keyBytes);
     }
 
