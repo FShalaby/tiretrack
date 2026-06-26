@@ -12,6 +12,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import com.aem.tiretrack.model.User;
 import com.aem.tiretrack.repository.UserRepository;
+import com.aem.tiretrack.service.ShopBillingAccessService;
+import com.aem.tiretrack.enums.UserRole;
 
 import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
@@ -23,10 +25,12 @@ import jakarta.servlet.http.HttpServletResponse;
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final JwtService jwtService;
     private final UserRepository userRepository;
+    private final ShopBillingAccessService shopBillingAccessService;
 
-    public JwtAuthenticationFilter(JwtService jwtService, UserRepository userRepository) {
+    public JwtAuthenticationFilter(JwtService jwtService, UserRepository userRepository, ShopBillingAccessService shopBillingAccessService) {
         this.jwtService = jwtService;
         this.userRepository = userRepository;
+        this.shopBillingAccessService = shopBillingAccessService;
     }
 
     @Override
@@ -43,7 +47,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         try {
             String email = jwtService.extractEmail(token);
             User user = userRepository.findByEmail(email).orElse(null);
-            if (email != null && jwtService.isTokenValid(token) && user != null && user.isActive()) {
+            if (email != null && jwtService.isTokenValid(token) && user != null && user.isActive() && canLogin(user)) {
                 Authentication authentication = new UsernamePasswordAuthenticationToken(
                         email,
                         null,
@@ -56,6 +60,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    private boolean canLogin(User user) {
+        if (user.getRole() == UserRole.SUPER_ADMIN || user.getShop() == null) {
+            return true;
+        }
+
+        return user.getShop().isActive() && !shopBillingAccessService.isBlocked(user.getShop());
     }
 
 }

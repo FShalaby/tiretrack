@@ -60,6 +60,7 @@ import {
   deleteInvoice,
   deletePayrollPeriod,
   deletePayrollShiftSlot,
+  deletePlatformShop,
   deleteTire,
   deleteWorkShift,
   confirmTireRequestAppointment,
@@ -71,15 +72,14 @@ import {
   assignAdminToShop,
   assignLegacyDataToShop,
   assignPlatformRecord,
+  cancelShopSubscription,
   cancelEstimate,
   cancelPayrollRecord,
   cancelEmployeeLoan,
   cancelWorkOrder,
   clockIn,
   clockOut,
-  completeWorkOrder,
   convertEstimateToInvoice,
-  convertWorkOrderToInvoice,
   generatePayroll,
   getAppointments,
   getAppointmentTireAvailability,
@@ -118,14 +118,18 @@ import {
   getPayrollRecordsForEmployee,
   getPayrollRecordsForPeriod,
   getPayrollShiftSlots,
+  getPlatformBillingSummary,
   getPublicShopLocations,
   getPublicShops,
+  getShopPayments,
   getWorkOrders,
   getWorkShifts,
   importTiresCsv,
+  linkWorkOrderInvoice,
   login as loginApi,
   logout as logoutApi,
   markEmployeeAbsent,
+  markShopReadOnly,
   markCustomerNotificationRead,
   markAllNotificationsRead,
   markNotificationRead,
@@ -148,8 +152,11 @@ import {
   resolveAbsence,
   activatePlatformShop,
   activatePlatformUser,
+  reactivateShopSubscription,
+  recordShopPayment,
   deactivatePlatformShop,
   deactivatePlatformUser,
+  startShopTrial,
   updateAppointment,
   updateInvoiceStatus,
   updateEstimate,
@@ -158,6 +165,8 @@ import {
   updatePayrollPeriod,
   updatePlatformShop,
   updateSettings,
+  updateShopPaymentStatus,
+  updateShopSubscription,
   updateTire,
   updateTireRequestStatus,
   updateWorkOrder,
@@ -170,11 +179,12 @@ import {
   removePayrollShiftSignup
 } from "./api";
 
-const tabs = ["Platform", "Employee Portal", "Dashboard", "Tires", "Appointments", "Work Orders", "Estimates", "Invoices", "Customers", "Accounting", "Attendance", "Payroll", "My Payroll", "Audit Logs", "Settings"];
+const tabs = ["Platform", "Subscriptions", "Employee Portal", "Dashboard", "Tires", "Appointments", "Work Orders", "Estimates", "Invoices", "Customers", "Accounting", "Attendance", "Payroll", "My Payroll", "Audit Logs", "Settings"];
 const employeeHiddenTabs = ["Dashboard", "Customers", "Accounting", "Audit Logs", "Settings"];
 const tabIcons = {
   Dashboard: Gauge,
   Platform: ShieldCheck,
+  Subscriptions: CircleDollarSign,
   "Employee Portal": Clock3,
   Tires: Disc3,
   Appointments: CalendarDays,
@@ -218,6 +228,12 @@ const statusClassMap = {
   LOW_STOCK: "yellow",
   OUT_OF_STOCK: "red",
   AVAILABLE_AT_OTHER_LOCATION: "yellow",
+  TRIAL: "blue",
+  PAST_DUE: "red",
+  READ_ONLY: "yellow",
+  UNCONFIGURED: "gray",
+  FAILED: "red",
+  REFUNDED: "gray",
   REMINDER: "blue",
   NEW: "green",
   USED: "yellow",
@@ -225,6 +241,190 @@ const statusClassMap = {
   PAID_OFF: "blue"
 };
 const chartColors = ["#18d3b2", "#7c8cff", "#ef4444", "#f59e0b"];
+const supportEmail = "monarchsolutions.support@gmail.com";
+const policyLastUpdated = "June 23, 2026";
+const policyLinks = [
+  { label: "Terms", path: "/terms" },
+  { label: "Privacy", path: "/privacy" },
+  { label: "Support", path: "/support-policy" },
+  { label: "Data Retention", path: "/data-retention-backup-policy" },
+  { label: "Billing", path: "/billing-onboarding-policy" }
+];
+const policyPages = {
+  terms: {
+    eyebrow: "Legal",
+    title: "Terms of Service",
+    sections: [
+      {
+        title: "Agreement",
+        body: [
+          "TireTrack is provided by Monarch Solutions, an Ontario, Canada business. By accessing or using TireTrack, a shop, employee, administrator, or authorized user agrees to these Terms.",
+          "TireTrack is a shop management platform for tire and automotive service businesses. It may include customer management, vehicle records, appointments, tire inventory, invoices, estimates, employee accounts, reports, notifications, and related operational features."
+        ]
+      },
+      {
+        title: "User Responsibilities",
+        body: [
+          "Users are responsible for keeping login credentials secure and for all activity under their account. Shop owners and administrators are responsible for employees or users they invite into their TireTrack account.",
+          "Users may not misuse TireTrack, attempt unauthorized access, access another shop's data, interfere with the platform, upload malicious code, use the service for illegal activity, or attempt to bypass security controls."
+        ]
+      },
+      {
+        title: "Subscriptions And Refunds",
+        body: [
+          "Subscriptions may be offered monthly or annually. Fees are charged in Canadian dollars plus applicable taxes unless otherwise stated. Subscriptions renew unless cancelled. Users may cancel anytime. Access continues until the end of the paid billing period.",
+          "First-time paid subscriptions are eligible for a 7-day refund period. Renewal payments are non-refundable except for duplicate charges, billing errors, or where required by law.",
+          "If a subscription is cancelled, account data is retained for 30 days. During this grace period, the shop may reactivate the subscription or request an export of available data. After 30 days, account data may be permanently deleted."
+        ]
+      },
+      {
+        title: "Availability And Liability",
+        body: [
+          "TireTrack is provided as is and as available. Monarch Solutions aims to provide reliable service but does not guarantee uninterrupted, error-free, or always-available access.",
+          "To the maximum extent permitted by law, Monarch Solutions is not liable for indirect, incidental, special, consequential, or lost-profit damages. Monarch Solutions' total liability is limited to the amount paid by the customer for TireTrack during the previous three months, unless otherwise required by law.",
+          "Monarch Solutions may suspend or terminate access if a user violates these Terms, creates security risk, abuses the platform, engages in fraudulent activity, or fails to pay required fees."
+        ]
+      },
+      {
+        title: "Governing Law",
+        body: ["These Terms are governed by the laws of Ontario and applicable laws of Canada."]
+      }
+    ]
+  },
+  privacy: {
+    eyebrow: "Privacy",
+    title: "Privacy Policy",
+    sections: [
+      {
+        title: "How We Use Information",
+        body: [
+          "Monarch Solutions respects privacy and uses personal information only to operate, support, secure, and improve TireTrack.",
+          "TireTrack may collect shop information including shop name, business address, phone number, email address, business hours, tax settings, logo, employee accounts, and user permissions.",
+          "TireTrack may collect customer information entered by shops, including customer names, phone numbers, email addresses, appointment details, notes, invoices, estimates, and service history."
+        ]
+      },
+      {
+        title: "Vehicle And Operational Data",
+        body: [
+          "TireTrack may collect vehicle information including year, make, model, VIN if entered, tire sizes, service history, and related appointment or invoice records.",
+          "TireTrack may collect operational data including inventory, appointments, invoices, estimates, reports, notifications, payroll/accounting-related records if enabled, and system logs.",
+          "TireTrack uses this information to provide the software, manage accounts, process appointments, manage tire inventory, create invoices and reports, provide support, improve functionality, secure the platform, and comply with legal obligations."
+        ]
+      },
+      {
+        title: "Sharing And Security",
+        body: [
+          "Monarch Solutions does not sell shop data or customer data. Monarch Solutions does not share shop or customer data with advertisers. Information may be disclosed only when required by law, to protect the platform, to provide the service through trusted providers, or with the customer's consent.",
+          "TireTrack uses reasonable security measures including HTTPS, password hashing, role-based access controls, database access restrictions, backups, and environment-based secret management.",
+          "Shops are responsible for the personal information they enter into TireTrack and for ensuring they have proper permission to store and use customer information."
+        ]
+      },
+      {
+        title: "Export And Deletion",
+        body: [
+          "Shops may request export of their available data before cancellation or deletion. Export formats may include CSV or other reasonable formats supported by TireTrack.",
+          "If a shop cancels, data is retained for 30 days. After 30 days, customer data, vehicle data, appointments, inventory, invoices, employee accounts, uploaded files, and operational records may be permanently deleted. Anonymous aggregate statistics that do not identify a shop, customer, or individual may be retained.",
+          `Privacy questions or requests can be sent to ${supportEmail}.`
+        ]
+      }
+    ]
+  },
+  support: {
+    eyebrow: "Support",
+    title: "Support Policy",
+    sections: [
+      {
+        title: "Contact And Hours",
+        body: [
+          `TireTrack support is provided by Monarch Solutions through ${supportEmail}.`,
+          "Standard support hours are Monday to Friday, 9:00 AM to 6:00 PM Eastern Time, excluding holidays."
+        ]
+      },
+      {
+        title: "Target Response Times",
+        list: [
+          "Critical outage: within 4 business hours",
+          "Major issue affecting important shop operations: within 1 business day",
+          "Normal support requests: within 1 to 2 business days",
+          "Feature requests and general feedback: best effort"
+        ]
+      },
+      {
+        title: "Support Scope",
+        body: [
+          "Support includes help with account access, appointments, inventory, invoices, employee accounts, bug reports, data export assistance, and general TireTrack usage.",
+          "Support does not include custom software development, third-party hardware troubleshooting, internet or network issues at the shop, computer repair, or unrelated third-party software support.",
+          "Monarch Solutions may provide onboarding help during setup, including initial shop configuration, basic training, and import guidance where available."
+        ]
+      }
+    ]
+  },
+  "data-retention-backup": {
+    eyebrow: "Operations",
+    title: "Data Retention & Backup Policy",
+    sections: [
+      {
+        title: "Retention",
+        body: [
+          "TireTrack retains active customer data while the subscription is active.",
+          "If a subscription is cancelled, shop data is retained for 30 days. During this period, the shop may reactivate or request an export. After 30 days, the data may be permanently deleted.",
+          "TireTrack may keep anonymous aggregate statistics that do not identify a shop, customer, employee, or vehicle."
+        ]
+      },
+      {
+        title: "Backups",
+        body: [
+          "Backups are used for disaster recovery and system reliability. TireTrack aims to maintain automatic daily backups. Daily backups may be retained for up to 30 days. Monthly snapshots may be retained for up to 12 months where supported by the hosting environment.",
+          "Backups are intended for platform recovery, not individual record-by-record undo requests. Monarch Solutions will make reasonable efforts to restore service after a major failure.",
+          "Target disaster recovery goal: restore service within 24 hours after a major production failure where reasonably possible."
+        ]
+      }
+    ]
+  },
+  "billing-onboarding": {
+    eyebrow: "Billing",
+    title: "Billing & Onboarding Policy",
+    sections: [
+      {
+        title: "Pricing",
+        body: [
+          "TireTrack Professional is priced at CAD $399 per month plus applicable taxes for one shop location unless otherwise agreed in writing.",
+          "Annual billing may be offered at CAD $3,999 per year plus applicable taxes unless otherwise agreed in writing.",
+          "The plan includes one shop location, unlimited customers, unlimited vehicles, unlimited appointments, tire inventory management, invoicing and estimates, employee accounts, tire availability requests, reports and analytics, and email support."
+        ]
+      },
+      {
+        title: "Trial And Manual Payments",
+        body: [
+          "A 14-day free trial may be offered with no credit card required. During the trial, the shop may access TireTrack features for evaluation. At the end of the trial, the shop must subscribe to continue active use.",
+          "During the initial launch, payments may be handled manually by Monarch Solutions. Customers may receive invoices and payment instructions directly. Subscription access may be activated or renewed after payment is confirmed."
+        ]
+      },
+      {
+        title: "Failed Payment Process",
+        list: [
+          "Day 0: payment reminder",
+          "Day 7: second reminder",
+          "Day 14: account may become read-only",
+          "Day 30: subscription may be cancelled and the 30-day data retention period begins"
+        ],
+        body: ["When an account is read-only, the shop may view and export data but may be restricted from creating new appointments, invoices, inventory changes, or other new operational records."]
+      },
+      {
+        title: "Onboarding",
+        list: [
+          "Creating the owner account",
+          "Setting shop name, address, phone number, business hours, and tax settings",
+          "Uploading a logo if desired",
+          "Inviting employees",
+          "Importing customers, vehicles, and tire inventory where supported",
+          "Basic training and setup guidance"
+        ],
+        body: ["Future multi-location, advanced reporting, payroll, accounting, or enterprise features may require separate pricing or written agreement."]
+      }
+    ]
+  }
+};
 const appointmentTimes = buildAppointmentTimes();
 const dashboardWidgetCatalog = [
   { id: "keyMetrics", label: "Key Metrics", icon: Gauge },
@@ -431,6 +631,7 @@ const emptyInvoice = {
   dueDate: "",
   appointmentId: "",
   estimateId: "",
+  workOrderId: "",
   locationId: "",
   items: [makeInvoiceItem()]
 };
@@ -467,7 +668,9 @@ const defaultCompanySettings = {
   phone: "",
   address: "",
   taxRate: "13",
-  invoiceTerms: "Payment is due upon receipt. Thank you for your business."
+  invoiceTerms: "Payment is due upon receipt. Thank you for your business.",
+  openingTime: "09:00",
+  closingTime: "17:00"
 };
 
 function money(value) {
@@ -475,6 +678,32 @@ function money(value) {
     style: "currency",
     currency: "CAD"
   });
+}
+
+function policySlugForPath(pathname) {
+  const normalized = String(pathname || "").replace(/\/$/, "") || "/";
+  const routes = {
+    "/terms": "terms",
+    "/privacy": "privacy",
+    "/support-policy": "support",
+    "/data-retention-backup-policy": "data-retention-backup",
+    "/billing-onboarding-policy": "billing-onboarding"
+  };
+
+  return routes[normalized] || "";
+}
+
+function moneyFromCents(cents) {
+  return money(Number(cents || 0) / 100);
+}
+
+function centsToDollarInput(cents) {
+  return (Number(cents || 0) / 100).toFixed(2);
+}
+
+function dollarInputToCents(value) {
+  const parsed = Number(value || 0);
+  return Number.isFinite(parsed) ? Math.round(parsed * 100) : 0;
 }
 
 function formatCanadianPhoneInput(value) {
@@ -560,6 +789,11 @@ function statusLabel(value) {
     DUE_SOON: "Due soon",
     CONVERTED: "Invoiced",
     NOT_SET: "Not set",
+    PAST_DUE: "Past due",
+    READ_ONLY: "Read only",
+    UNCONFIGURED: "Not configured",
+    E_TRANSFER: "E-transfer",
+    BANK_TRANSFER: "Bank transfer",
     PENDING_TIRE_AVAILABILITY: "Waiting for tire availability",
     AVAILABLE_AT_OTHER_LOCATION: "Available at another location",
     OUT_OF_STOCK: "Out of stock",
@@ -661,27 +895,33 @@ function tireRequestCustomerMessage(status) {
 }
 
 function invoiceCollectedAmount(invoice) {
-  const amountPaid = Number(invoice?.amountPaid || 0);
+  const amountPaid = Number(invoice?.amountPaid ?? 0);
+  const total = Number(invoice?.total || 0);
 
   if (amountPaid > 0) {
-    return amountPaid;
+    return Math.min(amountPaid, total || amountPaid);
   }
 
-  return invoiceStatusKey(invoice?.status) === "PAID" ? Number(invoice?.total || 0) : 0;
+  return invoiceStatusKey(invoice?.status) === "PAID" ? total : 0;
 }
 
 function invoiceBalanceAmount(invoice) {
-  const explicitBalance = Number(invoice?.balanceDue || 0);
+  const status = invoiceStatusKey(invoice?.status);
+  const total = Number(invoice?.total || 0);
+  const paid = invoiceCollectedAmount(invoice);
 
-  if (explicitBalance > 0) {
-    return explicitBalance;
-  }
-
-  if (["PAID", "VOID"].includes(invoiceStatusKey(invoice?.status))) {
+  if (["PAID", "VOID"].includes(status)) {
     return 0;
   }
 
-  return Math.max(Number(invoice?.total || 0) - invoiceCollectedAmount(invoice), 0);
+  if (paid > 0 || ["PARTIAL", "PARTIALLY_PAID", "UNPAID", "OVERDUE"].includes(status)) {
+    return Math.max(total - paid, 0);
+  }
+
+  const explicitBalance = Number(invoice?.balanceDue);
+  return Number.isFinite(explicitBalance) && explicitBalance > 0
+    ? explicitBalance
+    : Math.max(total - paid, 0);
 }
 
 function dateTime(value) {
@@ -735,14 +975,44 @@ function joinAppointmentDate(date, time) {
   return `${date}T${time}`;
 }
 
-function buildAppointmentTimes() {
+function buildAppointmentTimes(settings) {
+  const openingMinutes = timeToMinutes(settings?.openingTime, 9 * 60);
+  const closingMinutes = timeToMinutes(settings?.closingTime, 17 * 60);
+  const startMinutes = Math.min(openingMinutes, closingMinutes - 30);
+  const endMinutes = Math.max(closingMinutes - 30, startMinutes);
   const slots = [];
-  for (let minutes = 9 * 60; minutes <= (16 * 60) + 30; minutes += 30) {
+  for (let minutes = startMinutes; minutes <= endMinutes; minutes += 30) {
     const hour = String(Math.floor(minutes / 60)).padStart(2, "0");
     const minute = String(minutes % 60).padStart(2, "0");
     slots.push(`${hour}:${minute}`);
   }
   return slots;
+}
+
+function timeToMinutes(value, fallback) {
+  const match = /^(\d{1,2}):(\d{2})/.exec(String(value || ""));
+  if (!match) {
+    return fallback;
+  }
+
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (Number.isNaN(hours) || Number.isNaN(minutes)) {
+    return fallback;
+  }
+
+  return Math.max(0, Math.min((hours * 60) + minutes, 23 * 60 + 59));
+}
+
+function isPastAppointmentSlot(date, slot) {
+  if (!date || date !== todayDateKey()) {
+    return false;
+  }
+
+  const now = new Date();
+  const slotMinutes = timeToMinutes(slot, 0);
+  const nowMinutes = (now.getHours() * 60) + now.getMinutes();
+  return slotMinutes <= nowMinutes;
 }
 
 function todayDateKey() {
@@ -927,10 +1197,10 @@ function defaultTabForRole(role) {
 
 function canAccessTab(role, tab) {
   if (role === "SUPER_ADMIN") {
-    return tab === "Platform";
+    return tab === "Platform" || tab === "Subscriptions";
   }
 
-  if (tab === "Platform") {
+  if (tab === "Platform" || tab === "Subscriptions") {
     return false;
   }
 
@@ -1017,6 +1287,211 @@ function htmlEscape(value) {
 
 function toCsv(headers, rows) {
   return [headers, ...rows].map((row) => row.map(csvEscape).join(",")).join("\n");
+}
+
+function rowsToCsv(rows) {
+  return rows.map((row) => row.map(csvEscape).join(",")).join("\n");
+}
+
+function accountingAccountExportRows(rows = []) {
+  return rows.map((account) => [
+    account.code || "-",
+    account.name || "-",
+    account.type || "-",
+    money(account.debits),
+    money(account.credits),
+    money(account.balance)
+  ]);
+}
+
+function accountingExpenseExportRows(expenses = []) {
+  return expenses.map((expense) => [
+    expense.expenseDate || "-",
+    expense.dueDate || "-",
+    expense.vendor || "-",
+    expense.locationName || "Shared",
+    expense.category || "-",
+    expenseDisplayStatus(expense),
+    money(expense.total),
+    dateTime(expense.paidAt),
+    expense.createdBy || "-"
+  ]);
+}
+
+function accountingJournalExportRows(entries = []) {
+  return entries.flatMap((entry) => {
+    const lines = entry.lines?.length ? entry.lines : [null];
+
+    return lines.map((line) => [
+      entry.entryDate || "-",
+      entry.description || "-",
+      entry.source || "-",
+      line?.account?.code || "-",
+      line?.account?.name || "-",
+      money(line?.debit),
+      money(line?.credit),
+      line?.memo || "-",
+      entry.postedBy || "-"
+    ]);
+  });
+}
+
+function accountingReportSections(report) {
+  return [
+    {
+      title: "Summary",
+      headers: ["Metric", "Amount"],
+      rows: [
+        ["Revenue", money(report?.revenue)],
+        ["Expenses", money(report?.expenses)],
+        ["Net income", money(report?.netIncome)],
+        ["Assets", money(report?.assets)],
+        ["Liabilities", money(report?.liabilities)],
+        ["Equity", money(report?.equity)]
+      ]
+    },
+    {
+      title: "Profit & Loss",
+      headers: ["Code", "Account", "Type", "Debits", "Credits", "Balance"],
+      rows: accountingAccountExportRows(report?.profitAndLoss || [])
+    },
+    {
+      title: "Balance Sheet",
+      headers: ["Code", "Account", "Type", "Debits", "Credits", "Balance"],
+      rows: accountingAccountExportRows(report?.balanceSheet || [])
+    },
+    {
+      title: "Trial Balance",
+      headers: ["Code", "Account", "Type", "Debits", "Credits", "Balance"],
+      rows: accountingAccountExportRows(report?.trialBalance || [])
+    },
+    {
+      title: "Recent Expenses",
+      headers: ["Date", "Due", "Vendor", "Location", "Category", "Status", "Total", "Paid At", "Admin"],
+      rows: accountingExpenseExportRows(report?.recentExpenses || [])
+    },
+    {
+      title: "Recent Journal Entries",
+      headers: ["Date", "Description", "Source", "Account Code", "Account", "Debit", "Credit", "Memo", "Posted By"],
+      rows: accountingJournalExportRows(report?.recentJournalEntries || [])
+    }
+  ];
+}
+
+function accountingReportFileSuffix(range = defaultAccountingRange) {
+  const mode = range.mode || "lifetime";
+  const dates = accountingDatesForRange(range);
+
+  if (mode === "custom") {
+    return `${dates.start}-to-${dates.end}`;
+  }
+
+  if (mode === "today") {
+    return todayDateKey();
+  }
+
+  if (mode === "month") {
+    return todayDateKey().slice(0, 7);
+  }
+
+  return `lifetime-${todayDateKey()}`;
+}
+
+function downloadAccountingReportCsv(report, range, locationLabel = "All locations") {
+  const rows = [
+    ["TireTrack Accounting Report"],
+    ["Range", accountingRangeLabel(range)],
+    ["Location", locationLabel],
+    ["Generated", new Date().toLocaleString()],
+    []
+  ];
+
+  accountingReportSections(report).forEach((section) => {
+    rows.push([section.title], section.headers, ...(section.rows.length ? section.rows : [["No data"]]), []);
+  });
+
+  downloadTextFile(`tiretrack-accounting-${accountingReportFileSuffix(range)}.csv`, rowsToCsv(rows), "text/csv");
+}
+
+function accountingReportSectionHtml(section) {
+  const columnCount = Math.max(section.headers.length, 1);
+  const bodyRows = section.rows.length
+    ? section.rows.map((row) => `<tr>${row.map((cell) => `<td>${htmlEscape(cell)}</td>`).join("")}</tr>`).join("")
+    : `<tr><td colspan="${columnCount}">No data</td></tr>`;
+
+  return `
+    <section class="report-section">
+      <h2>${htmlEscape(section.title)}</h2>
+      <table>
+        <thead><tr>${section.headers.map((header) => `<th>${htmlEscape(header)}</th>`).join("")}</tr></thead>
+        <tbody>${bodyRows}</tbody>
+      </table>
+    </section>
+  `;
+}
+
+function printAccountingReportPdf(report, range, locationLabel = "All locations", settings = defaultCompanySettings) {
+  const generatedAt = new Date().toLocaleString();
+  const sections = accountingReportSections(report).map(accountingReportSectionHtml).join("");
+  const shopName = settings?.shopName || "TireTrack";
+  const shopContact = [settings?.phone, settings?.address].filter(Boolean).join(" - ");
+  const printWindow = window.open("", "_blank", "width=1100,height=820");
+
+  if (!printWindow) {
+    window.alert("Please allow pop-ups to export the accounting report.");
+    return;
+  }
+
+  const printMarkup = `<!doctype html>
+    <html>
+      <head>
+        <title>TireTrack Accounting Report</title>
+        <style>
+          * { box-sizing: border-box; }
+          body { color: #111827; font-family: Inter, Arial, sans-serif; margin: 0; padding: 32px; }
+          header { border-bottom: 2px solid #111827; display: flex; justify-content: space-between; gap: 24px; margin-bottom: 24px; padding-bottom: 18px; }
+          h1 { font-size: 26px; margin: 0 0 8px; }
+          h2 { font-size: 16px; margin: 26px 0 10px; }
+          p { color: #4b5563; margin: 3px 0; }
+          .summary { color: #374151; font-size: 13px; text-align: right; }
+          table { border-collapse: collapse; font-size: 12px; margin-bottom: 18px; page-break-inside: avoid; width: 100%; }
+          th, td { border: 1px solid #d1d5db; padding: 8px; text-align: left; vertical-align: top; }
+          th { background: #f3f4f6; color: #111827; font-size: 11px; text-transform: uppercase; }
+          tr:nth-child(even) td { background: #f9fafb; }
+          @media print { body { padding: 18mm; } button { display: none; } }
+        </style>
+      </head>
+      <body>
+        <header>
+          <div>
+            <h1>${htmlEscape(shopName)} Accounting Report</h1>
+            <p>${htmlEscape(accountingRangeLabel(range))}</p>
+            <p>${htmlEscape(locationLabel)}</p>
+            ${shopContact ? `<p>${htmlEscape(shopContact)}</p>` : ""}
+          </div>
+          <div class="summary">
+            <p><strong>Generated</strong></p>
+            <p>${htmlEscape(generatedAt)}</p>
+          </div>
+        </header>
+        ${sections}
+      </body>
+    </html>`;
+  let didPrint = false;
+  const printWhenReady = () => {
+    if (didPrint) {
+      return;
+    }
+    didPrint = true;
+    printWindow.focus();
+    printWindow.print();
+  };
+
+  printWindow.document.open();
+  printWindow.document.write(printMarkup);
+  printWindow.document.close();
+  printWindow.onload = printWhenReady;
+  setTimeout(printWhenReady, 650);
 }
 
 function getRangeStart(range, customStart) {
@@ -1122,6 +1597,7 @@ function parseTireSetup(tireSize) {
 }
 
 function App() {
+  const policySlug = policySlugForPath(window.location.pathname);
   const isPublicBooking = window.location.pathname.startsWith("/booking");
   const isLoginRoute = window.location.pathname.startsWith("/login");
   const isCustomerSignupRoute = window.location.pathname.startsWith("/customer/signup");
@@ -1141,8 +1617,10 @@ function App() {
   const [globalQuery, setGlobalQuery] = useState("");
   const [showNotifications, setShowNotifications] = useState(false);
   const [appNotifications, setAppNotifications] = useState([]);
-  const previousAppUnreadCountRef = useRef(null);
+  const seenNotificationKeysRef = useRef(new Set());
+  const notificationsInitializedRef = useRef(false);
   const [highlightedRow, setHighlightedRow] = useState(null);
+  const [tireDetailTargetId, setTireDetailTargetId] = useState("");
   const [activityLog, setActivityLog] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem("tiretrack-activity-log") || "[]");
@@ -1169,6 +1647,7 @@ function App() {
   const [platformUsers, setPlatformUsers] = useState([]);
   const [platformLinkRecords, setPlatformLinkRecords] = useState([]);
   const [platformLinkLocations, setPlatformLinkLocations] = useState([]);
+  const [platformBillingSummary, setPlatformBillingSummary] = useState(null);
   const [shopLocations, setShopLocations] = useState([]);
   const [selectedLocationId, setSelectedLocationId] = useState("");
   const [expenseForm, setExpenseForm] = useState(emptyExpense);
@@ -1206,6 +1685,12 @@ function App() {
     setThemeMode((current) => current === "light" ? "dark" : "light");
   }
 
+  useEffect(() => {
+    if (activeTab !== "Tires" && tireDetailTargetId) {
+      setTireDetailTargetId("");
+    }
+  }, [activeTab, tireDetailTargetId]);
+
   async function loadData(currentAuth = auth) {
     setLoading(true);
     setError("");
@@ -1241,6 +1726,7 @@ function App() {
       if (workingAuth?.role === "CUSTOMER") {
         const portal = await getCustomerPortal();
         setCustomerPortal(portal);
+        setPlatformBillingSummary(null);
         setLoading(false);
         return;
       }
@@ -1259,6 +1745,7 @@ function App() {
         setAccountingReport(null);
         setAccountingAccounts([]);
         setVendors([]);
+        setPlatformBillingSummary(null);
         setShopLocations([]);
         setSelectedLocationId("");
         setAppNotifications([]);
@@ -1269,15 +1756,17 @@ function App() {
       }
 
       if (workingAuth?.role === "SUPER_ADMIN") {
-        const [shops, users, linkOverview] = await Promise.all([
+        const [shops, users, linkOverview, billingSummary] = await Promise.all([
           getPlatformShops(),
           getPlatformUsers(),
-          getPlatformLinks()
+          getPlatformLinks(),
+          getPlatformBillingSummary()
         ]);
         setPlatformShops(shops || []);
         setPlatformUsers(users || []);
         setPlatformLinkRecords(linkOverview?.records || []);
         setPlatformLinkLocations(linkOverview?.locations || []);
+        setPlatformBillingSummary(billingSummary || null);
         setDashboard(null);
         setTires([]);
         setInventoryTires([]);
@@ -1340,6 +1829,7 @@ function App() {
         setAccountingReport(accounting);
         setAccountingAccounts(accounts || []);
         setVendors(vendorList || []);
+        setPlatformBillingSummary(null);
         setShopLocations(multiLocationAllowed ? locations || [] : []);
         setSelectedLocationId(nextLocationId);
         setAppNotifications(notifications || []);
@@ -1378,6 +1868,7 @@ function App() {
         setAccountingReport(null);
         setAccountingAccounts([]);
         setVendors([]);
+        setPlatformBillingSummary(null);
         setShopLocations([]);
         setSelectedLocationId("");
         setAppNotifications([]);
@@ -1738,6 +2229,8 @@ function App() {
       } catch (err) {
         setError(err.message || "Invoice preview could not be loaded.");
       }
+    } else if (result.tab === "Tires") {
+      setTireDetailTargetId(String(result.entityId || result.id || ""));
     }
   }
 
@@ -1778,6 +2271,10 @@ function App() {
   const visibleEstimates = useMemo(() => filterRecordsByLocation(estimates, selectedLocationId), [estimates, selectedLocationId]);
   const visibleInvoices = useMemo(() => filterRecordsByLocation(invoices, selectedLocationId), [invoices, selectedLocationId]);
   const visibleCustomers = useMemo(() => filterRecordsByLocation(customers, selectedLocationId), [customers, selectedLocationId]);
+  const dashboardCustomers = useMemo(
+    () => customersForDashboardFollowUps(customers, selectedLocationId, visibleAppointments),
+    [customers, selectedLocationId, visibleAppointments]
+  );
   const locationScopeSummaries = useMemo(
     () => buildLocationScopeSummaries(shopLocations, tires, appointments, workOrders),
     [shopLocations, tires, appointments, workOrders]
@@ -1949,17 +2446,27 @@ function App() {
 
   useEffect(() => {
     if (!auth || auth.role === "CUSTOMER") {
-      previousAppUnreadCountRef.current = null;
+      seenNotificationKeysRef.current = new Set();
+      notificationsInitializedRef.current = false;
       return;
     }
 
-    const unreadCount = unreadNotifications.length;
-    if ((previousAppUnreadCountRef.current === null && unreadCount > 0)
-        || (previousAppUnreadCountRef.current !== null && unreadCount > previousAppUnreadCountRef.current)) {
+    const unreadKeys = unreadNotifications.map((notification) =>
+      String(notification.id || `${notification.title || ""}-${notification.message || ""}-${notification.createdAt || ""}`)
+    );
+
+    if (!notificationsInitializedRef.current) {
+      seenNotificationKeysRef.current = new Set(unreadKeys);
+      notificationsInitializedRef.current = true;
+      return;
+    }
+
+    const newKeys = unreadKeys.filter((key) => !seenNotificationKeysRef.current.has(key));
+    if (newKeys.length > 0) {
       playNotificationChime();
     }
-    previousAppUnreadCountRef.current = unreadCount;
-  }, [auth, unreadNotifications.length]);
+    seenNotificationKeysRef.current = new Set([...seenNotificationKeysRef.current, ...unreadKeys]);
+  }, [auth?.id, auth?.role, appNotifications]);
 
   async function submitTire(event) {
     event.preventDefault();
@@ -2151,6 +2658,98 @@ function App() {
     notifySuccess(`${updatedUser.fullName} ${active ? "activated" : "deactivated"}.`);
     await loadData(auth);
     return updatedUser;
+  }
+
+  async function refreshPlatformBillingSummary() {
+    const summary = await getPlatformBillingSummary();
+    setPlatformBillingSummary(summary || null);
+    return summary;
+  }
+
+  async function savePlatformSubscription(shopId, subscription) {
+    setError("");
+    setSuccessMessage("");
+
+    const saved = await updateShopSubscription(shopId, subscription);
+    await refreshPlatformBillingSummary();
+    await loadData(auth);
+    notifySuccess(`${saved.shopName || "Shop"} subscription saved.`);
+    return saved;
+  }
+
+  async function startPlatformTrial(shopId) {
+    setError("");
+    setSuccessMessage("");
+
+    const saved = await startShopTrial(shopId);
+    await refreshPlatformBillingSummary();
+    await loadData(auth);
+    notifySuccess(`${saved.shopName || "Shop"} trial started.`);
+    return saved;
+  }
+
+  async function recordPlatformPayment(shopId, payment) {
+    setError("");
+    setSuccessMessage("");
+
+    const saved = await recordShopPayment(shopId, payment);
+    await refreshPlatformBillingSummary();
+    notifySuccess(`Payment recorded for ${saved.shopName || "shop"}.`);
+    return saved;
+  }
+
+  async function updatePlatformPayment(paymentId, paymentStatus) {
+    setError("");
+    setSuccessMessage("");
+
+    const saved = await updateShopPaymentStatus(paymentId, paymentStatus);
+    await refreshPlatformBillingSummary();
+    notifySuccess(`Payment marked ${statusLabel(saved.paymentStatus)}.`);
+    return saved;
+  }
+
+  async function setPlatformSubscriptionReadOnly(shopId) {
+    const saved = await markShopReadOnly(shopId);
+    await refreshPlatformBillingSummary();
+    await loadData(auth);
+    notifySuccess(`${saved.shopName || "Shop"} marked read-only.`);
+    return saved;
+  }
+
+  async function cancelPlatformSubscription(shopId) {
+    const saved = await cancelShopSubscription(shopId);
+    await refreshPlatformBillingSummary();
+    await loadData(auth);
+    notifySuccess(`${saved.shopName || "Shop"} subscription cancelled.`);
+    return saved;
+  }
+
+  async function reactivatePlatformSubscription(shopId) {
+    const saved = await reactivateShopSubscription(shopId);
+    await refreshPlatformBillingSummary();
+    await loadData(auth);
+    notifySuccess(`${saved.shopName || "Shop"} subscription reactivated.`);
+    return saved;
+  }
+
+  async function deletePlatformShopAction(shop) {
+    setError("");
+    setSuccessMessage("");
+
+    if (!shop?.id) {
+      throw new Error("Choose a shop before deleting.");
+    }
+
+    const confirmed = window.confirm(`Delete ${shop.name || "this shop"} and all linked data? This cannot be undone.`);
+    if (!confirmed) {
+      return null;
+    }
+
+    await deletePlatformShop(shop.id);
+    await refreshPlatformBillingSummary();
+    await loadData(auth);
+    notifySuccess(`${shop.name || "Shop"} deleted.`);
+    return true;
   }
 
   async function applyTireFilters(event) {
@@ -2350,6 +2949,7 @@ function App() {
         ...invoiceForm,
         companyName: undefined,
         estimateId: undefined,
+        workOrderId: undefined,
         taxRate: Number(companySettings.taxRate || 13),
         amountPaid: invoiceForm.amountPaid === "" ? null : Number(invoiceForm.amountPaid || 0),
         dueDate: invoiceForm.dueDate || null,
@@ -2360,10 +2960,13 @@ function App() {
       const savedInvoice = invoiceForm.estimateId
         ? await convertEstimateToInvoice(invoiceForm.estimateId, invoicePayload)
         : await createInvoice(invoicePayload);
+      if (invoiceForm.workOrderId && savedInvoice?.id) {
+        await linkWorkOrderInvoice(invoiceForm.workOrderId, savedInvoice.id);
+      }
       const printableInvoice = savedInvoice?.id ? await getInvoice(savedInvoice.id) : savedInvoice;
 
       setGeneratedInvoice(printableInvoice);
-      logActivity(`${invoiceForm.estimateId ? "Converted estimate into" : "Created"} invoice for ${invoiceForm.customerName}`, "Invoices");
+      logActivity(`${invoiceForm.estimateId ? "Converted estimate into" : invoiceForm.workOrderId ? "Created work order" : "Created"} invoice for ${invoiceForm.customerName}`, "Invoices");
       setInvoiceForm(makeInvoiceForm(companySettings));
       notifySuccess(`Invoice ${invoiceNumber(printableInvoice)} created for ${invoiceForm.customerName}.`);
       await loadData();
@@ -2377,6 +2980,22 @@ function App() {
     await deleteTire(id);
     notifySuccess("Tire deleted.");
     await loadData();
+  }
+
+  async function saveInventoryTire(id, tire) {
+    const saved = await updateTire(id, {
+      ...tire,
+      width: Number(tire.width || 0),
+      aspectRatio: Number(tire.aspectRatio || 0),
+      rimSize: Number(tire.rimSize || 0),
+      quantity: Number(tire.quantity || 0),
+      price: Number(tire.price || 0),
+      shopId: tire.shopId ? Number(tire.shopId) : null,
+      locationId: tire.locationId ? Number(tire.locationId) : null
+    });
+    notifySuccess(`${saved.brand || "Tire"} details updated.`);
+    await loadData();
+    return saved;
   }
 
   function refillTire(tire) {
@@ -2568,6 +3187,35 @@ function App() {
     notifySuccess(`Estimate ${estimate.estimateNumber || `#${estimate.id}`} loaded into the invoice editor.`);
   }
 
+  function startInvoiceFromWorkOrder(workOrder, invoiceDraft) {
+    const nextInvoiceForm = makeInvoiceForm(companySettings);
+    setGeneratedInvoice(null);
+    setInvoiceForm({
+      ...nextInvoiceForm,
+      appointmentId: invoiceDraft.appointmentId ? String(invoiceDraft.appointmentId) : "",
+      workOrderId: workOrder.id ? String(workOrder.id) : "",
+      customerName: invoiceDraft.customerName || workOrder.customerName || "",
+      phone: invoiceDraft.phone || workOrder.phone || "",
+      vehicle: invoiceDraft.vehicle || workOrder.vehicle || "",
+      locationId: invoiceDraft.locationId ? String(invoiceDraft.locationId) : workOrder.locationId ? String(workOrder.locationId) : selectedLocationId,
+      status: "UNPAID",
+      paymentMethod: invoiceDraft.paymentMethod || "Cash",
+      items: (invoiceDraft.items || []).length ? invoiceDraft.items.map((item) => ({
+        tireId: item.tireId ? String(item.tireId) : "",
+        itemType: item.itemType || "SERVICE",
+        itemName: item.itemName || "",
+        quantity: item.quantity || 1,
+        unitPrice: String(item.unitPrice ?? "0.00")
+      })) : nextInvoiceForm.items
+    });
+    setActiveTab("Invoices");
+    notifySuccess("Work order loaded into the invoice editor. Review and save when ready.");
+  }
+
+  if (policySlug) {
+    return <PolicyPage onToggleTheme={toggleThemeMode} slug={policySlug} themeMode={themeMode} />;
+  }
+
   if (isPublicBooking && loadStoredAuth()?.role === "SUPER_ADMIN") {
     window.location.href = "/";
     return null;
@@ -2708,10 +3356,6 @@ function App() {
             Public Booking
           </button>
         )}
-        <div className="monarch-footer">
-          <strong>Powered by Monarch Solutions</strong>
-          <a href="mailto:support@monarchsolutions.ca">support@monarchsolutions.ca</a>
-        </div>
       </aside>
 
       <main className="content">
@@ -2752,12 +3396,7 @@ function App() {
               <button
                 className={`icon-button notification-button${unreadNotifications.length > 0 ? " has-unread" : ""}`}
                 aria-label="Notifications"
-                onClick={() => {
-                  if (unreadNotifications.length > 0) {
-                    playNotificationChime();
-                  }
-                  setShowNotifications((current) => !current);
-                }}
+                onClick={() => setShowNotifications((current) => !current)}
                 type="button"
               >
                 <Bell size={18} />
@@ -2844,6 +3483,24 @@ function App() {
           />
         )}
 
+        {!tenantBlocked && !loading && activeTab === "Subscriptions" && auth?.role === "SUPER_ADMIN" && (
+          <PlatformBillingSection
+            onCancelSubscription={cancelPlatformSubscription}
+            onLoadPayments={getShopPayments}
+            onMarkReadOnly={setPlatformSubscriptionReadOnly}
+            onDeleteShop={deletePlatformShopAction}
+            onRefresh={() => loadData(auth)}
+            onRecordPayment={recordPlatformPayment}
+            onReactivateSubscription={reactivatePlatformSubscription}
+            onSaveSubscription={savePlatformSubscription}
+            onStartTrial={startPlatformTrial}
+            onUpdatePaymentStatus={updatePlatformPayment}
+            setError={setError}
+            shops={platformShops}
+            summary={platformBillingSummary}
+          />
+        )}
+
         {!tenantBlocked && !loading && activeTab === "Employee Portal" && auth?.role === "EMPLOYEE" && (
           <EmployeePortal auth={auth} onOpenPayroll={() => setActiveTab("My Payroll")} />
         )}
@@ -2852,7 +3509,7 @@ function App() {
           <Dashboard
             auth={auth}
             appointments={activeAppointments}
-            customers={visibleCustomers}
+            customers={dashboardCustomers}
             dashboard={dashboard}
             invoices={visibleInvoices}
             workOrders={visibleWorkOrders}
@@ -2876,14 +3533,17 @@ function App() {
             onClearFilters={clearTireFilters}
             onChange={setTireForm}
             onDelete={removeTire}
+            onClearTireDetailTarget={() => setTireDetailTargetId("")}
             onFilterChange={setTireFilters}
             onFilterSubmit={applyTireFilters}
             onImportCsv={uploadTireCsv}
             onCreateLocation={createInventoryLocation}
             onRefill={refillTire}
             onSubmit={submitTire}
+            onUpdate={saveInventoryTire}
             highlightedRow={highlightedRow}
             shopLocations={shopLocations}
+            tireDetailTargetId={tireDetailTargetId}
             tires={filterRecordsByLocation(inventoryTires, selectedLocationId)}
           />
         )}
@@ -2903,6 +3563,7 @@ function App() {
             onSubmit={submitAppointment}
             highlightedRow={highlightedRow}
             selectedLocationId={selectedLocationId}
+            settings={companySettings}
             shopLocations={shopLocations}
             tireRequests={visibleTireRequests}
             tires={visibleTires}
@@ -2913,7 +3574,7 @@ function App() {
           <WorkOrdersPage
             appointments={activeAppointments}
             customers={visibleCustomers}
-            onInvoiceCreated={openGeneratedInvoice}
+            onStartInvoice={startInvoiceFromWorkOrder}
             onNotify={notifySuccess}
             onRefresh={() => loadData(auth)}
             selectedLocationId={selectedLocationId}
@@ -2975,6 +3636,7 @@ function App() {
             onSubmitExpense={submitExpense}
             onSubmitVendor={submitVendor}
             onPayExpense={payAccountingExpense}
+            onLoadReport={loadAccountingReportForRange}
             onTabChange={setActiveAccountingTab}
             onRangeChange={changeAccountingRange}
             onVendorChange={setVendorForm}
@@ -2982,6 +3644,7 @@ function App() {
             reportLoading={accountingLoading}
             reportRange={accountingRange}
             selectedLocationId={selectedLocationId}
+            settings={companySettings}
             shopLocations={shopLocations}
             vendorForm={vendorForm}
             vendors={vendors}
@@ -3008,6 +3671,11 @@ function App() {
           <SettingsPage settings={companySettings} onSave={saveCompanySettings} />
         )}
       </main>
+      <footer className="app-footer monarch-footer">
+        <strong>Powered by Monarch Solutions</strong>
+        <a href={`mailto:${supportEmail}`}>{supportEmail}</a>
+        <PolicyLinks />
+      </footer>
     </div>
   );
 }
@@ -3146,9 +3814,24 @@ function Dashboard({
   const rangeRevenue = filteredInvoices.reduce((total, invoice) => total + invoiceCollectedAmount(invoice), 0);
   const todayRevenue = todayInvoices.reduce((total, invoice) => total + invoiceCollectedAmount(invoice), 0);
   const urgentRestock = lowStockTires.filter((tire) => Number(tire.availableQuantity ?? tire.quantity ?? 0) < 3);
-  const outstandingCustomerBalance = customers.reduce((total, customer) => total + Number(customer.outstandingBalance || 0), 0);
-  const paymentAlertCustomers = customers.filter((customer) => Number(customer.outstandingBalance || 0) > 0);
-  const appointmentReminderCustomers = customers.filter((customer) => customer.hasUpcomingAppointment);
+  const customersWithVisibleAppointments = customers.map((customer) => {
+    const nextAppointment = nextFollowUpAppointmentForCustomer(customer, appointments);
+
+    if (!nextAppointment) {
+      return customer;
+    }
+
+    return {
+      ...customer,
+      hasUpcomingAppointment: true,
+      nextAppointmentId: nextAppointment.id,
+      nextAppointmentDate: nextAppointment.appointmentDate,
+      nextAppointmentVehicle: nextAppointment.vehicle || customer.nextAppointmentVehicle
+    };
+  });
+  const outstandingCustomerBalance = customersWithVisibleAppointments.reduce((total, customer) => total + Number(customer.outstandingBalance || 0), 0);
+  const paymentAlertCustomers = customersWithVisibleAppointments.filter((customer) => Number(customer.outstandingBalance || 0) > 0);
+  const appointmentReminderCustomers = customersWithVisibleAppointments.filter((customer) => customer.hasUpcomingAppointment);
   const followUpCustomers = [...paymentAlertCustomers, ...appointmentReminderCustomers]
     .filter((customer, index, list) => list.findIndex((entry) => entry.id === customer.id) === index)
     .sort((first, second) => followUpPriority(first) - followUpPriority(second));
@@ -3177,7 +3860,7 @@ function Dashboard({
     { label: "Pending", value: dashboard?.pendingWorkOrders ?? workOrders.filter((workOrder) => workOrder.status === "PENDING").length, tone: "warning" },
     { label: "In progress", value: dashboard?.inProgressWorkOrders ?? workOrders.filter((workOrder) => workOrder.status === "IN_PROGRESS").length, tone: "info" },
     { label: "Vehicle ready", value: dashboard?.vehicleReadyWorkOrders ?? workOrders.filter((workOrder) => workOrder.status === "VEHICLE_READY").length, tone: "good" },
-    { label: "Completed today", value: dashboard?.completedWorkOrdersToday ?? workOrders.filter((workOrder) => workOrder.status === "COMPLETED" && appointmentDateKey(workOrder.completedAt) === today).length, tone: "neutral" }
+    { label: "Invoiced today", value: dashboard?.completedWorkOrdersToday ?? workOrders.filter((workOrder) => workOrder.status === "COMPLETED" && appointmentDateKey(workOrder.completedAt) === today).length, tone: "neutral" }
   ];
   const maxWorkOrderStat = Math.max(...workOrderStats.map((stat) => Number(stat.value || 0)), 1);
   const keyMetrics = [
@@ -3660,8 +4343,7 @@ function InventoryLeaderBars({ items }) {
   return (
     <div className="leader-bars">
       {items.map((item, index) => (
-        <div className="leader-bar-row" key={`${item.label}-${item.size}-${item.condition}`}>
-          <div className="leader-bar-label">
+      <div className="leader-bar-row" key={item.id ?? `${item.label}-${item.size}-${item.condition}-${index}`}>          <div className="leader-bar-label">
             <span title={`${item.label} ${item.size}`}>
               <b>{index + 1}</b>
               {item.label}
@@ -3693,6 +4375,16 @@ function followUpPriority(customer) {
   }
 
   return 2;
+}
+
+function nextFollowUpAppointmentForCustomer(customer, appointments) {
+  const now = new Date();
+
+  return (appointments || [])
+    .filter((appointment) => customerMatchesAppointment(customer, appointment))
+    .filter((appointment) => appointment.appointmentDate && new Date(appointment.appointmentDate) >= now)
+    .filter((appointment) => !["COMPLETED", "CANCELLED"].includes(String(appointment.status || "BOOKED").toUpperCase()))
+    .sort((first, second) => new Date(first.appointmentDate) - new Date(second.appointmentDate))[0] || null;
 }
 
 function followUpTone(customer) {
@@ -4149,6 +4841,622 @@ function platformTypeLabel(type) {
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+const billingStatuses = ["TRIAL", "ACTIVE", "PAST_DUE", "READ_ONLY", "CANCELLED", "EXPIRED"];
+const billingCycles = ["MONTHLY", "ANNUAL"];
+const shopPlanOptions = ["BASIC", "PREMIUM", "ENTERPRISE"];
+const paymentMethods = ["E_TRANSFER", "CASH", "CHEQUE", "BANK_TRANSFER", "OTHER"];
+const paymentStatuses = ["PENDING", "PAID", "FAILED", "REFUNDED", "PARTIAL"];
+
+function defaultBillingPriceCents(cycle) {
+  return cycle === "ANNUAL" ? 399900 : 39900;
+}
+
+function taxCentsForAmount(amountCents, taxRate = 0.13) {
+  return Math.round(Number(amountCents || 0) * Number(taxRate || 0));
+}
+
+function addBillingMonths(dateKey, months) {
+  const date = new Date(`${dateKey}T00:00`);
+  date.setMonth(date.getMonth() + months);
+  return toDateKey(date);
+}
+
+function billingDateLabel(value) {
+  if (!value) {
+    return "-";
+  }
+
+  const normalized = String(value);
+  return new Date(normalized.includes("T") ? normalized : `${normalized}T00:00`).toLocaleDateString();
+}
+
+function shopPlanLabel(shop) {
+  const plan = typeof shop === "string" ? shop : shop?.subscriptionPlan || shop?.shopPlan || "BASIC";
+  const labels = {
+    BASIC: "Basic / Single Location",
+    PREMIUM: "Premium / Multi Location",
+    ENTERPRISE: "Enterprise"
+  };
+
+  return labels[plan] || statusLabel(plan);
+}
+
+function shopPlanDescription(shop) {
+  const plan = typeof shop === "string" ? shop : shop?.subscriptionPlan || shop?.shopPlan || "BASIC";
+
+  if (plan === "ENTERPRISE") {
+    return "Unlimited active locations for advanced shop groups.";
+  }
+
+  if (plan === "PREMIUM") {
+    return "Multi-location access for stores and approved locations.";
+  }
+
+  return "One active shop location. The subscription belongs to the shop, not each user account.";
+}
+
+function shopLocationLimitLabel(shop) {
+  if (!shop) {
+    return "1 active location";
+  }
+
+  const limit = Number(shop.locationLimit || 1);
+  const limitLabel = limit > 1000000 ? "Unlimited" : limit;
+  const activeCount = Number(shop.activeLocationCount || 0);
+
+  return `${activeCount}/${limitLabel} active location${limitLabel === 1 ? "" : "s"}`;
+}
+
+function isTrialEndingSoon(subscription) {
+  if (!subscription?.trialEndDate || subscription.status !== "TRIAL") {
+    return false;
+  }
+
+  const today = new Date(`${toDateKey(new Date())}T00:00`);
+  const end = new Date(`${subscription.trialEndDate}T00:00`);
+  const diffDays = Math.ceil((end - today) / 86400000);
+  return diffDays >= 0 && diffDays <= 7;
+}
+
+function subscriptionFormFrom(subscription) {
+  const cycle = subscription?.billingCycle || "MONTHLY";
+  const priceCents = subscription?.priceCents ?? defaultBillingPriceCents(cycle);
+
+  return {
+    shopPlan: subscription?.shopPlan || "BASIC",
+    planName: subscription?.planName || "TireTrack Professional",
+    billingCycle: cycle,
+    priceDollars: centsToDollarInput(priceCents),
+    currency: subscription?.currency || "CAD",
+    taxRate: String(subscription?.taxRate ?? "0.13"),
+    status: subscription?.status || "ACTIVE",
+    demoMode: Boolean(subscription?.demoMode),
+    demoMultiLocation: Boolean(subscription?.demoMultiLocation),
+    trialStartDate: subscription?.trialStartDate || "",
+    trialEndDate: subscription?.trialEndDate || "",
+    currentPeriodStart: subscription?.currentPeriodStart || "",
+    currentPeriodEnd: subscription?.currentPeriodEnd || "",
+    gracePeriodEndsAt: subscription?.gracePeriodEndsAt || "",
+    cancelAtPeriodEnd: Boolean(subscription?.cancelAtPeriodEnd),
+    notes: subscription?.notes || "",
+    externalCustomerId: subscription?.externalCustomerId || "",
+    externalSubscriptionId: subscription?.externalSubscriptionId || ""
+  };
+}
+
+function paymentFormFrom(subscription) {
+  const cycle = subscription?.billingCycle || "MONTHLY";
+  const today = toDateKey(new Date());
+  const amountCents = subscription?.priceCents ?? defaultBillingPriceCents(cycle);
+  const taxCents = subscription?.taxCents ?? taxCentsForAmount(amountCents, subscription?.taxRate ?? 0.13);
+  const periodStart = subscription?.currentPeriodEnd && subscription.status !== "EXPIRED" ? subscription.currentPeriodEnd : today;
+  const periodEnd = addBillingMonths(periodStart, cycle === "ANNUAL" ? 12 : 1);
+
+  return {
+    amountDollars: centsToDollarInput(amountCents),
+    taxDollars: centsToDollarInput(taxCents),
+    totalDollars: centsToDollarInput(amountCents + taxCents),
+    currency: subscription?.currency || "CAD",
+    paymentMethod: "E_TRANSFER",
+    paymentStatus: "PAID",
+    paidAt: "",
+    periodStart,
+    periodEnd,
+    referenceNumber: "",
+    invoiceNumber: "",
+    notes: ""
+  };
+}
+
+function PlatformBillingSection({
+  onCancelSubscription,
+  onDeleteShop,
+  onLoadPayments,
+  onMarkReadOnly,
+  onRecordPayment,
+  onRefresh,
+  onReactivateSubscription,
+  onSaveSubscription,
+  onStartTrial,
+  onUpdatePaymentStatus,
+  setError,
+  shops = [],
+  summary
+}) {
+  const subscriptions = summary?.subscriptions || [];
+  const [billingSearch, setBillingSearch] = useState("");
+  const [billingFilter, setBillingFilter] = useState("ALL");
+  const [selectedBillingShopId, setSelectedBillingShopId] = useState("");
+  const [subscriptionForm, setSubscriptionForm] = useState(subscriptionFormFrom(null));
+  const [paymentForm, setPaymentForm] = useState(paymentFormFrom(null));
+  const [payments, setPayments] = useState([]);
+  const [billingMessage, setBillingMessage] = useState("");
+  const [billingLoading, setBillingLoading] = useState(false);
+  const shopById = new Map(shops.map((shop) => [String(shop.id), shop]));
+  const selectedSubscription = subscriptions.find((subscription) => String(subscription.shopId) === String(selectedBillingShopId));
+  const selectedShop = shopById.get(String(selectedBillingShopId));
+  const configuredCount = subscriptions.filter((subscription) => subscription.configured).length;
+  const activeOrTrialCount = subscriptions.filter((subscription) => ["ACTIVE", "TRIAL"].includes(subscription.status)).length;
+  const filteredSubscriptions = subscriptions.filter((subscription) => {
+    const shop = shopById.get(String(subscription.shopId));
+    const haystack = [
+      subscription.shopName,
+      subscription.ownerName,
+      subscription.ownerEmail,
+      subscription.planName,
+      subscription.status,
+      shop?.subscriptionPlan,
+      subscription.configured ? "configured" : "unconfigured"
+    ].join(" ").toLowerCase();
+    const matchesSearch = haystack.includes(billingSearch.trim().toLowerCase());
+    const matchesFilter = billingFilter === "ALL"
+      || (billingFilter === "UNCONFIGURED" ? !subscription.configured : billingFilter === "TRIAL_ENDING_SOON" ? isTrialEndingSoon(subscription) : subscription.status === billingFilter);
+
+    return matchesSearch && matchesFilter;
+  });
+  const billingMessageTone = /could not|failed|error|required|choose|not found|\/api/i.test(billingMessage) ? "error" : "found";
+
+  useEffect(() => {
+    if (!selectedBillingShopId && subscriptions.length > 0) {
+      setSelectedBillingShopId(String(subscriptions[0].shopId));
+      return;
+    }
+
+    if (selectedBillingShopId && subscriptions.length > 0 && !subscriptions.some((subscription) => String(subscription.shopId) === String(selectedBillingShopId))) {
+      setSelectedBillingShopId(String(subscriptions[0].shopId));
+    }
+  }, [selectedBillingShopId, subscriptions]);
+
+  useEffect(() => {
+    setSubscriptionForm(subscriptionFormFrom(selectedSubscription));
+    setPaymentForm(paymentFormFrom(selectedSubscription));
+
+    async function loadPayments() {
+      if (!selectedSubscription?.shopId || !onLoadPayments) {
+        setPayments([]);
+        return;
+      }
+
+      try {
+        setPayments(await onLoadPayments(selectedSubscription.shopId));
+      } catch {
+        setPayments([]);
+      }
+    }
+
+    loadPayments();
+  }, [onLoadPayments, selectedSubscription?.id, selectedSubscription?.shopId, selectedSubscription?.updatedAt]);
+
+  async function runBillingAction(action, successMessage) {
+    if (!selectedBillingShopId) {
+      setBillingMessage("Choose a shop first.");
+      return null;
+    }
+
+    setBillingLoading(true);
+    setBillingMessage("");
+    setError("");
+
+    try {
+      const result = await action();
+      if (successMessage) {
+        setBillingMessage(successMessage(result));
+      }
+      return result;
+    } catch (err) {
+      const message = err.message || "Could not update billing.";
+      setBillingMessage(message);
+      setError(message);
+      return null;
+    } finally {
+      setBillingLoading(false);
+    }
+  }
+
+  async function saveSubscription(event) {
+    event.preventDefault();
+
+    await runBillingAction(
+      () => onSaveSubscription(selectedBillingShopId, {
+        shopPlan: subscriptionForm.shopPlan,
+        planName: subscriptionForm.planName,
+        billingCycle: subscriptionForm.billingCycle,
+        priceCents: dollarInputToCents(subscriptionForm.priceDollars),
+        currency: subscriptionForm.currency || "CAD",
+        taxRate: Number(subscriptionForm.taxRate || 0.13),
+        status: subscriptionForm.status,
+        demoMode: subscriptionForm.demoMode,
+        demoMultiLocation: subscriptionForm.demoMode && subscriptionForm.demoMultiLocation,
+        trialStartDate: subscriptionForm.trialStartDate || null,
+        trialEndDate: subscriptionForm.trialEndDate || null,
+        currentPeriodStart: subscriptionForm.currentPeriodStart || null,
+        currentPeriodEnd: subscriptionForm.currentPeriodEnd || null,
+        cancelAtPeriodEnd: subscriptionForm.cancelAtPeriodEnd,
+        gracePeriodEndsAt: subscriptionForm.gracePeriodEndsAt || null,
+        notes: subscriptionForm.notes || null,
+        externalCustomerId: subscriptionForm.externalCustomerId || null,
+        externalSubscriptionId: subscriptionForm.externalSubscriptionId || null
+      }),
+      (saved) => `${saved.shopName || selectedShop?.name || "Shop"} billing saved.`
+    );
+  }
+
+  async function recordPayment(event) {
+    event.preventDefault();
+
+    const saved = await runBillingAction(
+      () => onRecordPayment(selectedBillingShopId, {
+        amountCents: dollarInputToCents(paymentForm.amountDollars),
+        taxCents: dollarInputToCents(paymentForm.taxDollars),
+        totalCents: dollarInputToCents(paymentForm.totalDollars),
+        currency: paymentForm.currency || "CAD",
+        paymentMethod: paymentForm.paymentMethod,
+        paymentStatus: paymentForm.paymentStatus,
+        paidAt: paymentForm.paidAt || null,
+        periodStart: paymentForm.periodStart || null,
+        periodEnd: paymentForm.periodEnd || null,
+        referenceNumber: paymentForm.referenceNumber || null,
+        invoiceNumber: paymentForm.invoiceNumber || null,
+        notes: paymentForm.notes || null
+      }),
+      (saved) => `Payment ${saved.invoiceNumber || saved.referenceNumber || `#${saved.id}`} recorded.`
+    );
+
+    if (saved && selectedBillingShopId && onLoadPayments) {
+      setPayments(await onLoadPayments(selectedBillingShopId));
+    }
+  }
+
+  async function quickSubscriptionAction(action, label) {
+    await runBillingAction(() => action(selectedBillingShopId), () => label);
+  }
+
+  async function deleteSelectedShop() {
+    if (!selectedShop || !onDeleteShop) {
+      setBillingMessage("Choose a shop first.");
+      return;
+    }
+
+    const deleted = await runBillingAction(() => onDeleteShop(selectedShop), () => `${selectedShop.name || "Shop"} deleted.`);
+    if (deleted) {
+      setSelectedBillingShopId("");
+      setPayments([]);
+    }
+  }
+
+  async function updatePaymentStatus(payment, paymentStatus) {
+    setBillingLoading(true);
+    setBillingMessage("");
+    setError("");
+
+    try {
+      await onUpdatePaymentStatus(payment.id, {
+        paymentStatus,
+        paidAt: paymentStatus === "PAID" && !payment.paidAt ? new Date().toISOString().slice(0, 19) : null,
+        notes: payment.notes || null
+      });
+      setBillingMessage(`Payment marked ${statusLabel(paymentStatus)}.`);
+      if (selectedBillingShopId && onLoadPayments) {
+        setPayments(await onLoadPayments(selectedBillingShopId));
+      }
+    } catch (err) {
+      const message = err.message || "Could not update payment status.";
+      setBillingMessage(message);
+      setError(message);
+    } finally {
+      setBillingLoading(false);
+    }
+  }
+
+  return (
+    <section className="work-area platform-subscriptions-page">
+      <div className="panel platform-billing-hero">
+        <div>
+          <span className="eyebrow">Monarch Solutions</span>
+          <h3>Shop Subscriptions</h3>
+          <p>Every shop has one subscription. Owners and admins are contacts for that shop, not separate billable accounts.</p>
+        </div>
+        <div className="platform-billing-hero-actions">
+          <div>
+            <span>Tracked MRR</span>
+            <strong>{moneyFromCents(summary?.monthlyRecurringRevenueCents)}</strong>
+          </div>
+          <button className="ghost-button with-icon" disabled={billingLoading} onClick={onRefresh} type="button">
+            <RefreshCw size={15} />
+            Refresh
+          </button>
+        </div>
+      </div>
+
+      <section className="panel platform-billing-section">
+        <section className="metric-grid billing-summary-grid">
+          <div className="metric-card"><span>Paid this month</span><strong>{moneyFromCents(summary?.paymentsReceivedThisMonthCents)}</strong></div>
+          <div className="metric-card"><span>Active / trial shops</span><strong>{activeOrTrialCount}</strong></div>
+          <div className="metric-card"><span>Trials ending soon</span><strong>{summary?.trialsEndingSoon || 0}</strong></div>
+          <div className="metric-card"><span>Past due / read-only</span><strong>{summary?.pastDueShops || 0}</strong></div>
+          <div className="metric-card"><span>Billing configured</span><strong>{configuredCount}/{subscriptions.length}</strong></div>
+        </section>
+
+        <div className="platform-link-controls billing-controls">
+          <Input label="Search shops" value={billingSearch} onChange={setBillingSearch} />
+          <Select
+            label="Shop billing filter"
+            value={billingFilter}
+            onChange={setBillingFilter}
+            options={["ALL", "UNCONFIGURED", "TRIAL_ENDING_SOON", ...billingStatuses]}
+            optionLabel={(value) => value === "ALL" ? "All shops" : statusLabel(value)}
+          />
+          <Select
+            label="Open shop subscription"
+            value={selectedBillingShopId}
+            onChange={setSelectedBillingShopId}
+            options={["", ...subscriptions.map((subscription) => String(subscription.shopId))]}
+            optionLabel={(value) => subscriptions.find((subscription) => String(subscription.shopId) === String(value))?.shopName || "Choose shop"}
+          />
+        </div>
+
+        <section className="billing-shop-grid">
+          {filteredSubscriptions.length === 0 ? (
+            <p className="empty-note">No shops match this subscription view.</p>
+          ) : (
+            filteredSubscriptions.map((subscription) => {
+              const shop = shopById.get(String(subscription.shopId));
+              const isSelected = String(subscription.shopId) === String(selectedBillingShopId);
+              const planLabel = shopPlanLabel(shop);
+              const periodText = subscription.configured
+                ? `${billingDateLabel(subscription.currentPeriodStart)} - ${billingDateLabel(subscription.currentPeriodEnd)}`
+                : "Not configured yet";
+
+              return (
+                <button
+                  className={`billing-shop-card${isSelected ? " active" : ""}`}
+                  disabled={billingLoading}
+                  key={`billing-card-${subscription.shopId}`}
+                  onClick={() => setSelectedBillingShopId(String(subscription.shopId))}
+                  type="button"
+                >
+                  <div className="billing-shop-card-top">
+                    <div>
+                      <span>{planLabel} shop plan</span>
+                      <strong>{subscription.shopName || "Unnamed shop"}</strong>
+                    </div>
+                    <StatusBadge value={subscription.configured ? subscription.status : "UNCONFIGURED"} />
+                  </div>
+                  <p>{shopPlanDescription(shop)}</p>
+                  <div className="billing-shop-card-meta">
+                    <span>{shopLocationLimitLabel(shop)}</span>
+                    {subscription.demoMode && <span>{subscription.demoMultiLocation ? "Demo multi-location access" : "Demo/test access"}</span>}
+                    <span>{subscription.configured ? `${subscription.planName || "TireTrack Professional"} / ${statusLabel(subscription.billingCycle || "MONTHLY")}` : "Billing not configured"}</span>
+                    <span>{periodText}</span>
+                  </div>
+                  <div className="billing-shop-card-footer">
+                    <span>{subscription.ownerName || subscription.ownerEmail || "No owner contact"}</span>
+                    <strong>{subscription.totalCents != null ? moneyFromCents(subscription.totalCents) : "-"}</strong>
+                  </div>
+                </button>
+              );
+            })
+          )}
+        </section>
+
+      {selectedBillingShopId && (
+        <section className="platform-billing-detail">
+          <div className="section-toolbar compact">
+            <div>
+              <span className="eyebrow">Shop-level subscription</span>
+              <h3>{selectedSubscription?.shopName || selectedShop?.name || "Shop"}</h3>
+            </div>
+            <StatusBadge value={selectedSubscription?.configured ? selectedSubscription.status : "UNCONFIGURED"} />
+          </div>
+
+          <div className="billing-selected-summary">
+            <div>
+              <span>Shop plan</span>
+              <strong>{shopPlanLabel(selectedShop)}</strong>
+              <small>{shopPlanDescription(selectedShop)}</small>
+            </div>
+            <div>
+              <span>Location allowance</span>
+              <strong>{shopLocationLimitLabel(selectedShop)}</strong>
+              <small>Basic is one active shop location; Premium and Enterprise unlock multi-location.</small>
+            </div>
+            <div>
+              <span>Billing contact</span>
+              <strong>{selectedSubscription?.ownerName || "Unassigned"}</strong>
+              <small>{selectedSubscription?.ownerEmail || "No owner email on this shop yet."}</small>
+            </div>
+          </div>
+
+          {billingMessage && <p className={`mini-status ${billingMessageTone}`}>{billingMessage}</p>}
+
+          <div className="billing-action-row">
+            <button className="ghost-button" disabled={billingLoading} onClick={() => quickSubscriptionAction(onStartTrial, "14-day trial started.")} type="button">
+              Start 14-day Trial
+            </button>
+            <button className="ghost-button" disabled={billingLoading || !selectedSubscription?.configured} onClick={() => quickSubscriptionAction(onMarkReadOnly, "Shop marked read-only.")} type="button">
+              Mark Read-only
+            </button>
+            <button className="ghost-button" disabled={billingLoading || !selectedSubscription?.configured} onClick={() => quickSubscriptionAction(onReactivateSubscription, "Subscription reactivated.")} type="button">
+              Reactivate
+            </button>
+            <button className="danger-button" disabled={billingLoading || !selectedSubscription?.configured} onClick={() => quickSubscriptionAction(onCancelSubscription, "Subscription cancelled and shop access blocked.")} type="button">
+              Cancel & Block Shop
+            </button>
+          </div>
+
+          <div className="billing-detail-grid">
+            <form className="billing-management-grid" onSubmit={saveSubscription}>
+              <section className="billing-card-section">
+                <h4>Plan & Billing</h4>
+                <p>The plan belongs to the shop. Basic stays single-location; Premium and Enterprise unlock multi-location controls.</p>
+                <Select label="Shop plan" value={subscriptionForm.shopPlan} onChange={(shopPlan) => setSubscriptionForm({ ...subscriptionForm, shopPlan, demoMultiLocation: shopPlan === "BASIC" ? false : subscriptionForm.demoMultiLocation })} options={shopPlanOptions} optionLabel={shopPlanLabel} />
+                <Input label="Package name" required value={subscriptionForm.planName} onChange={(planName) => setSubscriptionForm({ ...subscriptionForm, planName })} />
+                <Select label="Billing cycle" value={subscriptionForm.billingCycle} onChange={(billingCycle) => {
+                  const price = defaultBillingPriceCents(billingCycle);
+                  const tax = taxCentsForAmount(price, subscriptionForm.taxRate);
+                  setSubscriptionForm({
+                    ...subscriptionForm,
+                    billingCycle,
+                    priceDollars: centsToDollarInput(price)
+                  });
+                  setPaymentForm({
+                    ...paymentForm,
+                    amountDollars: centsToDollarInput(price),
+                    taxDollars: centsToDollarInput(tax),
+                    totalDollars: centsToDollarInput(price + tax)
+                  });
+                }} options={billingCycles} optionLabel={statusLabel} />
+                <Input label="Price CAD" min="0" step="0.01" type="number" value={subscriptionForm.priceDollars} onChange={(priceDollars) => setSubscriptionForm({ ...subscriptionForm, priceDollars })} />
+                <Input label="Tax rate" min="0" step="0.0001" type="number" value={subscriptionForm.taxRate} onChange={(taxRate) => setSubscriptionForm({ ...subscriptionForm, taxRate })} />
+              </section>
+
+              <section className="billing-card-section">
+                <h4>Trial / Demo Access</h4>
+                <p>Use demo mode to test a shop without recording payment. Demo shops still follow active, read-only, expired, and cancelled access rules.</p>
+                <label className="checkbox-line">
+                  <input checked={subscriptionForm.demoMode} onChange={(event) => setSubscriptionForm({ ...subscriptionForm, demoMode: event.target.checked })} type="checkbox" />
+                  <span>Demo/test subscription</span>
+                </label>
+                <label className="checkbox-line">
+                  <input checked={subscriptionForm.demoMultiLocation} disabled={!subscriptionForm.demoMode} onChange={(event) => setSubscriptionForm({ ...subscriptionForm, demoMultiLocation: event.target.checked, shopPlan: event.target.checked ? "PREMIUM" : subscriptionForm.shopPlan })} type="checkbox" />
+                  <span>Demo multi-location access</span>
+                </label>
+                <Input label="Trial start" type="date" value={subscriptionForm.trialStartDate} onChange={(trialStartDate) => setSubscriptionForm({ ...subscriptionForm, trialStartDate })} />
+                <Input label="Trial end" type="date" value={subscriptionForm.trialEndDate} onChange={(trialEndDate) => setSubscriptionForm({ ...subscriptionForm, trialEndDate })} />
+              </section>
+
+              <section className="billing-card-section">
+                <h4>Status & Access Control</h4>
+                <p>Cancelled or expired shops are blocked. Read-only keeps the shop visible while preventing future write enforcement.</p>
+                <Select label="Status" value={subscriptionForm.status} onChange={(status) => setSubscriptionForm({ ...subscriptionForm, status })} options={billingStatuses} optionLabel={statusLabel} />
+                <Input label="Period start" type="date" value={subscriptionForm.currentPeriodStart} onChange={(currentPeriodStart) => setSubscriptionForm({ ...subscriptionForm, currentPeriodStart })} />
+                <Input label="Period end" type="date" value={subscriptionForm.currentPeriodEnd} onChange={(currentPeriodEnd) => setSubscriptionForm({ ...subscriptionForm, currentPeriodEnd })} />
+                <Input label="Grace ends" type="date" value={subscriptionForm.gracePeriodEndsAt} onChange={(gracePeriodEndsAt) => setSubscriptionForm({ ...subscriptionForm, gracePeriodEndsAt })} />
+                <label className="checkbox-line">
+                  <input checked={subscriptionForm.cancelAtPeriodEnd} onChange={(event) => setSubscriptionForm({ ...subscriptionForm, cancelAtPeriodEnd: event.target.checked })} type="checkbox" />
+                  <span>Cancel at period end</span>
+                </label>
+              </section>
+
+              <section className="billing-card-section">
+                <h4>Internal Notes</h4>
+                <p>Keep onboarding, manual invoice, and future processor IDs here for Monarch Solutions only.</p>
+                <label className="billing-wide-field">
+                  <span>Notes</span>
+                  <textarea value={subscriptionForm.notes} onChange={(event) => setSubscriptionForm({ ...subscriptionForm, notes: event.target.value })} rows="4" />
+                </label>
+                <Input label="Future billing customer ID" value={subscriptionForm.externalCustomerId} onChange={(externalCustomerId) => setSubscriptionForm({ ...subscriptionForm, externalCustomerId })} />
+                <Input label="Future billing subscription ID" value={subscriptionForm.externalSubscriptionId} onChange={(externalSubscriptionId) => setSubscriptionForm({ ...subscriptionForm, externalSubscriptionId })} />
+              </section>
+
+              <button className="primary-button billing-save-button" disabled={billingLoading} type="submit">
+                Save Shop Subscription
+              </button>
+            </form>
+
+            <form className="billing-card-section billing-payment-card" onSubmit={recordPayment}>
+              <h4>Payment Recording</h4>
+              <p>Record manual subscription payments here. Paid payments reactivate the shop and update its billing period.</p>
+              <Input label="Amount CAD" min="0" step="0.01" type="number" value={paymentForm.amountDollars} onChange={(amountDollars) => {
+                const amount = dollarInputToCents(amountDollars);
+                const tax = taxCentsForAmount(amount, subscriptionForm.taxRate);
+                setPaymentForm({
+                  ...paymentForm,
+                  amountDollars,
+                  taxDollars: centsToDollarInput(tax),
+                  totalDollars: centsToDollarInput(amount + tax)
+                });
+              }} />
+              <Input label="Tax CAD" min="0" step="0.01" type="number" value={paymentForm.taxDollars} onChange={(taxDollars) => setPaymentForm({
+                ...paymentForm,
+                taxDollars,
+                totalDollars: centsToDollarInput(dollarInputToCents(paymentForm.amountDollars) + dollarInputToCents(taxDollars))
+              })} />
+              <Input label="Total CAD" min="0" step="0.01" type="number" value={paymentForm.totalDollars} onChange={(totalDollars) => setPaymentForm({ ...paymentForm, totalDollars })} />
+              <Select label="Method" value={paymentForm.paymentMethod} onChange={(paymentMethod) => setPaymentForm({ ...paymentForm, paymentMethod })} options={paymentMethods} optionLabel={statusLabel} />
+              <Select label="Payment status" value={paymentForm.paymentStatus} onChange={(paymentStatus) => setPaymentForm({ ...paymentForm, paymentStatus })} options={paymentStatuses} optionLabel={statusLabel} />
+              <Input label="Paid at" type="datetime-local" value={paymentForm.paidAt} onChange={(paidAt) => setPaymentForm({ ...paymentForm, paidAt })} />
+              <Input label="Period start" type="date" value={paymentForm.periodStart} onChange={(periodStart) => setPaymentForm({ ...paymentForm, periodStart })} />
+              <Input label="Period end" type="date" value={paymentForm.periodEnd} onChange={(periodEnd) => setPaymentForm({ ...paymentForm, periodEnd })} />
+              <Input label="Reference number" value={paymentForm.referenceNumber} onChange={(referenceNumber) => setPaymentForm({ ...paymentForm, referenceNumber })} />
+              <Input label="Invoice number" value={paymentForm.invoiceNumber} onChange={(invoiceNumber) => setPaymentForm({ ...paymentForm, invoiceNumber })} />
+              <label className="billing-wide-field">
+                <span>Payment notes</span>
+                <textarea value={paymentForm.notes} onChange={(event) => setPaymentForm({ ...paymentForm, notes: event.target.value })} rows="3" />
+              </label>
+              <button className="primary-button" disabled={billingLoading} type="submit">
+                Record Payment
+              </button>
+            </form>
+          </div>
+
+          <section className="billing-card-section billing-danger-zone">
+            <div>
+              <h4>Danger Zone</h4>
+              <p>Delete this shop only when it was created by mistake or is no longer needed. This removes linked users, locations, inventory, customers, appointments, invoices, payroll, accounting, settings, and billing records.</p>
+            </div>
+            <button className="danger-button" disabled={billingLoading || !selectedShop} onClick={deleteSelectedShop} type="button">
+              Delete Shop
+            </button>
+          </section>
+
+          <DataTable
+            actions={(payment) => (
+              <div className="table-actions compact">
+                <Select
+                  aria-label="Payment status"
+                  label=""
+                  value={payment.paymentStatus || "PENDING"}
+                  onChange={(paymentStatus) => updatePaymentStatus(payment, paymentStatus)}
+                  options={paymentStatuses}
+                  optionLabel={statusLabel}
+                />
+              </div>
+            )}
+            columns={["Date", "Status", "Amount", "Method", "Period", "Reference", "Recorded by", ""]}
+            emptyText="No payments recorded for this shop."
+            rows={(payments || []).map((payment) => ({
+              key: `shop-payment-${payment.id}`,
+              searchText: `${payment.paymentStatus} ${payment.paymentMethod} ${payment.referenceNumber || ""} ${payment.invoiceNumber || ""}`,
+              source: payment,
+              values: [
+                payment.paidAt ? dateTime(payment.paidAt) : dateTime(payment.createdAt),
+                payment.paymentStatus || "PENDING",
+                moneyFromCents(payment.totalCents),
+                statusLabel(payment.paymentMethod),
+                `${billingDateLabel(payment.periodStart)} - ${billingDateLabel(payment.periodEnd)}`,
+                [payment.invoiceNumber, payment.referenceNumber].filter(Boolean).join(" / ") || "-",
+                payment.recordedByAdminName || "-"
+              ]
+            }))}
+          />
+        </section>
+      )}
+    </section>
+    </section>
+  );
 }
 
 function PlatformPage({
@@ -4815,6 +6123,7 @@ function Tires({
   form,
   highlightedRow,
   onChange,
+  onClearTireDetailTarget,
   onClearFilters,
   onDelete,
   onFilterChange,
@@ -4823,7 +6132,9 @@ function Tires({
   onCreateLocation,
   onRefill,
   onSubmit,
+  onUpdate,
   shopLocations,
+  tireDetailTargetId,
   tires
 }) {
   const [importStatus, setImportStatus] = useState("idle");
@@ -5092,7 +6403,16 @@ function Tires({
         </div>
       </form>
 
-      <InventoryTable highlightedRow={highlightedRow} onDelete={onDelete} onRefill={onRefill} tires={tires} />
+      <InventoryTable
+        highlightedRow={highlightedRow}
+        onDelete={onDelete}
+        onClearTireDetailTarget={onClearTireDetailTarget}
+        onRefill={onRefill}
+        onUpdate={onUpdate}
+        shopLocations={shopLocations}
+        tireDetailTargetId={tireDetailTargetId}
+        tires={tires}
+      />
     </section>
   );
 }
@@ -5118,6 +6438,32 @@ function filterRecordsByLocation(records, locationId) {
   return (records || []).filter((record) => String(record.locationId || "") === String(locationId));
 }
 
+function customersForDashboardFollowUps(customers, locationId, appointments) {
+  if (!locationId) {
+    return customers || [];
+  }
+
+  return (customers || []).filter((customer) =>
+    sameLocationValue(customer.locationId, locationId)
+    || (appointments || []).some((appointment) => customerMatchesAppointment(customer, appointment))
+  );
+}
+
+function customerMatchesAppointment(customer, appointment) {
+  if (!customer || !appointment) {
+    return false;
+  }
+
+  return (customer.id != null && appointment.customerId != null && Number(customer.id) === Number(appointment.customerId))
+    || sameText(customer.phone, appointment.phone)
+    || sameText(customer.email, appointment.email)
+    || sameText(customer.fullName, appointment.customerName);
+}
+
+function sameText(first, second) {
+  return Boolean(first) && Boolean(second) && String(first).trim().toLowerCase() === String(second).trim().toLowerCase();
+}
+
 function sameLocationValue(first, second) {
   return String(first || "") === String(second || "");
 }
@@ -5136,6 +6482,7 @@ function Appointments({
   onSubmit,
   onTireRequestStatusChange,
   selectedLocationId = "",
+  settings = defaultCompanySettings,
   shopLocations = [],
   tireRequests = [],
   tires
@@ -5338,6 +6685,7 @@ function Appointments({
           appointments={appointments}
           editingId={editingId}
           locationId={form.locationId || selectedLocationId || ""}
+          settings={settings}
           value={form.appointmentDate}
           onChange={(appointmentDate) => onChange({ ...form, appointmentDate })}
         />
@@ -5569,23 +6917,15 @@ function TireRequestQueue({ onConfirmAppointment, onStatusChange, requests }) {
   );
 }
 
-function WorkOrdersPage({ appointments, customers, onInvoiceCreated, onNotify, onRefresh, selectedLocationId = "", setError, shopLocations = [], workOrders }) {
+function WorkOrdersPage({ appointments, customers, onNotify, onRefresh, onStartInvoice, selectedLocationId = "", setError, shopLocations = [], workOrders }) {
   const [form, setForm] = useState(emptyWorkOrder);
   const [editingId, setEditingId] = useState(null);
-  const [invoicePreview, setInvoicePreview] = useState(null);
-  const [previewWorkOrderId, setPreviewWorkOrderId] = useState(null);
   const sortedWorkOrders = [...workOrders].sort((first, second) => Number(second.id || 0) - Number(first.id || 0));
   const workOrderAppointmentIds = new Set(workOrders.map((workOrder) => Number(workOrder.appointmentId)).filter(Boolean));
   const availableAppointments = appointments.filter((appointment) => !workOrderAppointmentIds.has(Number(appointment.id)));
   const selectedAppointment = appointments.find((appointment) => String(appointment.id) === String(form.appointmentId));
   const selectedCustomer = customers.find((customer) => Number(customer.id) === Number(form.customerId));
   const matchingCustomers = matchingCustomersForForm(customers, form, 4);
-
-  useEffect(() => {
-    if (invoicePreview) {
-      scrollToSelector("#work-order-invoice-preview");
-    }
-  }, [invoicePreview]);
 
   function resetForm() {
     setForm(emptyWorkOrder);
@@ -5704,27 +7044,7 @@ function WorkOrdersPage({ appointments, customers, onInvoiceCreated, onNotify, o
 
     try {
       const preview = await previewWorkOrderInvoice(workOrder.id);
-      setInvoicePreview(preview);
-      setPreviewWorkOrderId(workOrder.id);
-    } catch (err) {
-      setError(err.message);
-    }
-  }
-
-  async function confirmInvoiceWorkOrder() {
-    if (!previewWorkOrderId) {
-      return;
-    }
-
-    setError("");
-
-    try {
-      const invoice = await convertWorkOrderToInvoice(previewWorkOrderId);
-      onNotify("Invoice created from work order.");
-      setInvoicePreview(null);
-      setPreviewWorkOrderId(null);
-      await onRefresh();
-      await onInvoiceCreated(invoice);
+      onStartInvoice(workOrder, preview);
     } catch (err) {
       setError(err.message);
     }
@@ -5820,39 +7140,6 @@ function WorkOrdersPage({ appointments, customers, onInvoiceCreated, onNotify, o
         </button>
       </form>
 
-      {invoicePreview && (
-        <section className="panel invoice-conversion-preview" id="work-order-invoice-preview">
-          <div className="section-toolbar compact">
-            <div>
-              <span className="eyebrow">Invoice preview</span>
-              <h3>{invoicePreview.customerName}</h3>
-              <p>{invoicePreview.vehicle || "No vehicle"} - review before saving the final invoice.</p>
-            </div>
-            <div className="toolbar-actions">
-              <button className="primary-button" onClick={confirmInvoiceWorkOrder} type="button">
-                Confirm Invoice
-              </button>
-              <button className="ghost-button" onClick={() => { setInvoicePreview(null); setPreviewWorkOrderId(null); }} type="button">
-                Cancel
-              </button>
-            </div>
-          </div>
-          <DataTable
-            columns={["Item", "Qty", "Unit", "Total"]}
-            emptyText="No invoice items."
-            rows={(invoicePreview.items || []).map((item, index) => ({
-              key: `preview-item-${index}`,
-              values: [
-                item.itemName || item.itemType,
-                item.quantity,
-                money(item.unitPrice),
-                money(Number(item.quantity || 0) * Number(item.unitPrice || 0))
-              ]
-            }))}
-          />
-        </section>
-      )}
-
       {availableAppointments.length > 0 && (
         <DataTable
           actions={(appointment) => (
@@ -5892,11 +7179,6 @@ function WorkOrdersPage({ appointments, customers, onInvoiceCreated, onNotify, o
             {["PENDING", "IN_PROGRESS"].includes(workOrder.status) && (
               <button className="ghost-button" onClick={() => runWorkOrderAction("Vehicle marked ready.", () => markWorkOrderVehicleReady(workOrder.id))} type="button">
                 Vehicle Ready
-              </button>
-            )}
-            {workOrder.status !== "COMPLETED" && workOrder.status !== "CANCELLED" && (
-              <button className="ghost-button" onClick={() => runWorkOrderAction("Work order completed.", () => completeWorkOrder(workOrder.id))} type="button">
-                Complete
               </button>
             )}
             {workOrder.status !== "CANCELLED" && !workOrder.invoiceId && (
@@ -6500,9 +7782,10 @@ function TireSetupFields({ disabled, form, onChange, tires }) {
   );
 }
 
-function AppointmentDatePicker({ appointments, editingId, locationId, onChange, value }) {
+function AppointmentDatePicker({ appointments, editingId, locationId, onChange, settings = defaultCompanySettings, value }) {
   const { date, time } = splitAppointmentDate(value);
   const minDate = todayDateKey();
+  const appointmentSlots = useMemo(() => buildAppointmentTimes(settings), [settings?.openingTime, settings?.closingTime]);
 
   function appointmentAtSlot(slot) {
     return appointments.find((appointment) =>
@@ -6529,7 +7812,7 @@ function AppointmentDatePicker({ appointments, editingId, locationId, onChange, 
   }
 
   function updateTime(nextTime) {
-    if (!date || date < minDate || appointmentAtSlot(nextTime)) {
+    if (!date || date < minDate || isPastAppointmentSlot(date, nextTime) || appointmentAtSlot(nextTime)) {
       return;
     }
 
@@ -6552,16 +7835,17 @@ function AppointmentDatePicker({ appointments, editingId, locationId, onChange, 
       {date ? (
         <>
           <div className="time-slots" aria-label="Quick appointment times">
-            {appointmentTimes.map((slot) => {
+            {appointmentSlots.map((slot) => {
               const bookedAppointment = appointmentAtSlot(slot);
+              const pastTodaySlot = isPastAppointmentSlot(date, slot);
 
               return (
                 <button
-                  className={[time === slot ? "selected" : "", bookedAppointment ? "booked" : ""].filter(Boolean).join(" ")}
-                  disabled={date < minDate || Boolean(bookedAppointment)}
+                  className={[time === slot ? "selected" : "", bookedAppointment ? "booked" : "", pastTodaySlot ? "past" : ""].filter(Boolean).join(" ")}
+                  disabled={date < minDate || pastTodaySlot || Boolean(bookedAppointment)}
                   key={slot}
                   onClick={() => updateTime(slot)}
-                  title={bookedAppointment ? `Booked by ${bookedAppointment.customerName}` : "Available"}
+                  title={bookedAppointment ? `Booked by ${bookedAppointment.customerName}` : pastTodaySlot ? "This time has already passed" : "Available"}
                   type="button"
                 >
                   {slot}
@@ -6573,6 +7857,7 @@ function AppointmentDatePicker({ appointments, editingId, locationId, onChange, 
             appointments={appointments}
             editingId={editingId}
             locationId={locationId}
+            slots={appointmentSlots}
             selectedValue={value}
             onSelect={onChange}
           />
@@ -6584,7 +7869,7 @@ function AppointmentDatePicker({ appointments, editingId, locationId, onChange, 
   );
 }
 
-function AppointmentDayView({ appointments, editingId, locationId, onSelect, selectedValue }) {
+function AppointmentDayView({ appointments, editingId, locationId, onSelect, selectedValue, slots = appointmentTimes }) {
   const { date, time } = splitAppointmentDate(selectedValue);
   const selectedDate = date || todayDateKey();
   const isPastDate = selectedDate < todayDateKey();
@@ -6612,26 +7897,28 @@ function AppointmentDayView({ appointments, editingId, locationId, onSelect, sel
         </div>
       </div>
       <div className="day-view-slots">
-        {appointmentTimes.map((slot) => {
+        {slots.map((slot) => {
           const appointment = appointmentAtSlot(slot);
           const isSelected = time === slot;
+          const pastTodaySlot = isPastAppointmentSlot(selectedDate, slot);
 
           return (
             <button
               className={[
                 "day-view-slot",
                 appointment ? "booked" : "free",
-                isSelected ? "selected" : ""
+                isSelected ? "selected" : "",
+                pastTodaySlot ? "past" : ""
               ].filter(Boolean).join(" ")}
-              disabled={isPastDate || Boolean(appointment)}
+              disabled={isPastDate || pastTodaySlot || Boolean(appointment)}
               key={slot}
               onClick={() => onSelect(joinAppointmentDate(selectedDate, slot))}
               type="button"
             >
               <strong>{slot}</strong>
-              <span>{appointment ? appointment.customerName : "Available"}</span>
+              <span>{appointment ? appointment.customerName : pastTodaySlot ? "Passed" : "Available"}</span>
               {appointment && <small>{serviceTypeLabel(appointment.serviceType)}</small>}
-              {!appointment && <CheckCircle2 size={16} />}
+              {!appointment && !pastTodaySlot && <CheckCircle2 size={16} />}
             </button>
           );
         })}
@@ -6741,7 +8028,7 @@ function Invoices({
     const appointment = appointments.find((entry) => String(entry.id) === String(appointmentId));
 
     if (!appointment) {
-      onChange({ ...form, appointmentId: "", estimateId: "" });
+      onChange({ ...form, appointmentId: "", estimateId: "", workOrderId: "" });
       return;
     }
 
@@ -6759,6 +8046,7 @@ function Invoices({
       ...form,
       appointmentId,
       estimateId: "",
+      workOrderId: "",
       customerName: appointment.customerName || "",
       phone: appointment.phone || "",
       vehicle: appointment.vehicle || "",
@@ -6788,9 +8076,9 @@ function Invoices({
       <form className="panel form-grid" onSubmit={onSubmit}>
         <div className="invoice-source">
           <div>
-            <span className="eyebrow">{form.estimateId ? "Estimate source" : "Appointment source"}</span>
-            <h3>{form.estimateId ? "Estimate invoice draft" : selectedAppointment ? selectedAppointment.customerName : "Manual invoice"}</h3>
-            <p>{form.estimateId ? "Review and edit the invoice before saving the estimate conversion." : selectedAppointment ? `${serviceTypeLabel(selectedAppointment.serviceType)} - ${dateTime(selectedAppointment.appointmentDate)}` : "Choose an appointment to fill customer, vehicle, and reserved tires."}</p>
+            <span className="eyebrow">{form.estimateId ? "Estimate source" : form.workOrderId ? "Work order source" : "Appointment source"}</span>
+            <h3>{form.estimateId ? "Estimate invoice draft" : form.workOrderId ? "Work order invoice draft" : selectedAppointment ? selectedAppointment.customerName : "Manual invoice"}</h3>
+            <p>{form.estimateId ? "Review and edit the invoice before saving the estimate conversion." : form.workOrderId ? "Review prices, quantities, and services before saving the work order invoice." : selectedAppointment ? `${serviceTypeLabel(selectedAppointment.serviceType)} - ${dateTime(selectedAppointment.appointmentDate)}` : "Choose an appointment to fill customer, vehicle, and reserved tires."}</p>
           </div>
           <Select
             label="Choose appointment"
@@ -6875,7 +8163,7 @@ function Invoices({
             {invoiceStatusKey(form.status) === "PARTIALLY_PAID" ? ` - ${money(Math.max(total - Number(form.amountPaid || 0), 0))} balance` : ""}
           </small>
         </div>
-        <button className="primary-button" type="submit">{form.estimateId ? "Create Invoice From Estimate" : "Create Invoice"}</button>
+        <button className="primary-button" type="submit">{form.estimateId ? "Create Invoice From Estimate" : form.workOrderId ? "Create Invoice From Work Order" : "Create Invoice"}</button>
       </form>
 
       <DataTable
@@ -7024,7 +8312,7 @@ function PrintableInvoice({ settings, invoice }) {
           <div className="grand-total"><span>Total</span><strong>{money(invoice.total)}</strong></div>
         </section>
         <p className="invoice-terms">{settings.invoiceTerms}</p>
-        <p className="monarch-print-footer">Powered by Monarch Solutions | Support: support@monarchsolutions.ca</p>
+        <p className="monarch-print-footer">Powered by Monarch Solutions | Support: {supportEmail}</p>
       </article>
     </section>
   );
@@ -7107,7 +8395,7 @@ function PrintableEstimate({ estimate, settings }) {
           <div className="grand-total"><span>Total</span><strong>{money(estimate.total)}</strong></div>
         </section>
         {estimate.notes && <p className="invoice-terms">{estimate.notes}</p>}
-        <p className="monarch-print-footer">Powered by Monarch Solutions | Support: support@monarchsolutions.ca</p>
+        <p className="monarch-print-footer">Powered by Monarch Solutions | Support: {supportEmail}</p>
       </article>
     </section>
   );
@@ -7152,8 +8440,24 @@ function WarningBadges({ warnings }) {
   );
 }
 
-function InventoryTable({ highlightedRow, onDelete, onRefill, tires }) {
+function InventoryTable({ highlightedRow, onClearTireDetailTarget, onDelete, onRefill, onUpdate, shopLocations = [], tireDetailTargetId, tires }) {
   const [selectedTire, setSelectedTire] = useState(null);
+
+  useEffect(() => {
+    if (!tireDetailTargetId) {
+      return;
+    }
+
+    const matchedTire = tires.find((tire) => String(tire.id) === String(tireDetailTargetId));
+    if (matchedTire) {
+      setSelectedTire(matchedTire);
+    }
+  }, [tireDetailTargetId, tires]);
+
+  function closeDrawer() {
+    setSelectedTire(null);
+    onClearTireDetailTarget?.();
+  }
 
   return (
     <>
@@ -7195,11 +8499,16 @@ function InventoryTable({ highlightedRow, onDelete, onRefill, tires }) {
       />
       {selectedTire && (
         <TireDrawer
-          onClose={() => setSelectedTire(null)}
+          onClose={closeDrawer}
           onRefill={() => {
             onRefill(selectedTire);
-            setSelectedTire(null);
+            closeDrawer();
           }}
+          onUpdate={async (draft) => {
+            const saved = await onUpdate(selectedTire.id, draft);
+            setSelectedTire(saved);
+          }}
+          shopLocations={shopLocations}
           tire={selectedTire}
         />
       )}
@@ -7207,9 +8516,37 @@ function InventoryTable({ highlightedRow, onDelete, onRefill, tires }) {
   );
 }
 
-function TireDrawer({ onClose, onRefill, tire }) {
+function TireDrawer({ onClose, onRefill, onUpdate, shopLocations = [], tire }) {
   const warnings = inventoryWarnings(tire);
   const available = tire.availableQuantity ?? tire.quantity;
+  const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [drawerError, setDrawerError] = useState("");
+  const [draft, setDraft] = useState(() => tireDraftFrom(tire));
+
+  useEffect(() => {
+    setDraft(tireDraftFrom(tire));
+    setDrawerError("");
+  }, [tire]);
+
+  function updateDraft(field, value) {
+    setDraft((current) => ({ ...current, [field]: value }));
+  }
+
+  async function saveTireEdit(event) {
+    event.preventDefault();
+    setDrawerError("");
+    setIsSaving(true);
+
+    try {
+      await onUpdate(draft);
+      setIsEditing(false);
+    } catch (err) {
+      setDrawerError(err.message || "Could not update tire.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
 
   return (
     <div className="drawer-backdrop" role="presentation" onClick={onClose}>
@@ -7220,7 +8557,12 @@ function TireDrawer({ onClose, onRefill, tire }) {
             <h3>{tire.brand} {tire.model || ""}</h3>
             <p>{tire.width}/{tire.aspectRatio}R{tire.rimSize} · {tire.condition || "-"}</p>
           </div>
-          <button className="ghost-button" onClick={onClose} type="button">Close</button>
+          <div className="drawer-header-actions">
+            <button className="ghost-button" onClick={() => setIsEditing((value) => !value)} type="button">
+              {isEditing ? "View" : "Edit"}
+            </button>
+            <button className="ghost-button" onClick={onClose} type="button">Close</button>
+          </div>
         </div>
         <div className="drawer-stats">
           <div><span>Total</span><strong>{tire.quantity}</strong></div>
@@ -7235,12 +8577,68 @@ function TireDrawer({ onClose, onRefill, tire }) {
           <span>Location</span><strong>{displayTireLocation(tire)}</strong>
           <span>Unit price</span><strong>{money(tire.price)}</strong>
         </div>
-        <div className="drawer-actions">
-          <button className="primary-button" onClick={onRefill} type="button">Refill Tire</button>
-        </div>
+        {isEditing ? (
+          <form className="drawer-edit-form" onSubmit={saveTireEdit}>
+            <Input label="Brand" required value={draft.brand} onChange={(brand) => updateDraft("brand", brand)} />
+            <Input label="Model" value={draft.model} onChange={(model) => updateDraft("model", model)} />
+            <Input label="Width" min="5" step="5" type="number" value={draft.width} onChange={(width) => updateDraft("width", width)} />
+            <Input label="Aspect" min="1" type="number" value={draft.aspectRatio} onChange={(aspectRatio) => updateDraft("aspectRatio", aspectRatio)} />
+            <Input label="Rim" max="30" min="13" type="number" value={draft.rimSize} onChange={(rimSize) => updateDraft("rimSize", rimSize)} />
+            <Select label="Condition" required value={draft.condition} onChange={(condition) => updateDraft("condition", condition)} options={["NEW", "USED"]} />
+            <Input label="Season" value={draft.season} onChange={(season) => updateDraft("season", season)} />
+            <Input label="Quantity" min="0" type="number" value={draft.quantity} onChange={(quantity) => updateDraft("quantity", quantity)} />
+            <Input label="Price" min="0" step="0.01" type="number" value={draft.price} onChange={(price) => updateDraft("price", price)} />
+            <Input label="Location text" value={draft.location} onChange={(location) => updateDraft("location", location)} />
+            {shopLocations.length > 0 && (
+              <Select
+                label="Shop location"
+                value={draft.locationId || ""}
+                onChange={(locationId) => {
+                  const selectedLocation = shopLocations.find((location) => String(location.id) === String(locationId));
+                  setDraft((current) => ({
+                    ...current,
+                    locationId,
+                    shopId: selectedLocation?.shopId ? String(selectedLocation.shopId) : current.shopId,
+                    location: selectedLocation?.name || current.location
+                  }));
+                }}
+                options={["", ...shopLocations.map((location) => String(location.id))]}
+                optionLabel={(value) => {
+                  const location = shopLocations.find((entry) => String(entry.id) === String(value));
+                  return location ? location.name : "Unassigned";
+                }}
+              />
+            )}
+            {drawerError && <p className="mini-status error">{drawerError}</p>}
+            <button className="primary-button" disabled={isSaving} type="submit">
+              {isSaving ? "Saving..." : "Save Tire"}
+            </button>
+          </form>
+        ) : (
+          <div className="drawer-actions">
+            <button className="primary-button" onClick={onRefill} type="button">Refill Tire</button>
+          </div>
+        )}
       </aside>
     </div>
   );
+}
+
+function tireDraftFrom(tire) {
+  return {
+    brand: tire?.brand || "",
+    model: tire?.model || "",
+    width: tire?.width ?? "",
+    aspectRatio: tire?.aspectRatio ?? "",
+    rimSize: tire?.rimSize ?? "",
+    season: tire?.season || "",
+    condition: tire?.condition || "NEW",
+    quantity: tire?.quantity ?? 0,
+    price: tire?.price ?? "0.00",
+    location: tire?.location || "",
+    shopId: tire?.shopId ? String(tire.shopId) : "",
+    locationId: tire?.locationId ? String(tire.locationId) : ""
+  };
 }
 
 function emptyCustomerVehicleForm() {
@@ -7268,7 +8666,8 @@ function CustomerPortalShell({ auth, isRefreshing = false, onApproveEstimate, on
   const [approvingEstimateId, setApprovingEstimateId] = useState(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const previousUnreadCountRef = useRef(null);
+  const seenPortalNotificationKeysRef = useRef(new Set());
+  const portalNotificationsInitializedRef = useRef(false);
 
   useEffect(() => {
     if (message || error) {
@@ -7282,7 +8681,8 @@ function CustomerPortalShell({ auth, isRefreshing = false, onApproveEstimate, on
   const estimates = portal?.estimates || [];
   const tireRequests = portal?.tireRequests || [];
   const notifications = portal?.notifications || [];
-  const unreadCount = notifications.filter((notification) => !notification.read).length;
+  const unreadNotices = notifications.filter((notification) => !notification.read);
+  const unreadCount = unreadNotices.length;
   const latestUnreadNotice = notifications.find((notification) => !notification.read);
   const unpaidInvoices = invoices.filter((invoice) => !["PAID", "VOID"].includes(invoiceStatusKey(invoice.status)));
   const selectedBookingVehicle = vehicles.find((vehicle) => String(vehicle.id) === String(bookingForm.vehicleId));
@@ -7290,12 +8690,22 @@ function CustomerPortalShell({ auth, isRefreshing = false, onApproveEstimate, on
   const customerNeedsTireSourcing = needsTireSourcing(availability);
 
   useEffect(() => {
-    if ((previousUnreadCountRef.current === null && unreadCount > 0)
-        || (previousUnreadCountRef.current !== null && unreadCount > previousUnreadCountRef.current)) {
+    const unreadKeys = unreadNotices.map((notification) =>
+      String(notification.id || `${notification.title || ""}-${notification.message || ""}-${notification.createdAt || ""}`)
+    );
+
+    if (!portalNotificationsInitializedRef.current) {
+      seenPortalNotificationKeysRef.current = new Set(unreadKeys);
+      portalNotificationsInitializedRef.current = true;
+      return;
+    }
+
+    const newKeys = unreadKeys.filter((key) => !seenPortalNotificationKeysRef.current.has(key));
+    if (newKeys.length > 0) {
       playNotificationChime();
     }
-    previousUnreadCountRef.current = unreadCount;
-  }, [unreadCount]);
+    seenPortalNotificationKeysRef.current = new Set([...seenPortalNotificationKeysRef.current, ...unreadKeys]);
+  }, [unreadNotices]);
 
   useEffect(() => {
     async function loadCustomerLocations() {
@@ -7726,7 +9136,8 @@ function CustomerPortalShell({ auth, isRefreshing = false, onApproveEstimate, on
       </section>
       <div className="monarch-footer customer-footer">
         <strong>Powered by Monarch Solutions</strong>
-        <a href="mailto:support@monarchsolutions.ca">Support: support@monarchsolutions.ca</a>
+        <a href={`mailto:${supportEmail}`}>Support: {supportEmail}</a>
+        <PolicyLinks />
       </div>
     </main>
   );
@@ -7750,6 +9161,63 @@ function vehicleTireSize(vehicle) {
   }
 
   return vehicle.tireSize || "-";
+}
+
+function PolicyLinks() {
+  return (
+    <nav className="policy-links" aria-label="Legal policies">
+      {policyLinks.map((link) => (
+        <a href={link.path} key={link.path}>{link.label}</a>
+      ))}
+    </nav>
+  );
+}
+
+function PolicyPage({ onToggleTheme, slug, themeMode }) {
+  const page = policyPages[slug];
+
+  return (
+    <main className="login-shell policy-shell">
+      <ThemeToggleButton className="theme-floating-toggle" onToggle={onToggleTheme} themeMode={themeMode} />
+      <section className="policy-panel">
+        <div className="policy-hero">
+          <div className="brand-mark large"><Disc3 size={30} /></div>
+          <div>
+            <span className="eyebrow">{page.eyebrow}</span>
+            <h1>{page.title}</h1>
+            <p>Monarch Solutions / TireTrack / Ontario, Canada</p>
+            <small>Last updated: {policyLastUpdated}</small>
+          </div>
+        </div>
+        <div className="policy-content">
+          {page.sections.map((section) => (
+            <section key={section.title}>
+              <h2>{section.title}</h2>
+              {(section.body || []).map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
+              {section.list && (
+                <ul>
+                  {section.list.map((item) => <li key={item}>{item}</li>)}
+                </ul>
+              )}
+            </section>
+          ))}
+          <section>
+            <h2>Policy Updates</h2>
+            <p>These policies may be updated from time to time. The latest version will be posted in TireTrack with the updated date shown above.</p>
+            <p>Questions can be sent to <a href={`mailto:${supportEmail}`}>{supportEmail}</a>.</p>
+          </section>
+        </div>
+        <div className="login-footer policy-footer">
+          <strong>Powered by Monarch Solutions</strong>
+          <a href={`mailto:${supportEmail}`}>Support: {supportEmail}</a>
+          <PolicyLinks />
+          <button className="ghost-button" onClick={() => { window.location.href = "/login"; }} type="button">
+            Back to TireTrack
+          </button>
+        </div>
+      </section>
+    </main>
+  );
 }
 
 function PublicBookingPage({ onToggleTheme, themeMode }) {
@@ -7990,7 +9458,8 @@ function PublicBookingPage({ onToggleTheme, themeMode }) {
         </form>
         <div className="login-footer">
           <strong>Powered by Monarch Solutions</strong>
-          <a href="mailto:support@monarchsolutions.ca">Support: support@monarchsolutions.ca</a>
+          <a href={`mailto:${supportEmail}`}>Support: {supportEmail}</a>
+          <PolicyLinks />
         </div>
       </section>
     </main>
@@ -8046,7 +9515,8 @@ function LoginScreen({ onSubmit, loginForm, setLoginForm, error, isSubmitting, o
         </form>
         <div className="login-footer">
           <strong>Powered by Monarch Solutions</strong>
-          <a href="mailto:support@monarchsolutions.ca">Support: support@monarchsolutions.ca</a>
+          <a href={`mailto:${supportEmail}`}>Support: {supportEmail}</a>
+          <PolicyLinks />
         </div>
       </motion.section>
     </main>
@@ -8201,7 +9671,8 @@ function CustomerSignupScreen({ error, form, isSubmitting, onSubmit, onToggleThe
         </form>
         <div className="login-footer">
           <strong>Powered by Monarch Solutions</strong>
-          <a href="mailto:support@monarchsolutions.ca">Support: support@monarchsolutions.ca</a>
+          <a href={`mailto:${supportEmail}`}>Support: {supportEmail}</a>
+          <PolicyLinks />
         </div>
       </motion.section>
     </main>
@@ -8249,6 +9720,7 @@ function AccountingPage({
   message,
   onAccountChange,
   onExpenseChange,
+  onLoadReport,
   onSubmitAccount,
   onSubmitExpense,
   onSubmitVendor,
@@ -8260,6 +9732,7 @@ function AccountingPage({
   reportLoading = false,
   reportRange = defaultAccountingRange,
   selectedLocationId = "",
+  settings = defaultCompanySettings,
   shopLocations = [],
   vendorForm,
   vendors
@@ -8288,6 +9761,8 @@ function AccountingPage({
     .slice(0, 5);
   const activeMeta = accountingTabMeta[activeAccountingTab] || accountingTabMeta.Dashboard;
   const [selectedLedgerAccountId, setSelectedLedgerAccountId] = useState("");
+  const [exportLoading, setExportLoading] = useState(false);
+  const [exportError, setExportError] = useState("");
   const selectedLedgerAccount = trialBalance.find((account) => String(account.accountId) === String(selectedLedgerAccountId)) || trialBalance[0] || null;
   const selectedLedgerLines = selectedLedgerAccount
     ? recentJournalEntries.flatMap((entry) =>
@@ -8303,6 +9778,24 @@ function AccountingPage({
       .filter((balance) => balance.type === type)
       .reduce((sum, balance) => sum + Number(balance.balance || 0), 0)
   }));
+  const selectedReportLocation = shopLocations.find((location) => String(location.id) === String(selectedLocationId));
+  const reportLocationLabel = selectedReportLocation?.name || (selectedLocationId ? "Selected location" : "All locations");
+
+  async function exportAccountingReport(exporter) {
+    setExportError("");
+    setExportLoading(true);
+
+    try {
+      const freshReport = onLoadReport
+        ? await onLoadReport(selectedLocationId, reportRange)
+        : report;
+      exporter(freshReport || report || {}, reportRange, reportLocationLabel);
+    } catch (err) {
+      setExportError(err.message || "Accounting report export could not be prepared.");
+    } finally {
+      setExportLoading(false);
+    }
+  }
 
   return (
     <section className="accounting-page accounting-page-full">
@@ -8313,13 +9806,36 @@ function AccountingPage({
             <h2>{activeAccountingTab}</h2>
             <p>{activeMeta.description}</p>
           </div>
-          <div className="accounting-hero-stat">
-            <span>{activeMeta.statLabel}</span>
-            <strong>{activeMeta.statValue({ report, recentExpenses, vendors, accounts, recentJournalEntries })}</strong>
+          <div className="accounting-hero-side">
+            <div className="accounting-hero-stat">
+              <span>{activeMeta.statLabel}</span>
+              <strong>{activeMeta.statValue({ report, recentExpenses, vendors, accounts, recentJournalEntries })}</strong>
+            </div>
+            <div className="accounting-export-actions">
+              <button
+                className="ghost-button with-icon"
+                disabled={reportLoading || exportLoading}
+                onClick={() => exportAccountingReport(downloadAccountingReportCsv)}
+                type="button"
+              >
+                <Download size={15} />
+                {exportLoading ? "Preparing..." : "Export CSV"}
+              </button>
+              <button
+                className="primary-button with-icon"
+                disabled={reportLoading || exportLoading}
+                onClick={() => exportAccountingReport((freshReport, freshRange, freshLocationLabel) => printAccountingReportPdf(freshReport, freshRange, freshLocationLabel, settings))}
+                type="button"
+              >
+                <FileText size={15} />
+                Print / Save PDF
+              </button>
+            </div>
           </div>
         </section>
 
         <AccountingRangePicker loading={reportLoading} onChange={onRangeChange} range={reportRange} />
+        {exportError && <div className="alert">{exportError}</div>}
 
         <div className="accounting-mobile-nav">
           <select aria-label="Accounting section" value={activeAccountingTab} onChange={(event) => onTabChange(event.target.value)}>
@@ -8997,9 +10513,20 @@ function expenseDisplayStatus(expense) {
 
 function invoiceDisplayStatus(invoice) {
   const status = invoiceStatusKey(invoice.status);
+  const total = Number(invoice?.total || 0);
+  const paid = invoiceCollectedAmount(invoice);
+  const balance = invoiceBalanceAmount(invoice);
 
-  if (status === "PAID") {
+  if (status === "VOID") {
+    return "VOID";
+  }
+
+  if (balance <= 0 && (paid > 0 || total > 0)) {
     return "PAID";
+  }
+
+  if (paid > 0 && balance > 0) {
+    return "PARTIALLY_PAID";
   }
 
   if (invoice.dueDate) {
@@ -10974,6 +12501,8 @@ function SettingsPage({ onSave, settings }) {
         <Input label="Phone" value={draft.phone} onChange={(phone) => update("phone", phone)} />
         <Input label="Address" value={draft.address} onChange={(address) => update("address", address)} />
         <Input label="Tax rate %" min="0" step="0.01" type="number" value={draft.taxRate} onChange={(taxRate) => update("taxRate", taxRate)} />
+        <Input label="Opening time" type="time" value={String(draft.openingTime || "09:00").slice(0, 5)} onChange={(openingTime) => update("openingTime", openingTime)} />
+        <Input label="Closing time" type="time" value={String(draft.closingTime || "17:00").slice(0, 5)} onChange={(closingTime) => update("closingTime", closingTime)} />
         <label className="settings-terms">
           <span>Default invoice terms</span>
           <textarea value={draft.invoiceTerms} onChange={(event) => update("invoiceTerms", event.target.value)} rows="4" />
@@ -10983,6 +12512,7 @@ function SettingsPage({ onSave, settings }) {
           <strong>{draft.shopName || "Your Shop Name"}</strong>
           <span>{draft.phone || "Phone not set"}</span>
           <span>{draft.address || "Address not set"}</span>
+          <span>{String(draft.openingTime || "09:00").slice(0, 5)} - {String(draft.closingTime || "17:00").slice(0, 5)}</span>
         </div>
         {saveMessage && <div className={saveMessage.includes("verified") ? "success-alert" : "alert"}>{saveMessage}</div>}
         <button className="primary-button" disabled={isSaving} type="submit">

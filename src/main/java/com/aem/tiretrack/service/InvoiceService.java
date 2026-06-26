@@ -223,11 +223,32 @@ public class InvoiceService {
         invoice.setStatus(nextStatus);
         if ("VOID".equalsIgnoreCase(nextStatus)) {
             invoice.setBalanceDue(BigDecimal.ZERO);
+            invoice.setAmountPaid(paid.min(total).max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP));
+            invoice.setPaidAt(null);
         } else {
-            invoice.setBalanceDue(total.subtract(paid).max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP));
+            BigDecimal normalizedPaid = paid.min(total).max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
+            BigDecimal balance = total.subtract(normalizedPaid).max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
+
+            if (normalizedPaid.compareTo(BigDecimal.ZERO) > 0 && balance.compareTo(BigDecimal.ZERO) > 0 && invoice.getDueDate() == null) {
+                throw new IllegalArgumentException("Partial payments require a due date for the remaining balance.");
+            }
+
+            invoice.setAmountPaid(normalizedPaid);
+            invoice.setBalanceDue(balance);
+
+            if (balance.compareTo(BigDecimal.ZERO) == 0 && total.compareTo(BigDecimal.ZERO) > 0) {
+                invoice.setStatus("PAID");
+                invoice.setPaidAt(LocalDateTime.now());
+                invoice.setPaymentMethod(invoice.getPaymentMethod() == null ? "Manual" : invoice.getPaymentMethod());
+            } else if (normalizedPaid.compareTo(BigDecimal.ZERO) > 0) {
+                invoice.setStatus("PARTIALLY_PAID");
+                invoice.setPaidAt(null);
+                invoice.setPaymentMethod(invoice.getPaymentMethod() == null ? "Manual" : invoice.getPaymentMethod());
+            } else {
+                invoice.setStatus("UNPAID");
+                invoice.setPaidAt(null);
+            }
         }
-        invoice.setAmountPaid(paid.min(total).max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP));
-        invoice.setPaidAt(null);
     }
 
     private String normalizeInvoiceStatus(String status) {

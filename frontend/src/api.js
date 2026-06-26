@@ -41,6 +41,75 @@ function clearAuthSession() {
   window.dispatchEvent(new Event("tiretrack-auth-cleared"));
 }
 
+function safeErrorDetail(value) {
+  if (value == null) {
+    return "";
+  }
+
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map(safeErrorDetail).filter(Boolean).join(", ");
+  }
+
+  if (typeof value === "object") {
+    return Object.values(value).map(safeErrorDetail).filter(Boolean).join(", ");
+  }
+
+  return String(value);
+}
+
+function cleanApiErrorMessage(status, bodyText) {
+  let parsedMessage = null;
+
+  try {
+    parsedMessage = bodyText ? JSON.parse(bodyText) : null;
+  } catch {
+    parsedMessage = null;
+  }
+
+  const details = parsedMessage?.message
+    || safeErrorDetail(parsedMessage?.validationErrors)
+    || safeErrorDetail(parsedMessage)
+    || bodyText
+    || "";
+  const cleanDetails = String(details)
+    .replace(/^\/api\/[^\s:]+:\s*/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const lowerDetails = cleanDetails.toLowerCase();
+
+  if (lowerDetails.includes("shop account is currently inactive")) {
+    return "Your shop account is currently inactive. Please contact support.";
+  }
+
+  if (status === 401) {
+    return cleanDetails && !/exception|stack trace|\/api\//i.test(cleanDetails)
+      ? cleanDetails
+      : "Your session expired. Please log in again.";
+  }
+
+  if (status === 403) {
+    return "You do not have permission to perform this action.";
+  }
+
+  if (status === 404) {
+    return cleanDetails || "We could not find that record.";
+  }
+
+  if (status === 409) {
+    return cleanDetails || "A record with this value already exists.";
+  }
+
+  if (status >= 500) {
+    return "Something went wrong. Please try again or contact support.";
+  }
+
+  return cleanDetails || `Request failed with status ${status}.`;
+}
+
 async function refreshAuthToken() {
   const refreshToken = getRefreshToken();
   if (!refreshToken) {
@@ -82,7 +151,7 @@ async function request(path, options = {}, skipAuth = false) {
       headers
     });
   } catch {
-    throw new Error(`Could not reach the backend for ${path}. Make sure Spring Boot is running on port 8080.`);
+    throw new Error("Could not reach the backend. Make sure TireTrack is running and try again.");
   }
 
   if (response.status === 401 && !skipAuth) {
@@ -103,16 +172,7 @@ async function request(path, options = {}, skipAuth = false) {
 
   if (!response.ok) {
     const message = await response.text();
-    let parsedMessage = null;
-
-    try {
-      parsedMessage = JSON.parse(message);
-    } catch {
-      parsedMessage = null;
-    }
-
-    const details = parsedMessage?.message || (parsedMessage ? Object.values(parsedMessage).join(", ") : message);
-    throw new Error(details ? `${path}: ${details}` : `${path}: request failed with status ${response.status}`);
+    throw new Error(cleanApiErrorMessage(response.status, message));
   }
 
   if (response.status === 204) {
@@ -402,6 +462,12 @@ export function cancelWorkOrder(id) {
 
 export function convertWorkOrderToInvoice(id) {
   return request(`/api/work-orders/${encodeURIComponent(id)}/convert-to-invoice`, {
+    method: "POST"
+  });
+}
+
+export function linkWorkOrderInvoice(workOrderId, invoiceId) {
+  return request(`/api/work-orders/${encodeURIComponent(workOrderId)}/link-invoice/${encodeURIComponent(invoiceId)}`, {
     method: "POST"
   });
 }
@@ -739,6 +805,70 @@ export function getPlatformUsers() {
   return request("/api/platform/users");
 }
 
+export function getPlatformBillingSummary() {
+  return request("/api/platform/billing/summary");
+}
+
+export function getPlatformBillingSubscriptions() {
+  return request("/api/platform/billing/subscriptions");
+}
+
+export function getShopSubscription(shopId) {
+  return request(`/api/platform/billing/shops/${encodeURIComponent(shopId)}/subscription`);
+}
+
+export function updateShopSubscription(shopId, subscription) {
+  return request(`/api/platform/billing/shops/${encodeURIComponent(shopId)}/subscription`, {
+    method: "PUT",
+    headers: jsonHeaders,
+    body: JSON.stringify(subscription)
+  });
+}
+
+export function startShopTrial(shopId) {
+  return request(`/api/platform/billing/shops/${encodeURIComponent(shopId)}/trial`, {
+    method: "POST"
+  });
+}
+
+export function getShopPayments(shopId) {
+  return request(`/api/platform/billing/shops/${encodeURIComponent(shopId)}/payments`);
+}
+
+export function recordShopPayment(shopId, payment) {
+  return request(`/api/platform/billing/shops/${encodeURIComponent(shopId)}/payments`, {
+    method: "POST",
+    headers: jsonHeaders,
+    body: JSON.stringify(payment)
+  });
+}
+
+export function updateShopPaymentStatus(paymentId, paymentStatus) {
+  return request(`/api/platform/billing/payments/${encodeURIComponent(paymentId)}/status`, {
+    method: "PUT",
+    headers: jsonHeaders,
+    body: JSON.stringify(paymentStatus)
+  });
+}
+
+export function cancelShopSubscription(shopId) {
+  return request(`/api/platform/billing/shops/${encodeURIComponent(shopId)}/cancel`, {
+    method: "POST"
+  });
+}
+
+export function markShopReadOnly(shopId) {
+  return request(`/api/platform/billing/shops/${encodeURIComponent(shopId)}/read-only`, {
+    method: "POST"
+  });
+}
+
+export function reactivateShopSubscription(shopId) {
+  return request(`/api/platform/billing/shops/${encodeURIComponent(shopId)}/reactivate`, {
+    method: "POST"
+  });
+}
+
 export function createPlatformUser(user) {
   return request("/api/platform/users", {
     method: "POST",
@@ -814,6 +944,12 @@ export function activatePlatformShop(id) {
 export function deactivatePlatformShop(id) {
   return request(`/api/platform/shops/${id}/deactivate`, {
     method: "POST"
+  });
+}
+
+export function deletePlatformShop(id) {
+  return request(`/api/platform/shops/${encodeURIComponent(id)}`, {
+    method: "DELETE"
   });
 }
 

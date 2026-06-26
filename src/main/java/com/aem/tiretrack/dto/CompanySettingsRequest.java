@@ -16,6 +16,8 @@ public class CompanySettingsRequest {
     @DecimalMin(value = "0.0", message = "Tax rate cannot be negative")
     private BigDecimal taxRate;
     private String invoiceTerms;
+    private String openingTime;
+    private String closingTime;
 
     public String getShopName() { return shopName; }
     public void setShopName(String shopName) { this.shopName = shopName; }
@@ -29,4 +31,8 @@ public class CompanySettingsRequest {
     public void setTaxRate(BigDecimal taxRate) { this.taxRate = taxRate; }
     public String getInvoiceTerms() { return invoiceTerms; }
     public void setInvoiceTerms(String invoiceTerms) { this.invoiceTerms = invoiceTerms; }
+    public String getOpeningTime() { return openingTime; }
+    public void setOpeningTime(String openingTime) { this.openingTime = openingTime; }
+    public String getClosingTime() { return closingTime; }
+    public void setClosingTime(String closingTime) { this.closingTime = closingTime; }
 }

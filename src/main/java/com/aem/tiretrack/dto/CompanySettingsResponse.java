@@ -15,6 +15,8 @@ public class CompanySettingsResponse {
     private final String address;
     private final BigDecimal taxRate;
     private final String invoiceTerms;
+    private final String openingTime;
+    private final String closingTime;
 
     public CompanySettingsResponse(CompanySettings settings) {
         Shop shop = settings.getShop();
@@ -27,6 +29,8 @@ public class CompanySettingsResponse {
         this.address = settings.getAddress();
         this.taxRate = settings.getTaxRate();
         this.invoiceTerms = settings.getInvoiceTerms();
+        this.openingTime = settings.getOpeningTime();
+        this.closingTime = settings.getClosingTime();
     }
 
     public Long getId() { return id; }
@@ -38,4 +42,6 @@ public class CompanySettingsResponse {
     public String getAddress() { return address; }
     public BigDecimal getTaxRate() { return taxRate; }
     public String getInvoiceTerms() { return invoiceTerms; }
+    public String getOpeningTime() { return openingTime; }
+    public String getClosingTime() { return closingTime; }
 }

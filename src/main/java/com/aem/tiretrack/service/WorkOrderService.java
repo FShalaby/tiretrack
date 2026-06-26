@@ -170,6 +170,27 @@ public class WorkOrderService {
         return savedInvoice;
     }
 
+    @Transactional
+    public WorkOrder linkInvoice(Long id, Long invoiceId) {
+        WorkOrder workOrder = getWorkOrderById(id);
+        validateCanConvertToInvoice(workOrder);
+
+        Invoice invoice = invoiceService.getInvoiceById(invoiceId);
+        if (workOrder.getShop() != null
+                && invoice.getShop() != null
+                && !workOrder.getShop().getId().equals(invoice.getShop().getId())) {
+            throw new AccessDeniedException("Invoice does not belong to this work order's shop.");
+        }
+
+        workOrder.setInvoiceId(invoice.getId());
+        workOrder.setStatus(WorkOrderStatus.COMPLETED);
+        if (workOrder.getCompletedAt() == null) {
+            workOrder.setCompletedAt(LocalDateTime.now());
+        }
+        markLinkedAppointmentCompleted(workOrder);
+        return workOrderRepository.save(workOrder);
+    }
+
     private void validateCanConvertToInvoice(WorkOrder workOrder) {
         if (workOrder.getStatus() == WorkOrderStatus.CANCELLED) {
             throw new IllegalArgumentException("Cancelled work orders cannot be invoiced.");

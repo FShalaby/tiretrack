@@ -61,6 +61,8 @@ public class CompanySettingsService {
         settings.setAddress(cleanNullableText(updatedSettings.getAddress()));
         settings.setTaxRate(updatedSettings.getTaxRate());
         settings.setInvoiceTerms(cleanNullableText(updatedSettings.getInvoiceTerms()));
+        settings.setOpeningTime(cleanNullableText(updatedSettings.getOpeningTime()));
+        settings.setClosingTime(cleanNullableText(updatedSettings.getClosingTime()));
 
         return companySettingsRepository.save(settings);
     }
@@ -101,6 +103,8 @@ public class CompanySettingsService {
             settings.setAddress(legacy.getAddress());
             settings.setTaxRate(legacy.getTaxRate());
             settings.setInvoiceTerms(legacy.getInvoiceTerms());
+            settings.setOpeningTime(legacy.getOpeningTime());
+            settings.setClosingTime(legacy.getClosingTime());
         });
 
         return settings;

@@ -23,6 +23,7 @@ import com.aem.tiretrack.enums.UserRole;
 import com.aem.tiretrack.dto.TireAvailabilityResponse;
 import com.aem.tiretrack.model.AppNotification;
 import com.aem.tiretrack.model.Appointment;
+import com.aem.tiretrack.model.CompanySettings;
 import com.aem.tiretrack.model.CustomerVehicle;
 import com.aem.tiretrack.model.Shop;
 import com.aem.tiretrack.model.ShopLocation;
@@ -30,6 +31,7 @@ import com.aem.tiretrack.model.Tire;
 import com.aem.tiretrack.model.User;
 import com.aem.tiretrack.repository.AppNotificationRepository;
 import com.aem.tiretrack.repository.AppointmentRepository;
+import com.aem.tiretrack.repository.CompanySettingsRepository;
 import com.aem.tiretrack.repository.CustomerVehicleRepository;
 import com.aem.tiretrack.repository.TireRepository;
 import com.aem.tiretrack.repository.UserRepository;
@@ -45,6 +47,7 @@ public class AppointmentService {
     private final CustomerVehicleRepository vehicleRepository;
     private final UserRepository userRepository;
     private final AppNotificationRepository appNotificationRepository;
+    private final CompanySettingsRepository companySettingsRepository;
     private final AuditLogService auditLogService;
     private final ShopContextService shopContextService;
     private final TireAvailabilityService tireAvailabilityService;
@@ -56,6 +59,7 @@ public class AppointmentService {
             CustomerVehicleRepository vehicleRepository,
             UserRepository userRepository,
             AppNotificationRepository appNotificationRepository,
+            CompanySettingsRepository companySettingsRepository,
             AuditLogService auditLogService,
             ShopContextService shopContextService,
             TireAvailabilityService tireAvailabilityService,
@@ -65,6 +69,7 @@ public class AppointmentService {
         this.vehicleRepository = vehicleRepository;
         this.userRepository = userRepository;
         this.appNotificationRepository = appNotificationRepository;
+        this.companySettingsRepository = companySettingsRepository;
         this.auditLogService = auditLogService;
         this.shopContextService = shopContextService;
         this.tireAvailabilityService = tireAvailabilityService;
@@ -112,7 +117,8 @@ public class AppointmentService {
         }
 
         List<String> availableSlots = new ArrayList<>();
-        for (LocalTime slot = SLOT_START; !slot.isAfter(SLOT_END.minusMinutes(SLOT_MINUTES)); slot = slot.plusMinutes(SLOT_MINUTES)) {
+        BusinessHours businessHours = businessHoursFor(selectedLocation, null);
+        for (LocalTime slot = businessHours.openingTime(); !slot.isAfter(businessHours.lastBookableSlot()); slot = slot.plusMinutes(SLOT_MINUTES)) {
             boolean isPastTodaySlot = date.isEqual(today) && !slot.isAfter(now);
 
             if (!isPastTodaySlot && !bookedTimes.contains(slot)) {
@@ -292,7 +298,9 @@ public class AppointmentService {
             throw new RuntimeException("Choose a future appointment time");
         }
 
-        if (appointmentTime.isBefore(SLOT_START) || appointmentTime.isAfter(SLOT_END.minusMinutes(SLOT_MINUTES))) {
+        BusinessHours businessHours = businessHoursFor(appointment.getShopLocation(), appointment.getShop());
+
+        if (appointmentTime.isBefore(businessHours.openingTime()) || appointmentTime.isAfter(businessHours.lastBookableSlot())) {
             throw new RuntimeException("Choose an appointment during business hours");
         }
 
@@ -337,6 +345,41 @@ public class AppointmentService {
         }
 
         tire.setReservedQuantity(nextReservedQuantity);
+    }
+
+    private BusinessHours businessHoursFor(ShopLocation location, Shop fallbackShop) {
+        Shop shop = location == null ? fallbackShop : location.getShop();
+        if (shop == null) {
+            shop = shopContextService.getCurrentTenantShop().orElse(null);
+        }
+
+        CompanySettings settings = shop == null
+                ? companySettingsRepository.findAllByShopIsNullOrderByIdAsc().stream().findFirst().orElse(null)
+                : companySettingsRepository.findAllByShop_IdOrderByIdAsc(shop.getId()).stream().findFirst().orElse(null);
+
+        LocalTime opening = parseBusinessTime(settings == null ? null : settings.getOpeningTime(), SLOT_START);
+        LocalTime closing = parseBusinessTime(settings == null ? null : settings.getClosingTime(), SLOT_END);
+        if (!closing.isAfter(opening.plusMinutes(SLOT_MINUTES))) {
+            return new BusinessHours(SLOT_START, SLOT_END);
+        }
+        return new BusinessHours(opening, closing);
+    }
+
+    private LocalTime parseBusinessTime(String value, LocalTime fallback) {
+        if (value == null || value.isBlank()) {
+            return fallback;
+        }
+        try {
+            return LocalTime.parse(value.length() >= 5 ? value.substring(0, 5) : value);
+        } catch (RuntimeException exception) {
+            return fallback;
+        }
+    }
+
+    private record BusinessHours(LocalTime openingTime, LocalTime closingTime) {
+        private LocalTime lastBookableSlot() {
+            return closingTime.minusMinutes(SLOT_MINUTES);
+        }
     }
 
     private CustomerVehicle resolveAppointmentVehicle(Appointment appointment) {

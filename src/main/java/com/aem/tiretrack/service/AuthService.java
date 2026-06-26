@@ -37,6 +37,7 @@ public class AuthService {
     private final ShopContextService shopContextService;
     private final ShopRepository shopRepository;
     private final ShopLocationRepository shopLocationRepository;
+    private final ShopBillingAccessService shopBillingAccessService;
 
     @Value("${refresh.token.expiration:604800000}")
     private long refreshTokenExpiration;
@@ -49,7 +50,8 @@ public class AuthService {
             AccountValidationService accountValidationService,
             ShopContextService shopContextService,
             ShopRepository shopRepository,
-            ShopLocationRepository shopLocationRepository) {
+            ShopLocationRepository shopLocationRepository,
+            ShopBillingAccessService shopBillingAccessService) {
         this.userRepository = userRepository;
         this.refreshTokenRepository = refreshTokenRepository;
         this.passwordEncoder = passwordEncoder;
@@ -58,6 +60,7 @@ public class AuthService {
         this.shopContextService = shopContextService;
         this.shopRepository = shopRepository;
         this.shopLocationRepository = shopLocationRepository;
+        this.shopBillingAccessService = shopBillingAccessService;
     }
 
     @Transactional
@@ -99,6 +102,7 @@ public class AuthService {
         if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
             throw new IllegalArgumentException("Invalid email or password");
         }
+        ensureShopAccessAllowed(user);
         String token = jwtService.generateToken(user.getEmail());
         String refreshToken = createRefreshToken(user);
         return loginResponse(user, "Login successful", token, refreshToken);
@@ -118,6 +122,12 @@ public class AuthService {
         if (!user.isActive()) {
             refreshTokenRepository.delete(storedToken);
             throw new IllegalArgumentException("Invalid refresh token");
+        }
+        try {
+            ensureShopAccessAllowed(user);
+        } catch (IllegalArgumentException ex) {
+            refreshTokenRepository.delete(storedToken);
+            throw ex;
         }
         String token = jwtService.generateToken(user.getEmail());
         String refreshToken = createRefreshToken(user);
@@ -148,6 +158,17 @@ public class AuthService {
         refreshToken.setUser(user);
         refreshToken.setExpiresAt(LocalDateTime.now().plus(Duration.ofMillis(refreshTokenExpiration)));
         return refreshTokenRepository.save(refreshToken).getToken();
+    }
+
+    private void ensureShopAccessAllowed(User user) {
+        if (user == null || user.getRole() == UserRole.SUPER_ADMIN || user.getShop() == null) {
+            return;
+        }
+
+        Shop shop = user.getShop();
+        if (!shop.isActive() || shopBillingAccessService.isBlocked(shop)) {
+            throw new IllegalArgumentException("Your shop account is currently inactive. Please contact support.");
+        }
     }
 
     private LoginResponse loginResponse(User user, String message, String token, String refreshToken) {

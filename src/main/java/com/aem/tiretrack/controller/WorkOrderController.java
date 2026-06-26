@@ -91,6 +91,13 @@ public class WorkOrderController {
         return new InvoiceResponse(workOrderService.convertToInvoice(id));
     }
 
+    @PostMapping("/{id}/link-invoice/{invoiceId}")
+    public WorkOrderResponse linkInvoice(
+            @PathVariable Long id,
+            @PathVariable Long invoiceId) {
+        return new WorkOrderResponse(workOrderService.linkInvoice(id, invoiceId));
+    }
+
     private boolean matchesLocation(ShopLocation resourceLocation, ShopLocation requestedLocation) {
         if (requestedLocation == null) {
             return true;

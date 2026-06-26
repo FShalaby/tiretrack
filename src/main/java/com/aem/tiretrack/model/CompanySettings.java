@@ -44,6 +44,12 @@ public class CompanySettings {
     @Column(name = "invoice_terms", length = 1000)
     private String invoiceTerms = "Payment is due upon receipt. Thank you for your business.";
 
+    @Column(name = "opening_time", length = 5)
+    private String openingTime = "09:00";
+
+    @Column(name = "closing_time", length = 5)
+    private String closingTime = "17:00";
+
     public Long getId() {
         return id;
     }
@@ -106,5 +112,28 @@ public class CompanySettings {
 
     public void setInvoiceTerms(String invoiceTerms) {
         this.invoiceTerms = invoiceTerms;
+    }
+
+    public String getOpeningTime() {
+        return openingTime == null || openingTime.isBlank() ? "09:00" : openingTime;
+    }
+
+    public void setOpeningTime(String openingTime) {
+        this.openingTime = normalizeTime(openingTime, "09:00");
+    }
+
+    public String getClosingTime() {
+        return closingTime == null || closingTime.isBlank() ? "17:00" : closingTime;
+    }
+
+    public void setClosingTime(String closingTime) {
+        this.closingTime = normalizeTime(closingTime, "17:00");
+    }
+
+    private String normalizeTime(String value, String fallback) {
+        if (value == null || value.isBlank()) {
+            return fallback;
+        }
+        return value.length() >= 5 ? value.substring(0, 5) : value;
     }
 }

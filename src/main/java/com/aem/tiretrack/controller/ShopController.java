@@ -3,6 +3,7 @@ package com.aem.tiretrack.controller;
 import java.util.List;
 import java.util.Map;
 
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -59,6 +60,12 @@ public class ShopController {
     @PostMapping("/shops/{id}/deactivate")
     public ShopResponse deactivateShop(@PathVariable Long id) {
         return toResponse(shopService.deactivateShop(id));
+    }
+
+    @DeleteMapping("/shops/{id}")
+    public Map<String, String> deleteShop(@PathVariable Long id) {
+        shopService.deleteShop(id);
+        return Map.of("message", "Shop and linked data deleted.");
     }
 
     @PostMapping("/shops/{shopId}/assign-legacy-data")
